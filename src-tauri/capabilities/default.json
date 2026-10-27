@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for main and kick windows",
+  "windows": ["main", "kick_*"],
+  "permissions": [
+    "core:default",
+    "opener:default"
+  ]
+}
