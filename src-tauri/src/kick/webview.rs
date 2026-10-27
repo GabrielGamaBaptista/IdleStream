@@ -76,6 +76,7 @@ impl KickManager {
             .title(format!("IdleStream Kick: {}", clean_slug))
             .data_directory(profile_dir)
             .inner_size(540.0, 420.0)
+            .initialization_script(KICK_INIT_JS)
             .visible(visible);
 
         #[cfg(target_os = "windows")]
@@ -103,7 +104,7 @@ impl KickManager {
         let sid = stream_id.to_string();
         let aid = account_id.to_string();
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
 
             let js_with_id = format!(
                 "window.__IDLESTREAM_STREAM_ID__ = '{}';\nwindow.__IDLESTREAM_ACCOUNT_ID__ = '{}';\n{}",
@@ -228,6 +229,163 @@ impl KickManager {
     }
 }
 
+const KICK_INIT_JS: &str = r#"
+(function() {
+    'use strict';
+    try {
+        // 1. Force low quality keys in storage immediately
+        try {
+            sessionStorage.setItem('stream_quality', '160');
+            localStorage.setItem('stream_quality', '160');
+            sessionStorage.setItem('stream_quality_cookie', '160');
+            sessionStorage.setItem('video_quality', '160');
+            localStorage.setItem('video_quality', '160');
+        } catch(e) {}
+
+        if (typeof Storage !== 'undefined' && Storage.prototype) {
+            const origGetItem = Storage.prototype.getItem;
+            Storage.prototype.getItem = function(key) {
+                if (key === 'stream_quality' || key === 'stream_quality_cookie' || key === 'video_quality') {
+                    return '160';
+                }
+                return origGetItem.apply(this, arguments);
+            };
+        }
+
+        // 2. Intercept Amazon IVS Web Player SDK
+        let ivsProtoCaptured = false;
+        const hookIvsPlayer = function(player) {
+            if (!player || player.__idlestream_hooked) return;
+            player.__idlestream_hooked = true;
+            window.__IDLESTREAM_IVS_PLAYER__ = player;
+
+            const enforceLowest = () => {
+                try {
+                    if (typeof player.getQualities !== 'function') return;
+                    const qs = player.getQualities();
+                    if (!qs || qs.length === 0) return;
+
+                    // Sort ascending by height (160p, 360p, 480p, 720p, 1080p)
+                    const sorted = [...qs].sort((a, b) => ((a && a.height) || 9999) - ((b && b.height) || 9999));
+                    const lowest = sorted[0];
+                    if (!lowest) return;
+
+                    const cur = typeof player.getQuality === 'function' ? player.getQuality() : null;
+                    if (!cur || cur.height !== lowest.height) {
+                        console.log('[IdleStream] Locking IVS Player to lowest quality:', lowest.name || lowest.height);
+                        if (typeof player.setQuality === 'function') {
+                            player.setQuality(lowest, false);
+                        }
+                    }
+                    if (typeof player.setAutoQualityMode === 'function') {
+                        player.setAutoQualityMode(false);
+                    }
+                } catch(err) {
+                    console.error('[IdleStream] enforceLowest error:', err);
+                }
+            };
+
+            // Lock setAutoQualityMode so Kick cannot switch to Auto
+            const origSetAuto = player.setAutoQualityMode;
+            player.setAutoQualityMode = function() {
+                if (origSetAuto) return origSetAuto.call(this, false);
+            };
+
+            // Clamp setAutoMaxQuality to lowest rendition
+            const origSetMax = player.setAutoMaxQuality;
+            player.setAutoMaxQuality = function(q) {
+                if (typeof player.getQualities === 'function') {
+                    const qs = player.getQualities();
+                    if (qs && qs.length > 0) {
+                        const lowest = [...qs].sort((a, b) => ((a && a.height) || 9999) - ((b && b.height) || 9999))[0];
+                        if (origSetMax && lowest) return origSetMax.call(this, lowest);
+                    }
+                }
+                if (origSetMax) return origSetMax.call(this, q);
+            };
+
+            // Event listeners
+            if (typeof player.addEventListener === 'function') {
+                try {
+                    player.addEventListener('PlayerStateChange', enforceLowest);
+                    player.addEventListener('PlayerEventType.INITIALIZED', enforceLowest);
+                    player.addEventListener('QualityChanged', enforceLowest);
+                    player.addEventListener('Playing', enforceLowest);
+                    player.addEventListener('Ready', enforceLowest);
+                } catch(e) {}
+            }
+
+            // Periodic enforcement
+            let count = 0;
+            const t = setInterval(() => {
+                count++;
+                enforceLowest();
+                if (count > 60) clearInterval(t);
+            }, 2000);
+
+            enforceLowest();
+        };
+
+        // Trap prototype property assignment of attachHTMLVideoElement on Amazon IVS player
+        Object.defineProperty(Object.prototype, 'attachHTMLVideoElement', {
+            set: function(origFn) {
+                if (!ivsProtoCaptured) {
+                    ivsProtoCaptured = true;
+                    const proto = this;
+
+                    // Block setAutoQualityMode on prototype
+                    const protoOrigAuto = proto.setAutoQualityMode;
+                    proto.setAutoQualityMode = function() {
+                        if (protoOrigAuto) return protoOrigAuto.call(this, false);
+                    };
+
+                    Object.defineProperty(proto, 'attachHTMLVideoElement', {
+                        value: function(videoEl) {
+                            try {
+                                hookIvsPlayer(this);
+                            } catch(e) {}
+                            return origFn.apply(this, arguments);
+                        },
+                        writable: true,
+                        configurable: true,
+                        enumerable: true
+                    });
+                } else {
+                    Object.defineProperty(this, 'attachHTMLVideoElement', {
+                        value: origFn,
+                        writable: true,
+                        configurable: true,
+                        enumerable: true
+                    });
+                }
+            },
+            configurable: true
+        });
+
+        // 3. Audio mute on media element play
+        if (typeof HTMLMediaElement !== 'undefined' && HTMLMediaElement.prototype) {
+            const origPlay = HTMLMediaElement.prototype.play;
+            HTMLMediaElement.prototype.play = function() {
+                try {
+                    this.muted = true;
+                    this.volume = 0;
+                    if (!this.__idlestream_muted) {
+                        this.__idlestream_muted = true;
+                        this.addEventListener('volumechange', () => {
+                            this.muted = true;
+                            this.volume = 0;
+                        });
+                    }
+                } catch(e) {}
+                return origPlay.apply(this, arguments);
+            };
+        }
+    } catch(err) {
+        console.error('[IdleStream] Init script error:', err);
+    }
+})();
+"#;
+
 const KICK_OPTIMIZE_JS: &str = r#"
 (function() {
     try {
@@ -282,112 +440,129 @@ const KICK_OPTIMIZE_JS: &str = r#"
             }
         }, 8000);
 
-        // 4. Force Lowest Video Quality (160p / 360p)
+        // 4. Force Lowest Video Quality
         let qualityLocked = false;
 
         const forceLowestQuality = () => {
             if (qualityLocked) return;
 
-            // Attempt A: Video.js qualityLevels API
+            // Attempt A: Direct IVS Player reference if available
             try {
-                if (window.videojs && window.videojs.players) {
-                    const players = Object.values(window.videojs.players);
-                    for (const player of players) {
-                        if (player && typeof player.qualityLevels === 'function') {
-                            const ql = player.qualityLevels();
-                            if (ql && ql.length > 0) {
-                                let minHeight = 999999;
-                                for (let i = 0; i < ql.length; i++) {
-                                    if (ql[i].height && ql[i].height < minHeight) {
-                                        minHeight = ql[i].height;
-                                    }
-                                }
-                                for (let i = 0; i < ql.length; i++) {
-                                    ql[i].enabled = (ql[i].height === minHeight);
-                                }
-                                qualityLocked = true;
-                                console.log('[IdleStream] Video.js quality locked to min height:', minHeight);
-                                return;
+                const player = window.__IDLESTREAM_IVS_PLAYER__;
+                if (player && typeof player.getQualities === 'function') {
+                    const qs = player.getQualities();
+                    if (qs && qs.length > 0) {
+                        const lowest = [...qs].sort((a, b) => ((a && a.height) || 9999) - ((b && b.height) || 9999))[0];
+                        if (lowest) {
+                            if (typeof player.setQuality === 'function') {
+                                player.setQuality(lowest, false);
                             }
+                            if (typeof player.setAutoQualityMode === 'function') {
+                                player.setAutoQualityMode(false);
+                            }
+                            qualityLocked = true;
+                            console.log('[IdleStream] IVS direct quality locked to:', lowest.name || lowest.height);
+                            return;
                         }
                     }
                 }
             } catch (e) {}
 
-            // Attempt B: Full DOM Interaction (Click Settings -> Quality -> Lowest)
+            // Attempt B: Full DOM Automation (Simulate Hover -> Click Settings -> Click Quality -> Click Lowest)
             try {
                 const video = document.querySelector('video');
                 if (!video) return;
 
-                // Reveal controls
-                const container = video.closest('.video-player, #quick-play, [data-v-player], .relative') || video.parentElement;
-                if (container) {
-                    container.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true }));
-                }
+                const vr = video.getBoundingClientRect();
+                const vcx = Math.round(vr.left + vr.width / 2);
+                const vcy = Math.round(vr.top + vr.height / 2);
+
+                // Dispatch hover events to reveal player controls
+                const hoverEvents = ['mouseenter', 'mouseover', 'mousemove'];
+                hoverEvents.forEach(type => {
+                    const ev = new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: vcx, clientY: vcy });
+                    video.dispatchEvent(ev);
+                    if (video.parentElement) video.parentElement.dispatchEvent(ev);
+                });
 
                 // Find settings button
                 const settingsBtn = document.querySelector(
-                    'button[aria-label*="Setting" i], button[aria-label*="Configura" i], button[data-testid*="settings"], [class*="settings"] button'
+                    'button[aria-label*="Setting" i], button[aria-label*="Configura" i], button[aria-label*="Ayarlar" i], button[data-testid*="settings"], svg[data-ds-icon="Settings"]'
                 ) || Array.from(document.querySelectorAll('button')).find(b => {
-                    const l = (b.getAttribute('aria-label') || '').toLowerCase();
-                    return l.includes('setting') || l.includes('configura') || l.includes('gear');
+                    const l = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
+                    return l.includes('setting') || l.includes('configura') || l.includes('ayarlar') || l.includes('gear');
                 });
 
-                if (!settingsBtn) return;
+                const targetBtn = settingsBtn ? (settingsBtn.tagName === 'BUTTON' ? settingsBtn : settingsBtn.closest('button')) : null;
+                if (!targetBtn) return;
 
-                const simClick = (el) => {
-                    el.focus();
-                    el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
-                    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                    el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
-                    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                const robustClick = (el) => {
+                    if (!el) return;
+                    const r = el.getBoundingClientRect();
+                    const cx = Math.round(r.left + r.width / 2);
+                    const cy = Math.round(r.top + r.height / 2);
+                    const opts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, pointerId: 1, isPrimary: true, button: 0 };
+                    
+                    try { el.focus(); } catch (e) {}
+                    el.dispatchEvent(new PointerEvent('pointerdown', opts));
+                    el.dispatchEvent(new MouseEvent('mousedown', opts));
+                    el.dispatchEvent(new PointerEvent('pointerup', opts));
+                    el.dispatchEvent(new MouseEvent('mouseup', opts));
+                    el.dispatchEvent(new MouseEvent('click', opts));
+                    if (typeof el.click === 'function') {
+                        try { el.click(); } catch(e) {}
+                    }
                 };
 
-                simClick(settingsBtn);
+                robustClick(targetBtn);
 
                 setTimeout(() => {
-                    const findLowestOption = () => {
-                        const items = Array.from(document.querySelectorAll('[role="menuitemradio"], [role="menuitem"], button, div[role="button"]'));
-                        return items.find(el => /\b160p\b/i.test(el.textContent || ''))
-                            || items.find(el => /\b360p\b/i.test(el.textContent || ''))
-                            || items.find(el => /\b480p\b/i.test(el.textContent || ''));
+                    const findLowestItem = () => {
+                        const items = Array.from(document.querySelectorAll(
+                            '[role="menuitemradio"], [data-testid="player-quality-option"], [role="menuitem"], div[role="button"], button'
+                        ));
+                        // Priority: 160p, then 360p, then 480p, then 720p
+                        return items.find(el => /\b160p?\b/i.test(el.textContent || ''))
+                            || items.find(el => /\b360p?\b/i.test(el.textContent || ''))
+                            || items.find(el => /\b480p?\b/i.test(el.textContent || ''))
+                            || items.find(el => /\b720p?\b/i.test(el.textContent || ''));
                     };
 
-                    let lowest = findLowestOption();
-                    if (lowest) {
-                        simClick(lowest);
+                    let lowestEl = findLowestItem();
+                    if (lowestEl) {
+                        robustClick(lowestEl);
                         qualityLocked = true;
-                        console.log('[IdleStream] Clicked lowest resolution:', lowest.textContent.trim());
-                        setTimeout(() => simClick(settingsBtn), 150);
+                        console.log('[IdleStream] Clicked lowest resolution in DOM:', lowestEl.textContent.trim());
+                        setTimeout(() => robustClick(targetBtn), 200);
                     } else {
-                        // In main menu: look for "Quality" or "Qualidade" option
-                        const qualityOption = Array.from(document.querySelectorAll('[role="menuitem"], button, div[role="button"]'))
+                        // If qualities are not on the main menu, look for "Qualidade" or "Quality"
+                        const qualityMenuEntry = Array.from(document.querySelectorAll('[role="menuitem"], div[role="button"], button'))
                             .find(el => {
                                 const txt = (el.textContent || '').trim().toLowerCase();
                                 return txt.includes('qualidade') || txt.includes('quality');
                             });
 
-                        if (qualityOption) {
-                            simClick(qualityOption);
+                        if (qualityMenuEntry) {
+                            robustClick(qualityMenuEntry);
                             setTimeout(() => {
-                                const subLowest = findLowestOption();
+                                const subLowest = findLowestItem();
                                 if (subLowest) {
-                                    simClick(subLowest);
+                                    robustClick(subLowest);
                                     qualityLocked = true;
                                     console.log('[IdleStream] Clicked lowest resolution in submenu:', subLowest.textContent.trim());
-                                    setTimeout(() => simClick(settingsBtn), 150);
+                                    setTimeout(() => robustClick(targetBtn), 200);
                                 } else {
-                                    simClick(settingsBtn);
+                                    robustClick(targetBtn);
                                 }
-                            }, 350);
+                            }, 400);
                         } else {
-                            simClick(settingsBtn);
+                            // Close menu
+                            robustClick(targetBtn);
                         }
                     }
-                }, 300);
+                }, 400);
             } catch (err) {
-                console.error('[IdleStream] Error setting quality:', err);
+                console.error('[IdleStream] DOM quality error:', err);
             }
         };
 
