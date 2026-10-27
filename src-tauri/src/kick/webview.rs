@@ -80,7 +80,9 @@ impl KickManager {
 
         #[cfg(target_os = "windows")]
         {
-            builder = builder.additional_browser_args("--disable-gpu-vsync --disable-background-timer-throttling");
+            builder = builder.additional_browser_args(
+                "--mute-audio --disable-speech-api --enable-low-res-tiling"
+            );
         }
 
         let window = builder
@@ -229,58 +231,177 @@ impl KickManager {
 const KICK_OPTIMIZE_JS: &str = r#"
 (function() {
     try {
-        // 1. Mute all existing video elements and keep playing
-        const muteAll = () => {
+        // 1. Efficient Mute & Play (Event-driven, NO heavy body MutationObserver)
+        const muteAndPlay = () => {
             document.querySelectorAll('video').forEach(v => {
                 v.muted = true;
                 v.volume = 0;
                 if (v.paused) {
                     v.play().catch(() => {});
                 }
+                if (!v.__idle_bound) {
+                    v.__idle_bound = true;
+                    v.addEventListener('volumechange', () => {
+                        v.muted = true;
+                        v.volume = 0;
+                    });
+                    v.addEventListener('pause', () => {
+                        v.play().catch(() => {});
+                    });
+                }
             });
         };
-        muteAll();
+        muteAndPlay();
+        setInterval(muteAndPlay, 4000);
 
-        const observer = new MutationObserver(() => muteAll());
-        observer.observe(document.body, { childList: true, subtree: true });
-
-        // 2. Hide heavy chat message list and side navigation, BUT KEEP Channel Points footer and modal!
+        // 2. Hide heavy DOM elements & freeze CSS keyframe animations
         const css = `
             #chat-messages, .chat-messages-container, 
             [class*="chat-message"], [class*="viewer-list"],
-            aside:not(:has([class*="channel-points"])) {
+            aside:not(:has([class*="channel-points"])),
+            [class*="sidebar"], [class*="banner"], [class*="leaderboard"] {
                 display: none !important;
+            }
+            *, *::before, *::after {
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001ms !important;
             }
         `;
         const style = document.createElement('style');
         style.textContent = css;
         document.head.appendChild(style);
 
-        // 3. Lowest quality selection
-        setTimeout(() => {
-            const settingsBtn = document.querySelector('button[aria-label="Settings"], button[aria-label="Configurações"]');
-            if (settingsBtn) {
-                settingsBtn.click();
-                setTimeout(() => {
-                    const qualityBtns = Array.from(document.querySelectorAll('button, div[role="menuitem"]'))
-                        .filter(el => /160p|360p|480p/i.test(el.textContent || ''));
-                    if (qualityBtns.length > 0) {
-                        qualityBtns[0].click();
-                    } else {
-                        settingsBtn.click();
-                    }
-                }, 400);
+        // 3. Clear chat DOM accumulation to free memory
+        setInterval(() => {
+            const chat = document.querySelector('#chat-messages, .chat-messages-container');
+            if (chat && chat.children.length > 5) {
+                while (chat.children.length > 5) {
+                    chat.removeChild(chat.firstChild);
+                }
             }
-        }, 3000);
+        }, 8000);
 
-        // 4. Points reader function
+        // 4. Force Lowest Video Quality (160p / 360p)
+        let qualityLocked = false;
+
+        const forceLowestQuality = () => {
+            if (qualityLocked) return;
+
+            // Attempt A: Video.js qualityLevels API
+            try {
+                if (window.videojs && window.videojs.players) {
+                    const players = Object.values(window.videojs.players);
+                    for (const player of players) {
+                        if (player && typeof player.qualityLevels === 'function') {
+                            const ql = player.qualityLevels();
+                            if (ql && ql.length > 0) {
+                                let minHeight = 999999;
+                                for (let i = 0; i < ql.length; i++) {
+                                    if (ql[i].height && ql[i].height < minHeight) {
+                                        minHeight = ql[i].height;
+                                    }
+                                }
+                                for (let i = 0; i < ql.length; i++) {
+                                    ql[i].enabled = (ql[i].height === minHeight);
+                                }
+                                qualityLocked = true;
+                                console.log('[IdleStream] Video.js quality locked to min height:', minHeight);
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {}
+
+            // Attempt B: Full DOM Interaction (Click Settings -> Quality -> Lowest)
+            try {
+                const video = document.querySelector('video');
+                if (!video) return;
+
+                // Reveal controls
+                const container = video.closest('.video-player, #quick-play, [data-v-player], .relative') || video.parentElement;
+                if (container) {
+                    container.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true }));
+                }
+
+                // Find settings button
+                const settingsBtn = document.querySelector(
+                    'button[aria-label*="Setting" i], button[aria-label*="Configura" i], button[data-testid*="settings"], [class*="settings"] button'
+                ) || Array.from(document.querySelectorAll('button')).find(b => {
+                    const l = (b.getAttribute('aria-label') || '').toLowerCase();
+                    return l.includes('setting') || l.includes('configura') || l.includes('gear');
+                });
+
+                if (!settingsBtn) return;
+
+                const simClick = (el) => {
+                    el.focus();
+                    el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+                    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+                    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                };
+
+                simClick(settingsBtn);
+
+                setTimeout(() => {
+                    const findLowestOption = () => {
+                        const items = Array.from(document.querySelectorAll('[role="menuitemradio"], [role="menuitem"], button, div[role="button"]'));
+                        return items.find(el => /\b160p\b/i.test(el.textContent || ''))
+                            || items.find(el => /\b360p\b/i.test(el.textContent || ''))
+                            || items.find(el => /\b480p\b/i.test(el.textContent || ''));
+                    };
+
+                    let lowest = findLowestOption();
+                    if (lowest) {
+                        simClick(lowest);
+                        qualityLocked = true;
+                        console.log('[IdleStream] Clicked lowest resolution:', lowest.textContent.trim());
+                        setTimeout(() => simClick(settingsBtn), 150);
+                    } else {
+                        // In main menu: look for "Quality" or "Qualidade" option
+                        const qualityOption = Array.from(document.querySelectorAll('[role="menuitem"], button, div[role="button"]'))
+                            .find(el => {
+                                const txt = (el.textContent || '').trim().toLowerCase();
+                                return txt.includes('qualidade') || txt.includes('quality');
+                            });
+
+                        if (qualityOption) {
+                            simClick(qualityOption);
+                            setTimeout(() => {
+                                const subLowest = findLowestOption();
+                                if (subLowest) {
+                                    simClick(subLowest);
+                                    qualityLocked = true;
+                                    console.log('[IdleStream] Clicked lowest resolution in submenu:', subLowest.textContent.trim());
+                                    setTimeout(() => simClick(settingsBtn), 150);
+                                } else {
+                                    simClick(settingsBtn);
+                                }
+                            }, 350);
+                        } else {
+                            simClick(settingsBtn);
+                        }
+                    }
+                }, 300);
+            } catch (err) {
+                console.error('[IdleStream] Error setting quality:', err);
+            }
+        };
+
+        // Try setting quality every 3s until locked, and re-check every 30s
+        setInterval(forceLowestQuality, 3000);
+        setInterval(() => { qualityLocked = false; forceLowestQuality(); }, 30000);
+        forceLowestQuality();
+
+        // 5. Points reader function
         window.__readPoints = function() {
             try {
-                // Find element showing balance (green pill / points count)
                 const candidate = Array.from(document.querySelectorAll('span, p, div, button'))
                     .find(el => {
                         const txt = (el.innerText || '').trim();
-                        // Matches patterns like "1,6 mil", "1.6k", "300", etc. located near points
                         return /^[0-9]+([.,][0-9]+)?(\s*(mil|k))?$/i.test(txt) && 
                                (el.closest('[class*="points"]') || el.parentElement.querySelector('svg, img'));
                     });
