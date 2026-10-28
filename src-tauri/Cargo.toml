@@ -1,6 +1,6 @@
 [package]
 name = "idlestream"
-version = "2.0.1"
+version = "2.1.0"
 description = "IdleStream - Multi-Platform Stream Presence & XP Manager"
 authors = ["ggb"]
 edition = "2021"
@@ -27,6 +27,7 @@ tiny_http = "0.12"
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 urlencoding = "2"
+tauri-plugin-updater = "2.14.1"
 
 [profile.release]
 codegen-units = 1

@@ -5,6 +5,7 @@
   "windows": ["main", "kick_*"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "updater:default"
   ]
 }

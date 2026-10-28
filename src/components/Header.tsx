@@ -1,10 +1,21 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Play, Square, Activity, Cpu, Radio } from 'lucide-react';
-import packageJson from '../../package.json';
+import { Play, Square, Activity, Cpu, Radio, Sparkles, RefreshCw } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { config, statuses, startAll, stopAll } = useAppStore();
+  const {
+    config,
+    statuses,
+    startAll,
+    stopAll,
+    appVersion,
+    updateAvailable,
+    isCheckingUpdate,
+    isInstallingUpdate,
+    updateStatusMessage,
+    checkForUpdates,
+    installUpdate,
+  } = useAppStore();
 
   const totalStreams = config.streams.length;
   const activeStreams = Object.values(statuses).filter(
@@ -27,11 +38,37 @@ export const Header: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold text-white tracking-tight">IdleStream</h1>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-mono">
-              v{packageJson.version}
+            <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 font-mono">
+              v{appVersion}
             </span>
+
+            {/* Update Available Badge */}
+            {updateAvailable ? (
+              <button
+                onClick={() => installUpdate()}
+                disabled={isInstallingUpdate}
+                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/30 transition animate-pulse cursor-pointer"
+                title={`Nova versão v${updateAvailable.version} disponível! Clique para instalar e reiniciar automaticamente.`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>{isInstallingUpdate ? 'Instalando...' : `Atualizar p/ v${updateAvailable.version}`}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => checkForUpdates(true)}
+                disabled={isCheckingUpdate}
+                className="text-neutral-500 hover:text-neutral-300 transition cursor-pointer p-0.5"
+                title={updateStatusMessage || 'Verificar atualizações no GitHub'}
+              >
+                <RefreshCw className={`w-3 h-3 ${isCheckingUpdate ? 'animate-spin text-emerald-400' : ''}`} />
+              </button>
+            )}
           </div>
-          <p className="text-xs text-neutral-400">Stream Presence & XP Manager</p>
+          {updateStatusMessage && !updateAvailable ? (
+            <p className="text-[11px] text-emerald-400 font-medium">{updateStatusMessage}</p>
+          ) : (
+            <p className="text-xs text-neutral-400">Stream Presence & XP Manager</p>
+          )}
         </div>
       </div>
 

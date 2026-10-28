@@ -1,9 +1,17 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { check, Update } from '@tauri-apps/plugin-updater';
 import { Account, AppConfig, AppSettings, Platform, StreamConfig, StreamRuntimeStatus } from '../types';
 
 interface AppState {
+  appVersion: string;
+  updateAvailable: { version: string; body?: string } | null;
+  pendingUpdate: Update | null;
+  isCheckingUpdate: boolean;
+  isInstallingUpdate: boolean;
+  updateStatusMessage: string | null;
+
   config: AppConfig;
   statuses: Record<string, StreamRuntimeStatus>;
   activeTab: 'streams' | 'accounts' | 'settings';
@@ -19,6 +27,9 @@ interface AppState {
   setAddAccountOpen: (open: boolean) => void;
 
   init: () => Promise<void>;
+  fetchAppVersion: () => Promise<void>;
+  checkForUpdates: (manual?: boolean) => Promise<void>;
+  installUpdate: () => Promise<void>;
   fetchConfig: () => Promise<void>;
   fetchStatuses: () => Promise<void>;
 
@@ -41,6 +52,13 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  appVersion: '2.1.0',
+  updateAvailable: null,
+  pendingUpdate: null,
+  isCheckingUpdate: false,
+  isInstallingUpdate: false,
+  updateStatusMessage: null,
+
   config: {
     accounts: [],
     streams: [],
@@ -68,12 +86,71 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAddStreamOpen: (open) => set({ isAddStreamOpen: open }),
   setAddAccountOpen: (open) => set({ isAddAccountOpen: open }),
 
+  fetchAppVersion: async () => {
+    try {
+      const v = await invoke<string>('get_app_version');
+      set({ appVersion: v });
+    } catch (e) {
+      console.warn('Failed to fetch app version:', e);
+    }
+  },
+
+  checkForUpdates: async (manual = false) => {
+    set({
+      isCheckingUpdate: true,
+      updateStatusMessage: manual ? 'Buscando atualizações no GitHub...' : null,
+    });
+    try {
+      const update = await check();
+      if (update?.available) {
+        set({
+          updateAvailable: { version: update.version, body: update.body },
+          pendingUpdate: update,
+          updateStatusMessage: `Nova versão v${update.version} disponível!`,
+        });
+      } else {
+        set({
+          updateAvailable: null,
+          pendingUpdate: null,
+          updateStatusMessage: manual ? 'Você já está na versão mais recente!' : null,
+        });
+        if (manual) {
+          setTimeout(() => set({ updateStatusMessage: null }), 4000);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Update check failed:', err);
+      if (manual) {
+        set({ updateStatusMessage: 'Não foi possível verificar atualizações no momento.' });
+        setTimeout(() => set({ updateStatusMessage: null }), 4000);
+      }
+    } finally {
+      set({ isCheckingUpdate: false });
+    }
+  },
+
+  installUpdate: async () => {
+    const { pendingUpdate } = get();
+    if (!pendingUpdate) return;
+    set({ isInstallingUpdate: true, updateStatusMessage: 'Baixando e instalando atualização...' });
+    try {
+      await pendingUpdate.downloadAndInstall();
+    } catch (err: any) {
+      alert(`Falha ao instalar atualização: ${err}`);
+      set({ isInstallingUpdate: false, updateStatusMessage: null });
+    }
+  },
+
   init: async () => {
     if (get().isInitialized) return;
 
     try {
+      await get().fetchAppVersion();
       await get().fetchConfig();
       await get().fetchStatuses();
+
+      // Silent background update check upon startup
+      get().checkForUpdates(false).catch(() => {});
 
       // Listen to backend stream status changes (event-driven, 0% CPU polling)
       await listen<StreamRuntimeStatus>('stream-status-update', (event) => {

@@ -16,6 +16,7 @@ use tauri::{Manager, WindowEvent};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle().clone();
             let app_state = Arc::new(AppState::new(app_handle.clone()));
@@ -144,6 +145,7 @@ pub fn run() {
             start_twitch_oauth,
             open_kick_login,
             save_kick_session,
+            get_app_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
