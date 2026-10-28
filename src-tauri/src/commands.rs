@@ -112,41 +112,54 @@ pub async fn update_stream(state: StateHandle<'_>, mut stream: StreamConfig) -> 
 
     if let Some(status) = current_status {
         if let Some(old) = old_stream {
-            // Stop removed accounts
-            for old_acc_id in &old.account_ids {
-                if !stream.account_ids.contains(old_acc_id) {
-                    state.stop_account_in_stream(&stream.id, old_acc_id).await;
+            // Se o canal ou a plataforma mudou, reinicia a stream se estiver ativa/vigília
+            if old.channel_slug != stream.channel_slug || old.platform != stream.platform {
+                let was_running = status.status == crate::config::StatusKind::Connected
+                    || status.status == crate::config::StatusKind::Standby
+                    || status.status == crate::config::StatusKind::Connecting;
+
+                state.stop_stream(&stream.id).await;
+
+                if was_running {
+                    let _ = state.start_stream(&stream.id).await;
                 }
-            }
+            } else {
+                // Stop removed accounts
+                for old_acc_id in &old.account_ids {
+                    if !stream.account_ids.contains(old_acc_id) {
+                        state.stop_account_in_stream(&stream.id, old_acc_id).await;
+                    }
+                }
 
-            // If running / connected, start newly added accounts
-            if status.status == crate::config::StatusKind::Connected {
-                let newly_added_ids: Vec<String> = stream
-                    .account_ids
-                    .iter()
-                    .filter(|id| !old.account_ids.contains(id))
-                    .cloned()
-                    .collect();
-
-                if !newly_added_ids.is_empty() {
-                    let cfg = state.config.lock().await;
-                    let accounts: Vec<crate::config::Account> = cfg
-                        .accounts
+                // If running / connected, start newly added accounts
+                if status.status == crate::config::StatusKind::Connected {
+                    let newly_added_ids: Vec<String> = stream
+                        .account_ids
                         .iter()
-                        .filter(|a| newly_added_ids.contains(&a.id))
+                        .filter(|id| !old.account_ids.contains(id))
                         .cloned()
                         .collect();
-                    drop(cfg);
 
-                    let state_arc = state.inner().clone();
-                    let _ = state_arc
-                        .activate_online_stream(&stream.id, &stream.platform, &stream.channel_slug, &accounts)
-                        .await;
+                    if !newly_added_ids.is_empty() {
+                        let cfg = state.config.lock().await;
+                        let accounts: Vec<crate::config::Account> = cfg
+                            .accounts
+                            .iter()
+                            .filter(|a| newly_added_ids.contains(&a.id))
+                            .cloned()
+                            .collect();
+                        drop(cfg);
+
+                        let state_arc = state.inner().clone();
+                        let _ = state_arc
+                            .activate_online_stream(&stream.id, &stream.platform, &stream.channel_slug, &accounts)
+                            .await;
+                    }
                 }
             }
         }
 
-        // Update active rewards account points
+        // Update active account points
         if let Some(ref sel_id) = stream.selected_account_id {
             state.update_selected_account(&stream.id, sel_id).await;
         }

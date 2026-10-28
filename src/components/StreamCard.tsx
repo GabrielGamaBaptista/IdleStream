@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StreamConfig } from '../types';
 import { useAppStore } from '../stores/appStore';
-import { formatUptime } from '../utils/format';
+import { formatUptime, formatPoints } from '../utils/format';
 import {
   Play,
   Square,
@@ -12,7 +12,6 @@ import {
   Cpu,
   Moon,
   Pencil,
-  Crown,
   Users,
 } from 'lucide-react';
 
@@ -28,7 +27,6 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
     startStream,
     stopStream,
     removeStream,
-    setSelectedAccount,
   } = useAppStore();
 
   const status = statuses[stream.id] || {
@@ -51,7 +49,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   const isError = status.status === 'error';
 
   const isTwitch = stream.platform === 'twitch';
-  const selectedRewardId = stream.selected_account_id || accountIds[0];
+  const isKick = stream.platform === 'kick';
 
   const [uptimeSecs, setUptimeSecs] = useState<number>(status.uptime_seconds || 0);
 
@@ -148,15 +146,6 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             <h3 className="text-base font-bold text-white tracking-tight truncate">
               {stream.channel_slug}
             </h3>
-            {onEdit && (
-              <button
-                onClick={() => onEdit(stream)}
-                className="p-1 rounded-md text-neutral-400 hover:text-indigo-300 hover:bg-neutral-800 transition cursor-pointer"
-                title="Editar contas da stream"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -176,32 +165,27 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
           ) : (
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-0.5">
               {streamAccounts.map((acc) => {
-                const isSelectedReward = !isTwitch && selectedRewardId === acc.id;
+                const accPoints = status.account_points?.[acc.id];
 
                 return (
                   <div
                     key={acc.id}
-                    onClick={() => {
-                      if (!isTwitch && streamAccounts.length > 1) {
-                        setSelectedAccount(stream.id, acc.id);
-                      }
-                    }}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs border transition ${
-                      isSelectedReward
-                        ? 'bg-emerald-950/70 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500/50 shadow-sm cursor-pointer'
-                        : !isTwitch && streamAccounts.length > 1
-                        ? 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:border-neutral-700 cursor-pointer'
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs border transition ${
+                      isKick
+                        ? 'bg-neutral-900 border-neutral-800 text-neutral-300'
                         : isTwitch
                         ? 'bg-purple-950/30 border-purple-900/40 text-purple-200'
                         : 'bg-neutral-900 border-neutral-800 text-neutral-300'
                     }`}
                     title={`${acc.label} (@${acc.username})`}
                   >
-                    {isSelectedReward && (
-                      <Crown className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                    )}
-                    <span className="font-medium truncate max-w-[100px]">{acc.label}</span>
+                    <span className="font-medium truncate max-w-[90px]">{acc.label}</span>
                     <span className="text-neutral-500 text-[10px]">@{acc.username}</span>
+                    {isKick && accPoints && (
+                      <span className="text-[10px] font-mono text-emerald-400/90 ml-0.5">
+                        • {formatPoints(accPoints)}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -227,15 +211,16 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
 
         {/* Runtime Metrics */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs bg-neutral-950/60 border border-neutral-800/80 rounded-lg p-2.5 font-mono">
-          <div className="flex items-center gap-1.5 text-neutral-400">
-            <Clock className="w-3.5 h-3.5 text-neutral-500" />
-            <span className="text-neutral-200">
+          <div className="flex items-center gap-1.5 text-neutral-400" title="Tempo ativo">
+            <Clock className="w-3.5 h-3.5 text-neutral-500 flex-shrink-0" />
+            <span className="text-neutral-200 truncate">
               {isConnected ? formatUptime(uptimeSecs) : '--:--:--'}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-neutral-400 justify-end">
-            <Cpu className="w-3.5 h-3.5 text-neutral-500" />
-            <span className="text-neutral-200">
+
+          <div className="flex items-center gap-1.5 text-neutral-400 justify-end" title="Consumo de memória">
+            <Cpu className="w-3.5 h-3.5 text-neutral-500 flex-shrink-0" />
+            <span className="text-neutral-200 truncate">
               {isConnected ? `~${status.estimated_ram_mb} MB` : '0 MB'}
             </span>
           </div>
@@ -272,7 +257,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             <button
               onClick={() => onEdit(stream)}
               className="p-1.5 rounded-lg text-neutral-400 hover:text-indigo-300 hover:bg-neutral-800 transition cursor-pointer"
-              title="Editar contas da stream"
+              title="Editar stream e contas"
             >
               <Pencil className="w-3.5 h-3.5" />
             </button>

@@ -7,3 +7,10 @@ export function formatUptime(seconds: number): string {
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
+
+export function formatPoints(points?: string | number | null): string {
+  if (points === undefined || points === null || points === '') return '--';
+  const num = typeof points === 'number' ? points : Number(points);
+  if (isNaN(num)) return String(points);
+  return num.toLocaleString('pt-BR');
+}

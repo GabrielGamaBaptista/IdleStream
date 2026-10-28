@@ -333,6 +333,13 @@ impl AppState {
                             let a_id_cb = a_id.clone();
                             tauri::async_runtime::spawn(async move {
                                 let now = Utc::now().timestamp();
+                                let selected_id = {
+                                    let cfg = this_cb.config.lock().await;
+                                    cfg.streams
+                                        .iter()
+                                        .find(|s| s.id == s_id_cb)
+                                        .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
+                                };
                                 let mut map = this_cb.statuses.lock().await;
                                 if let Some(current) = map.get_mut(&s_id_cb) {
                                     let is_conn = status_kind == StatusKind::Connected;
@@ -348,7 +355,9 @@ impl AppState {
                                     if let Some(pts) = points {
                                         let pts_str = pts.to_string();
                                         current.account_points.insert(a_id_cb.clone(), pts_str.clone());
-                                        current.channel_points = Some(pts_str);
+                                        if selected_id.as_deref() == Some(&a_id_cb) || current.channel_points.is_none() {
+                                            current.channel_points = Some(pts_str);
+                                        }
                                     }
                                     let cloned = current.clone();
                                     drop(map);

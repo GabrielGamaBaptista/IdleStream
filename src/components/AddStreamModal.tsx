@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { Platform } from '../types';
-import { X, Tv, Radio, Plus, CheckSquare, Square, Crown } from 'lucide-react';
+import { X, Tv, Radio, Plus, CheckSquare, Square } from 'lucide-react';
 
 export const AddStreamModal: React.FC = () => {
   const { isAddStreamOpen, setAddStreamOpen, config, addStream } = useAppStore();
@@ -9,7 +9,6 @@ export const AddStreamModal: React.FC = () => {
   const [platform, setPlatform] = useState<Platform>('twitch');
   const [channelSlug, setChannelSlug] = useState('');
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [selectedRewardAccountId, setSelectedRewardAccountId] = useState<string>('');
   const [autoStart, setAutoStart] = useState(true);
 
   const filteredAccounts = config.accounts.filter((a) => a.platform === platform);
@@ -19,10 +18,8 @@ export const AddStreamModal: React.FC = () => {
     if (filteredAccounts.length > 0) {
       const allIds = filteredAccounts.map((a) => a.id);
       setSelectedAccountIds(allIds);
-      setSelectedRewardAccountId(allIds[0]);
     } else {
       setSelectedAccountIds([]);
-      setSelectedRewardAccountId('');
     }
   }, [platform, config.accounts]);
 
@@ -31,17 +28,9 @@ export const AddStreamModal: React.FC = () => {
   const toggleAccount = (accId: string) => {
     setSelectedAccountIds((prev) => {
       if (prev.includes(accId)) {
-        const next = prev.filter((id) => id !== accId);
-        if (selectedRewardAccountId === accId && next.length > 0) {
-          setSelectedRewardAccountId(next[0]);
-        }
-        return next;
+        return prev.filter((id) => id !== accId);
       } else {
-        const next = [...prev, accId];
-        if (!selectedRewardAccountId) {
-          setSelectedRewardAccountId(accId);
-        }
-        return next;
+        return [...prev, accId];
       }
     });
   };
@@ -49,14 +38,10 @@ export const AddStreamModal: React.FC = () => {
   const selectAll = () => {
     const allIds = filteredAccounts.map((a) => a.id);
     setSelectedAccountIds(allIds);
-    if (!selectedRewardAccountId && allIds.length > 0) {
-      setSelectedRewardAccountId(allIds[0]);
-    }
   };
 
   const deselectAll = () => {
     setSelectedAccountIds([]);
-    setSelectedRewardAccountId('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,14 +58,12 @@ export const AddStreamModal: React.FC = () => {
       .replace(/^https?:\/\/(www\.)?(twitch\.tv|kick\.com)\//i, '')
       .replace(/^#/, '');
 
-    const rewardId = selectedRewardAccountId || selectedAccountIds[0];
-
     const newStream = {
       id: crypto.randomUUID(),
       platform,
       channel_slug: cleanSlug,
       account_ids: selectedAccountIds,
-      selected_account_id: platform === 'kick' ? rewardId : undefined,
+      selected_account_id: platform === 'kick' ? selectedAccountIds[0] : undefined,
       auto_start: autoStart,
     };
 
@@ -190,7 +173,6 @@ export const AddStreamModal: React.FC = () => {
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {filteredAccounts.map((acc) => {
                   const isChecked = selectedAccountIds.includes(acc.id);
-                  const isRewardActive = selectedRewardAccountId === acc.id;
 
                   return (
                     <div
@@ -221,26 +203,6 @@ export const AddStreamModal: React.FC = () => {
                           <div className="text-[11px] text-neutral-400">@{acc.username}</div>
                         </div>
                       </div>
-
-                      {/* For Kick: Option to designate reward account */}
-                      {platform === 'kick' && isChecked && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedRewardAccountId(acc.id);
-                          }}
-                          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
-                            isRewardActive
-                              ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-500/20'
-                              : 'bg-neutral-800 text-neutral-400 hover:text-white'
-                          }`}
-                          title="Conta usada ao clicar no botão de Resgate de pontos"
-                        >
-                          <Crown className="w-3 h-3" />
-                          <span>{isRewardActive ? 'Resgate Ativo' : 'Definir p/ Resgate'}</span>
-                        </button>
-                      )}
                     </div>
                   );
                 })}
@@ -248,7 +210,7 @@ export const AddStreamModal: React.FC = () => {
             )}
             {platform === 'kick' && selectedAccountIds.length > 1 && (
               <p className="text-[11px] text-neutral-500 mt-1">
-                Todas as contas selecionadas rodarão em segundo plano acumulando pontos. O botão de resgate abrirá a conta marcada como "Resgate Ativo".
+                Todas as contas selecionadas acumularão pontos de transmissão simultaneamente em segundo plano.
               </p>
             )}
           </div>

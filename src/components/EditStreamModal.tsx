@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { StreamConfig } from '../types';
-import { X, Settings2, Radio, CheckSquare, Square, Crown, Save } from 'lucide-react';
+import { formatPoints } from '../utils/format';
+import { X, Settings2, Radio, CheckSquare, Square, Save } from 'lucide-react';
 
 interface EditStreamModalProps {
   stream: StreamConfig | null;
@@ -16,20 +17,20 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
 }) => {
   const { config, statuses, updateStream } = useAppStore();
 
+  const [channelSlug, setChannelSlug] = useState('');
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [selectedRewardAccountId, setSelectedRewardAccountId] = useState<string>('');
   const [autoStart, setAutoStart] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (stream) {
+      setChannelSlug(stream.channel_slug);
       const ids = stream.account_ids && stream.account_ids.length > 0
         ? stream.account_ids
         : stream.account_id
         ? [stream.account_id]
         : [];
       setSelectedAccountIds(ids);
-      setSelectedRewardAccountId(stream.selected_account_id || ids[0] || '');
       setAutoStart(stream.auto_start ?? true);
     }
   }, [stream]);
@@ -43,17 +44,9 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
   const toggleAccount = (accId: string) => {
     setSelectedAccountIds((prev) => {
       if (prev.includes(accId)) {
-        const next = prev.filter((id) => id !== accId);
-        if (selectedRewardAccountId === accId && next.length > 0) {
-          setSelectedRewardAccountId(next[0]);
-        }
-        return next;
+        return prev.filter((id) => id !== accId);
       } else {
-        const next = [...prev, accId];
-        if (!selectedRewardAccountId) {
-          setSelectedRewardAccountId(accId);
-        }
-        return next;
+        return [...prev, accId];
       }
     });
   };
@@ -61,13 +54,20 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
   const selectAll = () => {
     const allIds = platformAccounts.map((a) => a.id);
     setSelectedAccountIds(allIds);
-    if (!selectedRewardAccountId && allIds.length > 0) {
-      setSelectedRewardAccountId(allIds[0]);
-    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanSlug = channelSlug
+      .trim()
+      .replace(/^https?:\/\/(www\.)?(twitch\.tv|kick\.com)\//i, '')
+      .replace(/^#/, '');
+
+    if (!cleanSlug) {
+      alert('O nome do canal ou link não pode ser vazio!');
+      return;
+    }
+
     if (selectedAccountIds.length === 0) {
       alert('A stream precisa de pelo menos uma conta conectada!');
       return;
@@ -75,11 +75,16 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
 
     setIsSaving(true);
     try {
-      const rewardId = selectedRewardAccountId || selectedAccountIds[0];
+      const activeAccountId =
+        stream.selected_account_id && selectedAccountIds.includes(stream.selected_account_id)
+          ? stream.selected_account_id
+          : selectedAccountIds[0];
+
       const updated: StreamConfig = {
         ...stream,
+        channel_slug: cleanSlug,
         account_ids: selectedAccountIds,
-        selected_account_id: isKick ? rewardId : undefined,
+        selected_account_id: isKick ? activeAccountId : undefined,
         auto_start: autoStart,
       };
 
@@ -127,6 +132,22 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
 
         {/* Content */}
         <form onSubmit={handleSave} className="p-6 space-y-4">
+          {/* Stream Name / Link Input */}
+          <div>
+            <label className="block text-xs font-medium text-neutral-400 mb-1.5">
+              Nome do Canal ou Link
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="ex: pokeidle_streamer ou kick.com/streamer"
+              value={channelSlug}
+              onChange={(e) => setChannelSlug(e.target.value)}
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-indigo-500 transition"
+            />
+          </div>
+
+          {/* Accounts list */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-neutral-400">
@@ -151,7 +172,6 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {platformAccounts.map((acc) => {
                   const isChecked = selectedAccountIds.includes(acc.id);
-                  const isRewardActive = selectedRewardAccountId === acc.id;
                   const accPoints = status?.account_points?.[acc.id];
 
                   return (
@@ -188,28 +208,8 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
                         {/* Points badge if present */}
                         {isKick && isChecked && accPoints && (
                           <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-emerald-300">
-                            🪙 {accPoints}
+                            🪙 {formatPoints(accPoints)} pts
                           </span>
-                        )}
-
-                        {/* Kick reward selector */}
-                        {isKick && isChecked && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedRewardAccountId(acc.id);
-                            }}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer ${
-                              isRewardActive
-                                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-500/20'
-                                : 'bg-neutral-800 text-neutral-400 hover:text-white'
-                            }`}
-                            title="Esta conta será aberta ao clicar no botão de Resgate"
-                          >
-                            <Crown className="w-3 h-3" />
-                            <span>{isRewardActive ? 'Resgate Ativo' : 'Ativar Resgate'}</span>
-                          </button>
                         )}
                       </div>
                     </div>
@@ -221,7 +221,7 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
             <div className="mt-2.5 p-2.5 rounded-xl bg-neutral-950/80 border border-neutral-800/80 text-[11px] text-neutral-400 leading-relaxed">
               {isKick ? (
                 <span>
-                  💡 <strong>Kick Multi-Contas:</strong> Todas as contas marcadas rodam simultaneamente em perfis isolados acumulando pontos. O botão "Resgatar" abrirá a janela da conta marcada com <Crown className="w-3 h-3 inline text-emerald-400 mb-0.5" />.
+                  💡 <strong>Kick Multi-Contas:</strong> Todas as contas marcadas acumulam pontos de transmissão simultaneamente em segundo plano.
                 </span>
               ) : (
                 <span>
