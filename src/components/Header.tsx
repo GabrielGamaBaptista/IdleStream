@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { Play, Square, Activity, Cpu, Radio } from 'lucide-react';
+import packageJson from '../../package.json';
 
 export const Header: React.FC = () => {
   const { config, statuses, startAll, stopAll } = useAppStore();
@@ -27,7 +28,7 @@ export const Header: React.FC = () => {
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold text-white tracking-tight">IdleStream</h1>
             <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-mono">
-              v0.1.0
+              v{packageJson.version}
             </span>
           </div>
           <p className="text-xs text-neutral-400">Stream Presence & XP Manager</p>
