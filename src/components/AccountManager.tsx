@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/appStore';
 import { Users, Plus, Radio, Globe, Trash2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 
 export const AccountManager: React.FC = () => {
-  const { config, removeAccount, openKickLogin, startTwitchOAuth, setAddAccountOpen } = useAppStore();
+  const { config, removeAccount, openKickLogin, saveKickSession, startTwitchOAuth, setAddAccountOpen } = useAppStore();
 
   const handleTwitchAuth = async (accountId: string) => {
     try {
@@ -11,6 +11,15 @@ export const AccountManager: React.FC = () => {
       alert('Autenticação Twitch concluída e salva!');
     } catch (e: any) {
       alert(`Falha no login Twitch: ${e}`);
+    }
+  };
+
+  const handleSaveKick = async (accountId: string) => {
+    try {
+      await saveKickSession(accountId);
+      alert('Sessão da Kick capturada e salva com sucesso! Os cookies foram armazenados.');
+    } catch (e: any) {
+      alert(`Erro ao salvar sessão da Kick: ${e}`);
     }
   };
 
@@ -109,17 +118,22 @@ export const AccountManager: React.FC = () => {
                           <span>Pendente de autenticação</span>
                         </div>
                       )
-                    ) : (
+                    ) : account.kick_session ? (
                       <div className="flex items-center gap-1.5 text-xs text-emerald-400">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Perfil isolado ativo</span>
+                        <span>Sessão & Cookies autenticados</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-400">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Login pendente (abra e salve a sessão)</span>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* Account Action Buttons */}
-                <div className="mt-4 pt-3 border-t border-neutral-800">
+                <div className="mt-4 pt-3 border-t border-neutral-800 space-y-2">
                   {isTwitch ? (
                     <button
                       onClick={() => handleTwitchAuth(account.id)}
@@ -129,13 +143,23 @@ export const AccountManager: React.FC = () => {
                       <span>{hasToken ? 'Reautenticar Twitch' : 'Autenticar com Twitch'}</span>
                     </button>
                   ) : (
-                    <button
-                      onClick={() => openKickLogin(account.id)}
-                      className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-200 border border-emerald-800/60 text-xs font-medium transition cursor-pointer"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Fazer Login no Kick</span>
-                    </button>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        onClick={() => openKickLogin(account.id)}
+                        className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-200 border border-emerald-800/60 text-xs font-medium transition cursor-pointer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>{account.kick_session ? '1. Reabrir Janela Kick' : '1. Abrir Login no Kick'}</span>
+                      </button>
+                      <button
+                        onClick={() => handleSaveKick(account.id)}
+                        className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-emerald-600/30"
+                        title="Após logar na janela aberta, clique aqui para capturar os cookies e fechar a janela"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>2. Capturar & Salvar Sessão</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

@@ -26,6 +26,7 @@ interface AppState {
   removeAccount: (accountId: string) => Promise<void>;
   startTwitchOAuth: (accountId: string) => Promise<string>;
   openKickLogin: (accountId: string) => Promise<void>;
+  saveKickSession: (accountId: string) => Promise<void>;
 
   addStream: (stream: StreamConfig) => Promise<void>;
   updateStream: (stream: StreamConfig) => Promise<void>;
@@ -36,8 +37,6 @@ interface AppState {
   startAll: () => Promise<void>;
   stopAll: () => Promise<void>;
 
-  toggleKickVisibility: (streamId: string) => Promise<void>;
-  openKickRewards: (streamId: string) => Promise<void>;
   updateSettings: (settings: AppSettings) => Promise<void>;
 }
 
@@ -76,7 +75,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchConfig();
       await get().fetchStatuses();
 
-      // Listen to backend stream status changes
+      // Listen to backend stream status changes (event-driven, 0% CPU polling)
       await listen<StreamRuntimeStatus>('stream-status-update', (event) => {
         const status = event.payload;
         set((state) => ({
@@ -86,11 +85,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         }));
       });
-
-      // Ticker for smooth uptime counter and statuses refresh
-      setInterval(() => {
-        get().fetchStatuses();
-      }, 1000);
 
       set({ isInitialized: true });
     } catch (err) {
@@ -140,6 +134,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     await invoke('open_kick_login', { accountId });
   },
 
+  saveKickSession: async (accountId) => {
+    const updated = await invoke<AppConfig>('save_kick_session', { accountId });
+    set({ config: updated });
+  },
+
   addStream: async (stream) => {
     const updated = await invoke<AppConfig>('add_stream', { stream });
     set({ config: updated });
@@ -182,22 +181,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   stopAll: async () => {
     await invoke('stop_all_streams');
     await get().fetchStatuses();
-  },
-
-  toggleKickVisibility: async (streamId) => {
-    const current = get().visibleKickWindows[streamId] || false;
-    const next = !current;
-    await invoke('toggle_kick_window_visibility', { streamId, visible: next });
-    set((state) => ({
-      visibleKickWindows: {
-        ...state.visibleKickWindows,
-        [streamId]: next,
-      },
-    }));
-  },
-
-  openKickRewards: async (streamId) => {
-    await invoke('open_kick_rewards', { streamId });
   },
 
   updateSettings: async (settings) => {

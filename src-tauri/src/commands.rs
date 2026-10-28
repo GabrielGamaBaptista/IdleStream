@@ -3,7 +3,7 @@ use crate::kick::KickManager;
 use crate::state::AppState;
 use crate::twitch::run_oauth_flow;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 type StateHandle<'a> = State<'a, Arc<AppState>>;
 
@@ -274,49 +274,28 @@ pub async fn open_kick_login(
 }
 
 #[tauri::command]
-pub async fn toggle_kick_window_visibility(
+pub async fn save_kick_session(
     app: AppHandle,
     state: StateHandle<'_>,
-    stream_id: String,
-    visible: bool,
-) -> Result<(), String> {
-    let account_id = {
-        let cfg = state.config.lock().await;
-        cfg.streams
-            .iter()
-            .find(|s| s.id == stream_id)
-            .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
-            .unwrap_or_default()
-    };
-
-    KickManager::set_stream_visibility(&app, &stream_id, &account_id, visible)
-}
-
-#[tauri::command]
-pub async fn open_kick_rewards(
-    app: AppHandle,
-    state: StateHandle<'_>,
-    stream_id: String,
-) -> Result<(), String> {
-    let account_id = {
-        let cfg = state.config.lock().await;
-        cfg.streams
-            .iter()
-            .find(|s| s.id == stream_id)
-            .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
-            .unwrap_or_default()
-    };
-
-    KickManager::open_rewards_modal(&app, &stream_id, &account_id)
-}
-
-#[tauri::command]
-pub async fn report_kick_points(
-    state: StateHandle<'_>,
-    stream_id: String,
     account_id: String,
-    points: String,
-) -> Result<(), String> {
-    state.update_points(&stream_id, &account_id, &points).await;
-    Ok(())
+) -> Result<AppConfig, String> {
+    let creds = KickManager::extract_cookies_native(&app, &account_id)?;
+
+    let mut cfg = state.config.lock().await;
+    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.kick_session = Some(creds.kick_session);
+        acc.xsrf_token = Some(creds.xsrf_token);
+        if let Some(st) = creds.session_token {
+            acc.session_token = Some(st);
+        }
+        state.config_store.save(&cfg)?;
+    }
+
+    // Fecha a janela de login após salvar a sessão com sucesso
+    let label = format!("kick_login_{}", account_id);
+    if let Some(win) = app.get_webview_window(&label) {
+        let _ = win.destroy();
+    }
+
+    Ok(cfg.clone())
 }

@@ -6,6 +6,9 @@ export interface Account {
   label: string;
   username: string;
   oauth_token?: string;
+  kick_session?: string;
+  xsrf_token?: string;
+  session_token?: string;
   enabled: boolean;
 }
 

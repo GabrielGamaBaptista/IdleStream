@@ -143,9 +143,7 @@ pub fn run() {
             get_all_stream_statuses,
             start_twitch_oauth,
             open_kick_login,
-            toggle_kick_window_visibility,
-            open_kick_rewards,
-            report_kick_points,
+            save_kick_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

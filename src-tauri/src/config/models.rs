@@ -15,6 +15,12 @@ pub struct Account {
     pub label: String,               // e.g. "Main Account", "Smurf 1"
     pub username: String,            // Twitch username or Kick display username
     pub oauth_token: Option<String>, // Twitch oauth token (without "oauth:" prefix)
+    #[serde(default)]
+    pub kick_session: Option<String>, // Kick authentication session cookie
+    #[serde(default)]
+    pub xsrf_token: Option<String>,   // Kick XSRF-TOKEN cookie
+    #[serde(default)]
+    pub session_token: Option<String>, // Kick Bearer session token
     pub enabled: bool,
 }
 

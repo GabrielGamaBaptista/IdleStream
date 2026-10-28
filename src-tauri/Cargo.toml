@@ -1,6 +1,6 @@
 [package]
 name = "idlestream"
-version = "0.1.0"
+version = "2.0.0"
 description = "IdleStream - Multi-Platform Stream Presence & XP Manager"
 authors = ["ggb"]
 edition = "2021"
@@ -26,6 +26,7 @@ open = "5"
 tiny_http = "0.12"
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+urlencoding = "2"
 
 [profile.release]
 codegen-units = 1

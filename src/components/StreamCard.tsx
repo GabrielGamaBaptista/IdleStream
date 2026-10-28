@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { StreamConfig } from '../types';
 import { useAppStore } from '../stores/appStore';
 import { formatUptime } from '../utils/format';
@@ -6,13 +6,10 @@ import {
   Play,
   Square,
   Trash2,
-  Eye,
-  EyeOff,
   Radio,
   AlertCircle,
   Clock,
   Cpu,
-  Gift,
   Moon,
   Pencil,
   Crown,
@@ -32,9 +29,6 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
     stopStream,
     removeStream,
     setSelectedAccount,
-    toggleKickVisibility,
-    openKickRewards,
-    visibleKickWindows,
   } = useAppStore();
 
   const status = statuses[stream.id] || {
@@ -55,11 +49,25 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   const isStandby = status.status === 'standby';
   const isConnecting = status.status === 'connecting';
   const isError = status.status === 'error';
-  const isKickVisible = visibleKickWindows[stream.id] || false;
 
   const isTwitch = stream.platform === 'twitch';
   const selectedRewardId = stream.selected_account_id || accountIds[0];
-  const selectedRewardAccount = streamAccounts.find((a) => a.id === selectedRewardId);
+
+  const [uptimeSecs, setUptimeSecs] = useState<number>(status.uptime_seconds || 0);
+
+  useEffect(() => {
+    if (isConnected && status.connected_at) {
+      const update = () => {
+        const now = Math.floor(Date.now() / 1000);
+        setUptimeSecs(Math.max(0, now - status.connected_at!));
+      };
+      update();
+      const interval = setInterval(update, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setUptimeSecs(0);
+    }
+  }, [isConnected, status.connected_at]);
 
   return (
     <div
@@ -83,7 +91,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
               }`}
             >
               <Radio className="w-3 h-3" />
-              {isTwitch ? 'Twitch (IRC)' : 'Kick (Live)'}
+              {isTwitch ? 'Twitch (IRC)' : 'Kick (WebSocket)'}
             </span>
 
             {stream.auto_start && (
@@ -98,11 +106,11 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             <div
               className={`w-2 h-2 rounded-full ${
                 isConnected
-                  ? 'bg-emerald-400 animate-pulse'
+                  ? 'bg-emerald-400'
                   : isStandby
                   ? 'bg-indigo-400'
                   : isConnecting
-                  ? 'bg-amber-400 animate-ping'
+                  ? 'bg-amber-400'
                   : isError
                   ? 'bg-rose-500'
                   : 'bg-neutral-600'
@@ -161,11 +169,6 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
                 {streamAccounts.length} conta{streamAccounts.length !== 1 ? 's' : ''} vinculada{streamAccounts.length !== 1 ? 's' : ''}
               </span>
             </span>
-            {!isTwitch && streamAccounts.length > 1 && (
-              <span className="text-[10px] text-neutral-500">
-                Toque p/ alternar resgate
-              </span>
-            )}
           </div>
 
           {streamAccounts.length === 0 ? (
@@ -174,7 +177,6 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-0.5">
               {streamAccounts.map((acc) => {
                 const isSelectedReward = !isTwitch && selectedRewardId === acc.id;
-                const accPoints = status.account_points?.[acc.id];
 
                 return (
                   <div
@@ -193,51 +195,19 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
                         ? 'bg-purple-950/30 border-purple-900/40 text-purple-200'
                         : 'bg-neutral-900 border-neutral-800 text-neutral-300'
                     }`}
-                    title={
-                      !isTwitch
-                        ? isSelectedReward
-                          ? `Conta ativa para resgates: ${acc.label}`
-                          : `Clique para definir "${acc.label}" como ativa para resgate`
-                        : `${acc.label} (@${acc.username})`
-                    }
+                    title={`${acc.label} (@${acc.username})`}
                   >
                     {isSelectedReward && (
                       <Crown className="w-3 h-3 text-emerald-400 flex-shrink-0" />
                     )}
                     <span className="font-medium truncate max-w-[100px]">{acc.label}</span>
                     <span className="text-neutral-500 text-[10px]">@{acc.username}</span>
-                    {!isTwitch && accPoints && (
-                      <span className="ml-1 text-[10px] text-emerald-400 font-mono">
-                        🪙{accPoints}
-                      </span>
-                    )}
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-
-        {/* Kick Channel Points & Resgatar Badge */}
-        {!isTwitch && isConnected && (
-          <div className="mt-2.5 flex items-center justify-between bg-emerald-950/40 border border-emerald-800/50 rounded-lg px-2.5 py-1.5">
-            <div className="flex items-center gap-1.5 text-xs text-emerald-300 truncate">
-              <span className="text-sm">🪙</span>
-              <span className="font-semibold truncate">
-                {status.channel_points || 'Acumulando...'}
-                {selectedRewardAccount ? ` (${selectedRewardAccount.label})` : ''}
-              </span>
-            </div>
-            <button
-              onClick={() => openKickRewards(stream.id)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer shadow-sm shadow-emerald-500/20 flex-shrink-0"
-              title={`Abrir janela para resgatar pontos na conta ${selectedRewardAccount?.label || ''}`}
-            >
-              <Gift className="w-3 h-3" />
-              <span>Resgatar</span>
-            </button>
-          </div>
-        )}
 
         {/* Error message banner */}
         {isError && status.message && (
@@ -260,7 +230,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
           <div className="flex items-center gap-1.5 text-neutral-400">
             <Clock className="w-3.5 h-3.5 text-neutral-500" />
             <span className="text-neutral-200">
-              {isConnected ? formatUptime(status.uptime_seconds) : '--:--:--'}
+              {isConnected ? formatUptime(uptimeSecs) : '--:--:--'}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-neutral-400 justify-end">
@@ -292,21 +262,6 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Ativar</span>
-            </button>
-          )}
-
-          {/* Kick visible window toggle */}
-          {!isTwitch && isConnected && (
-            <button
-              onClick={() => toggleKickVisibility(stream.id)}
-              title={isKickVisible ? 'Ocultar janela de vídeo' : 'Exibir janela de vídeo'}
-              className={`p-1.5 rounded-lg border text-xs transition cursor-pointer ${
-                isKickVisible
-                  ? 'bg-emerald-950/70 border-emerald-700 text-emerald-300'
-                  : 'bg-neutral-800/80 border-neutral-700/80 text-neutral-400 hover:text-white'
-              }`}
-            >
-              {isKickVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
           )}
         </div>

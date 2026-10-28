@@ -50,7 +50,8 @@ impl TwitchSession {
 
                         let pass_cmd = format!("PASS oauth:{}\r\n", clean_token);
                         let nick_cmd = format!("NICK {}\r\n", clean_username);
-                        let cap_cmd = "CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands\r\n";
+                        // Solicitar apenas membership (presença). Remove o flood massivo de tags de chat que sobrecarregava CPU e RAM durante a noite
+                        let cap_cmd = "CAP REQ :twitch.tv/membership\r\n";
                         let join_cmd = format!("JOIN #{}\r\n", clean_channel);
 
                         let mut auth_ok = true;

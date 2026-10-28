@@ -80,6 +80,9 @@ mod tests {
             label: "Main Twitch".into(),
             username: "tester".into(),
             oauth_token: Some("token123".into()),
+            kick_session: None,
+            xsrf_token: None,
+            session_token: None,
             enabled: true,
         });
 
@@ -175,6 +178,9 @@ mod tests {
             label: "Main".into(),
             username: "main_user".into(),
             oauth_token: None,
+            kick_session: None,
+            xsrf_token: None,
+            session_token: None,
             enabled: true,
         });
 
@@ -184,6 +190,9 @@ mod tests {
             label: "Alt 1".into(),
             username: "alt_user".into(),
             oauth_token: None,
+            kick_session: None,
+            xsrf_token: None,
+            session_token: None,
             enabled: true,
         });
 

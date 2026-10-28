@@ -1,7 +1,6 @@
 use crate::config::{
     AppConfig, ConfigStore, Platform, StatusKind, StreamRuntimeStatus,
 };
-use crate::kick::KickManager;
 use crate::live_check::{check_kick_live, check_twitch_live};
 use crate::twitch::{TwitchSession, TwitchSessionConfig};
 use chrono::Utc;
@@ -15,6 +14,7 @@ pub struct AppState {
     pub config: Mutex<AppConfig>,
     pub config_store: ConfigStore,
     pub twitch_sessions: Mutex<HashMap<String, TwitchSession>>,
+    pub kick_watchers: Mutex<HashMap<String, crate::kick::watcher::KickWatcherHandle>>,
     pub statuses: Mutex<HashMap<String, StreamRuntimeStatus>>,
     pub http_client: reqwest::Client,
     pub app_handle: AppHandle,
@@ -52,6 +52,7 @@ impl AppState {
             config: Mutex::new(config),
             config_store,
             twitch_sessions: Mutex::new(HashMap::new()),
+            kick_watchers: Mutex::new(HashMap::new()),
             statuses: Mutex::new(statuses),
             http_client,
             app_handle,
@@ -102,7 +103,11 @@ impl AppState {
             sess.stop();
         }
         drop(sessions);
-        KickManager::stop_stream_account(&self.app_handle, stream_id, account_id);
+
+        let mut kick_watchers = self.kick_watchers.lock().await;
+        if let Some(mut watcher) = kick_watchers.remove(&session_key) {
+            watcher.stop();
+        }
     }
 
     pub async fn get_all_statuses(&self) -> Vec<StreamRuntimeStatus> {
@@ -297,37 +302,104 @@ impl AppState {
                 Ok(())
             }
             Platform::Kick => {
+                let this = Arc::clone(self);
+                let mut started_count = 0;
+
                 for account in accounts {
-                    KickManager::start_stream(
-                        &self.app_handle,
-                        stream_id,
-                        &account.id,
-                        channel_slug,
-                        false,
-                    )?;
+                    let session_token = match &account.session_token {
+                        Some(t) if !t.is_empty() => t.clone(),
+                        _ => {
+                            eprintln!("[Kick] Conta '{}' sem session_token configurado.", account.label);
+                            continue;
+                        }
+                    };
+
+                    let session_key = format!("{}:{}", stream_id, account.id);
+                    {
+                        let mut watchers = self.kick_watchers.lock().await;
+                        if let Some(mut existing) = watchers.remove(&session_key) {
+                            existing.stop();
+                        }
+                    }
+
+                    let this_inner = Arc::clone(&this);
+                    let s_id = stream_id.to_string();
+                    let a_id = account.id.clone();
+
+                    let on_status: crate::kick::watcher::StatusCallback = Arc::new(
+                        move |status_kind, msg, points| {
+                            let this_cb = Arc::clone(&this_inner);
+                            let s_id_cb = s_id.clone();
+                            let a_id_cb = a_id.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let now = Utc::now().timestamp();
+                                let mut map = this_cb.statuses.lock().await;
+                                if let Some(current) = map.get_mut(&s_id_cb) {
+                                    let is_conn = status_kind == StatusKind::Connected;
+                                    current.status = status_kind;
+                                    current.message = msg;
+                                    current.estimated_ram_mb = 1;
+                                    if is_conn {
+                                        current.is_live = true;
+                                        if current.connected_at.is_none() {
+                                            current.connected_at = Some(now);
+                                        }
+                                    }
+                                    if let Some(pts) = points {
+                                        let pts_str = pts.to_string();
+                                        current.account_points.insert(a_id_cb.clone(), pts_str.clone());
+                                        current.channel_points = Some(pts_str);
+                                    }
+                                    let cloned = current.clone();
+                                    drop(map);
+                                    this_cb.emit_status(&cloned).await;
+                                }
+                            });
+                        },
+                    );
+
+                    let watcher = crate::kick::watcher::start_kick_watcher(
+                        stream_id.to_string(),
+                        account.id.clone(),
+                        session_token,
+                        channel_slug.to_string(),
+                        on_status,
+                    );
+
+                    self.kick_watchers.lock().await.insert(session_key, watcher);
+                    started_count += 1;
+                }
+
+                if started_count == 0 {
+                    let mut stat_lock = self.statuses.lock().await;
+                    let st = StreamRuntimeStatus {
+                        stream_id: stream_id.to_string(),
+                        status: StatusKind::Error,
+                        is_live: true,
+                        message: Some("Nenhuma conta com login da Kick configurado. Vá em 'Contas' e faça o login.".into()),
+                        uptime_seconds: 0,
+                        estimated_ram_mb: 0,
+                        connected_at: None,
+                        channel_points: None,
+                        account_points: HashMap::new(),
+                    };
+                    stat_lock.insert(stream_id.to_string(), st.clone());
+                    drop(stat_lock);
+                    self.emit_status(&st).await;
+                    return Err("Nenhuma conta Kick autenticada com cookies válidos".into());
                 }
 
                 let now = Utc::now().timestamp();
-                let (prev_points, prev_account_points) = {
-                    let map = self.statuses.lock().await;
-                    if let Some(s) = map.get(stream_id) {
-                        (s.channel_points.clone(), s.account_points.clone())
-                    } else {
-                        (None, HashMap::new())
-                    }
-                };
-
-                let ram = (accounts.len() as u32) * 60;
                 let status = StreamRuntimeStatus {
                     stream_id: stream_id.to_string(),
-                    status: StatusKind::Connected,
+                    status: StatusKind::Connecting,
                     is_live: true,
-                    message: None,
+                    message: Some("Iniciando watcher nativo da Kick...".into()),
                     uptime_seconds: 0,
-                    estimated_ram_mb: ram,
+                    estimated_ram_mb: (started_count as u32) * 1,
                     connected_at: Some(now),
-                    channel_points: prev_points,
-                    account_points: prev_account_points,
+                    channel_points: None,
+                    account_points: HashMap::new(),
                 };
 
                 self.statuses.lock().await.insert(stream_id.to_string(), status.clone());
@@ -353,7 +425,20 @@ impl AppState {
             }
         }
 
-        KickManager::stop_stream(&self.app_handle, stream_id);
+        {
+            let prefix = format!("{}:", stream_id);
+            let mut watchers = self.kick_watchers.lock().await;
+            let keys: Vec<String> = watchers
+                .keys()
+                .filter(|k| k.starts_with(&prefix) || *k == stream_id)
+                .cloned()
+                .collect();
+            for k in keys {
+                if let Some(mut watcher) = watchers.remove(&k) {
+                    watcher.stop();
+                }
+            }
+        }
 
         let (prev_points, prev_account_points) = {
             let map = self.statuses.lock().await;
@@ -426,7 +511,18 @@ impl AppState {
                     } else if curr.status == StatusKind::Connected && !is_live {
                         // Stream went OFFLINE! Stop players to free up RAM, transition to Standby
                         if stream.platform == Platform::Kick {
-                            KickManager::stop_stream(&this.app_handle, &stream.id);
+                            let prefix = format!("{}:", stream.id);
+                            let mut watchers = this.kick_watchers.lock().await;
+                            let keys: Vec<String> = watchers
+                                .keys()
+                                .filter(|k| k.starts_with(&prefix) || k.as_str() == stream.id)
+                                .cloned()
+                                .collect();
+                            for k in keys {
+                                if let Some(mut watcher) = watchers.remove(&k) {
+                                    watcher.stop();
+                                }
+                            }
                         } else {
                             let prefix = format!("{}:", stream.id);
                             let mut sessions = this.twitch_sessions.lock().await;
