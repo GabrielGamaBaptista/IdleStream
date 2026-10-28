@@ -118,7 +118,7 @@ export const AccountManager: React.FC = () => {
                           <span>Pendente de autenticação</span>
                         </div>
                       )
-                    ) : account.kick_session ? (
+                    ) : (account.kick_session || account.session_token) ? (
                       <div className="flex items-center gap-1.5 text-xs text-emerald-400">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Sessão & Cookies autenticados</span>
@@ -149,7 +149,7 @@ export const AccountManager: React.FC = () => {
                         className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-200 border border-emerald-800/60 text-xs font-medium transition cursor-pointer"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>{account.kick_session ? '1. Reabrir Janela Kick' : '1. Abrir Login no Kick'}</span>
+                        <span>{(account.kick_session || account.session_token) ? '1. Reabrir Janela Kick' : '1. Abrir Login no Kick'}</span>
                       </button>
                       <button
                         onClick={() => handleSaveKick(account.id)}

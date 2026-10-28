@@ -65,11 +65,11 @@ impl KickManager {
 
         for cookie in cookies {
             let name = cookie.name();
-            if name == "kick_session" {
+            if name.eq_ignore_ascii_case("kick_session") {
                 session = Some(cookie.value().to_string());
-            } else if name == "XSRF-TOKEN" {
+            } else if name.eq_ignore_ascii_case("XSRF-TOKEN") {
                 xsrf = Some(cookie.value().to_string());
-            } else if name == "session_token" {
+            } else if name.eq_ignore_ascii_case("session_token") {
                 let val = cookie.value().to_string();
                 let decoded = urlencoding::decode(&val)
                     .unwrap_or(std::borrow::Cow::Borrowed(&val))
@@ -78,20 +78,22 @@ impl KickManager {
             }
         }
 
-        match (session, xsrf) {
-            (Some(s), Some(x)) => {
-                if s.is_empty() || x.is_empty() {
+        // O cookie essencial para farmar e monitorar lives autenticado na Kick é o `session_token`.
+        // A Kick moderna não requer nem emite o cookie 'XSRF-TOKEN'.
+        match (session, session_token) {
+            (Some(s), Some(st)) => {
+                if s.is_empty() || st.is_empty() {
                     Err("Cookies da Kick encontrados, mas vazios. Conclua o login na janela primeiro.".into())
                 } else {
                     Ok(KickCredentials {
                         kick_session: s,
-                        xsrf_token: x,
-                        session_token,
+                        xsrf_token: xsrf,
+                        session_token: Some(st),
                     })
                 }
             }
-            (None, _) => Err("Cookie 'kick_session' ainda não encontrado. Faça o login na janela aberta.".into()),
-            (_, None) => Err("Cookie 'XSRF-TOKEN' ainda não encontrado. Aguarde o carregamento da página da Kick.".into()),
+            (None, _) => Err("Sessão da Kick ('kick_session') ainda não encontrada. Faça o login na janela aberta.".into()),
+            (_, None) => Err("Login da Kick ainda não concluído. Conclua o login com seu usuário e senha na janela aberta e aguarde a página carregar.".into()),
         }
     }
 }

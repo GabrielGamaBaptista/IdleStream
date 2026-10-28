@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KickCredentials {
     pub kick_session: String,
-    pub xsrf_token: String,
+    pub xsrf_token: Option<String>,
     pub session_token: Option<String>,
 }
 
@@ -14,12 +14,11 @@ pub async fn authenticate_pusher_channel(
     socket_id: &str,
     channel_name: &str,
 ) -> Result<String, String> {
-    let decoded_xsrf = urlencoding::decode(&creds.xsrf_token)
-        .map_err(|e| format!("XSRF decode error: {}", e))?
-        .into_owned();
-
     let kick_session = creds.kick_session.clone();
-    let xsrf_raw = creds.xsrf_token.clone();
+    let xsrf_raw = creds.xsrf_token.clone().unwrap_or_default();
+    let decoded_xsrf = urlencoding::decode(&xsrf_raw)
+        .unwrap_or(std::borrow::Cow::Borrowed(&xsrf_raw))
+        .into_owned();
     let sid = socket_id.to_string();
     let ch = channel_name.to_string();
 

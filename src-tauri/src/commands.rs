@@ -284,7 +284,7 @@ pub async fn save_kick_session(
     let mut cfg = state.config.lock().await;
     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
         acc.kick_session = Some(creds.kick_session);
-        acc.xsrf_token = Some(creds.xsrf_token);
+        acc.xsrf_token = creds.xsrf_token;
         if let Some(st) = creds.session_token {
             acc.session_token = Some(st);
         }
