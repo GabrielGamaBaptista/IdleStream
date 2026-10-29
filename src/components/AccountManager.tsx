@@ -143,7 +143,11 @@ export const AccountManager: React.FC = () => {
                   {isTwitch ? (
                     <button
                       onClick={() => handleTwitchAuth(account.id)}
-                      className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 text-purple-200 border border-purple-800/60 text-xs font-medium transition cursor-pointer"
+                      className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition cursor-pointer shadow-sm ${
+                        hasToken
+                          ? 'bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 border border-purple-800/60'
+                          : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30'
+                      }`}
                     >
                       <Globe className="w-3.5 h-3.5" />
                       <span>{hasToken ? 'Reautenticar Twitch' : 'Autenticar com Twitch'}</span>

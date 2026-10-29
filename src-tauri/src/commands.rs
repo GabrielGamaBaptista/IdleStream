@@ -255,17 +255,25 @@ pub async fn start_twitch_oauth(
     account_id: String,
     client_id: Option<String>,
 ) -> Result<String, String> {
-    let token = tauri::async_runtime::spawn_blocking(move || run_oauth_flow(client_id))
-        .await
-        .map_err(|e| e.to_string())??;
-
-    let mut cfg = state.config.lock().await;
-    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
-        acc.oauth_token = Some(token.clone());
-        state.config_store.save(&cfg)?;
+    #[cfg(target_os = "android")]
+    {
+        return Err("No Android, a autenticação da Twitch deve ser realizada via TwitchLoginActivity.".to_string());
     }
 
-    Ok(token)
+    #[cfg(not(target_os = "android"))]
+    {
+        let token = tauri::async_runtime::spawn_blocking(move || run_oauth_flow(client_id))
+            .await
+            .map_err(|e| e.to_string())??;
+
+        let mut cfg = state.config.lock().await;
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+            acc.oauth_token = Some(token.clone());
+            state.config_store.save(&cfg)?;
+        }
+
+        Ok(token)
+    }
 }
 
 #[tauri::command]

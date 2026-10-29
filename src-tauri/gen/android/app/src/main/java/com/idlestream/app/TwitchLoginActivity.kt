@@ -47,11 +47,17 @@ class TwitchLoginActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
+        settings.javaScriptCanOpenWindowsAutomatically = true
+        settings.setSupportMultipleWindows(false)
 
         val originalUa = settings.userAgentString
         settings.userAgentString = originalUa
             .replace("; wv", "")
             .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
+
+        val cookieManager = android.webkit.CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -70,6 +76,14 @@ class TwitchLoginActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: ""
                 return checkInterceptUrl(url)
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                if (url != null && checkInterceptUrl(url)) {
+                    return true
+                }
+                return false
             }
         }
 

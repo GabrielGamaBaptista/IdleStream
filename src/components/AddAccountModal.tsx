@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { Platform } from '../types';
 import { X, Users, Radio, Key, Globe, Plus } from 'lucide-react';
@@ -12,12 +12,35 @@ export const AddAccountModal: React.FC = () => {
   const [oauthToken, setOauthToken] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
+  const isAndroid = typeof window !== 'undefined' && Boolean(window.AndroidBridge);
+
+  // Hook to capture token if authenticated via Android Twitch Activity inside this modal
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const prevCallback = window.__onAndroidTwitchAuth;
+      window.__onAndroidTwitchAuth = (accId: string, token: string) => {
+        setOauthToken(token);
+        setIsAuthenticating(false);
+        if (prevCallback) {
+          prevCallback(accId, token);
+        }
+      };
+      return () => {
+        window.__onAndroidTwitchAuth = prevCallback;
+      };
+    }
+  }, []);
+
   if (!isAddAccountOpen) return null;
 
   const handleTwitchBrowserAuth = async () => {
+    if (isAndroid && window.AndroidBridge && typeof window.AndroidBridge.openTwitchLogin === 'function') {
+      window.AndroidBridge.openTwitchLogin('temp_add_account');
+      return;
+    }
+
     setIsAuthenticating(true);
     try {
-      // Temporary account id for flow
       const tempId = crypto.randomUUID();
       const token = await startTwitchOAuth(tempId);
       if (token) {
@@ -141,11 +164,17 @@ export const AddAccountModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleTwitchBrowserAuth}
-                  disabled={isAuthenticating}
-                  className="flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition cursor-pointer"
+                  disabled={!isAndroid && isAuthenticating}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 text-purple-200 border border-purple-800/60 text-xs font-medium transition cursor-pointer"
                 >
                   <Globe className="w-3.5 h-3.5" />
-                  <span>{isAuthenticating ? 'Aguardando no navegador...' : 'Gerar via Navegador'}</span>
+                  <span>
+                    {isAndroid
+                      ? 'Autenticar com Twitch (In-App)'
+                      : isAuthenticating
+                      ? 'Aguardando no navegador...'
+                      : 'Gerar via Navegador'}
+                  </span>
                 </button>
               </div>
 
@@ -155,15 +184,33 @@ export const AddAccountModal: React.FC = () => {
                 </div>
                 <input
                   type="password"
-                  placeholder="Cole aqui seu token OAuth (ou use o botão acima)"
+                  placeholder={
+                    oauthToken
+                      ? '✓ Token configurado com sucesso'
+                      : isAndroid
+                      ? 'Toque em "Autenticar com Twitch" acima (ou salve e autentique depois)'
+                      : 'Cole aqui seu token OAuth (ou use o botão acima)'
+                  }
                   value={oauthToken}
                   onChange={(e) => setOauthToken(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-purple-500 transition font-mono"
+                  className={`w-full bg-neutral-950 border rounded-xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:outline-none transition font-mono ${
+                    oauthToken
+                      ? 'border-emerald-500/60 text-emerald-300'
+                      : 'border-neutral-800 focus:border-purple-500'
+                  }`}
                 />
               </div>
-              <p className="text-[11px] text-neutral-500">
-                Você pode usar o botão "Gerar via Navegador" ou colar um token gerado (ex: twitchapps.com/tmi).
-              </p>
+              {oauthToken ? (
+                <p className="text-[11px] text-emerald-400 flex items-center gap-1">
+                  ✓ Token OAuth capturado com sucesso!
+                </p>
+              ) : (
+                <p className="text-[11px] text-neutral-500">
+                  {isAndroid
+                    ? 'Toque em "Autenticar com Twitch" acima para logar no app, ou cadastre a conta e autentique depois na lista.'
+                    : 'Você pode usar o botão "Gerar via Navegador" ou colar um token gerado (ex: twitchapps.com/tmi).'}
+                </p>
+              )}
             </div>
           ) : (
             <div className="pt-2 border-t border-neutral-800">

@@ -17,7 +17,8 @@ pub fn run_oauth_flow(custom_client_id: Option<String>) -> Result<String, String
         client_id, redirect_uri
     );
 
-    // Open user's default browser
+    // Open user's default browser (Desktop only)
+    #[cfg(not(target_os = "android"))]
     if let Err(e) = open::that(&auth_url) {
         return Err(format!("Failed to open browser: {}", e));
     }
