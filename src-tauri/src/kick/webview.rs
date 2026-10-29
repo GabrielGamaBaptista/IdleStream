@@ -26,21 +26,29 @@ impl KickManager {
             return Ok(());
         }
 
-        let profile_dir = Self::get_profile_dir(app, account_id);
-        let url_parsed = "https://kick.com/login"
-            .parse()
-            .map_err(|e| format!("URL error: {}", e))?;
+        #[cfg(desktop)]
+        {
+            let profile_dir = Self::get_profile_dir(app, account_id);
+            let url_parsed = "https://kick.com/login"
+                .parse()
+                .map_err(|e| format!("URL error: {}", e))?;
 
-        let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
-            .title(format!("IdleStream - Login Kick ({})", account_label))
-            .data_directory(profile_dir)
-            .inner_size(900.0, 700.0)
-            .center()
-            .visible(true);
+            let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
+                .title(format!("IdleStream - Login Kick ({})", account_label))
+                .data_directory(profile_dir)
+                .inner_size(900.0, 700.0)
+                .center()
+                .visible(true);
 
-        builder
-            .build()
-            .map_err(|e| format!("Failed to create Kick login window: {}", e))?;
+            builder
+                .build()
+                .map_err(|e| format!("Failed to create Kick login window: {}", e))?;
+        }
+
+        #[cfg(not(desktop))]
+        {
+            let _ = (app, account_id, account_label);
+        }
 
         Ok(())
     }

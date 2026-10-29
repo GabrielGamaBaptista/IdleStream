@@ -22,7 +22,7 @@ export const StatusBar: React.FC = () => {
     .reduce((acc, curr) => acc + curr.estimated_ram_mb, 30);
 
   return (
-    <footer className="h-9 border-t border-neutral-800 bg-neutral-900/90 px-6 flex items-center justify-between text-xs text-neutral-400 select-none">
+    <footer className="hidden md:flex h-9 border-t border-neutral-800 bg-neutral-900/90 px-6 items-center justify-between text-xs text-neutral-400 select-none">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-purple-500" />

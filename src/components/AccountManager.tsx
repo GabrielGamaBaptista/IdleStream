@@ -5,7 +5,13 @@ import { Users, Plus, Radio, Globe, Trash2, CheckCircle2, AlertTriangle, Externa
 export const AccountManager: React.FC = () => {
   const { config, removeAccount, openKickLogin, saveKickSession, startTwitchOAuth, setAddAccountOpen } = useAppStore();
 
+  const isAndroid = typeof window !== 'undefined' && Boolean(window.AndroidBridge);
+
   const handleTwitchAuth = async (accountId: string) => {
+    if (window.AndroidBridge && typeof window.AndroidBridge.openTwitchLogin === 'function') {
+      window.AndroidBridge.openTwitchLogin(accountId);
+      return;
+    }
     try {
       await startTwitchOAuth(accountId);
       alert('Autenticação Twitch concluída e salva!');
@@ -26,16 +32,16 @@ export const AccountManager: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Tab Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Gerenciamento de Contas</h2>
-          <p className="text-xs text-neutral-400 mt-1">
-            Cadastre suas contas principais e smurfs da Twitch e Kick. Cada conta Kick mantém sua sessão e cookies em pastas isoladas.
+          <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Gerenciamento de Contas</h2>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Cadastre suas contas da Twitch e Kick com sessões isoladas.
           </p>
         </div>
         <button
           onClick={() => setAddAccountOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-600/20 cursor-pointer"
+          className="self-start sm:self-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-600/20 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Nova Conta</span>
@@ -141,6 +147,18 @@ export const AccountManager: React.FC = () => {
                     >
                       <Globe className="w-3.5 h-3.5" />
                       <span>{hasToken ? 'Reautenticar Twitch' : 'Autenticar com Twitch'}</span>
+                    </button>
+                  ) : isAndroid ? (
+                    <button
+                      onClick={() => window.AndroidBridge?.openKickLogin(account.id, account.label)}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-emerald-600/30"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>
+                        {account.kick_session || account.session_token
+                          ? 'Reautenticar Kick'
+                          : 'Fazer Login no Kick'}
+                      </span>
                     </button>
                   ) : (
                     <div className="flex flex-col gap-1.5">

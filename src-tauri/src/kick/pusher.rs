@@ -15,34 +15,60 @@ pub async fn resolve_chatroom_id(channel_slug: &str) -> Result<u64, String> {
     let clean = channel_slug.trim().trim_start_matches('/').to_lowercase();
     let url = format!("{}{}", KICK_API_CHANNEL, clean);
 
-    tokio::task::spawn_blocking(move || {
-        let mut cmd = std::process::Command::new("curl.exe");
-        cmd.args([
-            "-s", "-m", "10",
-            "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            &url,
-        ]);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap_or_default();
 
-        #[cfg(target_os = "windows")]
-        {
+    if let Ok(resp) = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .header("Accept", "application/json")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(v) = resp.json::<serde_json::Value>().await {
+                if let Some(id) = v["chatroom"]["id"].as_u64() {
+                    return Ok(id);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = std::process::Command::new("curl.exe");
+            cmd.args([
+                "-s", "-m", "10",
+                "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                &url,
+            ]);
+
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // Sem janela de console
-        }
 
-        match cmd.output() {
-            Ok(out) if out.status.success() => {
-                let v: serde_json::Value = serde_json::from_slice(&out.stdout)
-                    .map_err(|e| format!("JSON parse error: {}", e))?;
-                v["chatroom"]["id"].as_u64().ok_or_else(|| {
-                    format!("chatroom.id ausente na resposta da API para {}", clean)
-                })
+            match cmd.output() {
+                Ok(out) if out.status.success() => {
+                    let v: serde_json::Value = serde_json::from_slice(&out.stdout)
+                        .map_err(|e| format!("JSON parse error: {}", e))?;
+                    v["chatroom"]["id"].as_u64().ok_or_else(|| {
+                        format!("chatroom.id ausente na resposta da API para {}", clean)
+                    })
+                }
+                Ok(out) => Err(format!("curl falhou com status: {}", out.status)),
+                Err(e) => Err(format!("Erro ao executar curl: {}", e)),
             }
-            Ok(out) => Err(format!("curl falhou com status: {}", out.status)),
-            Err(e) => Err(format!("Erro ao executar curl: {}", e)),
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(format!("Não foi possível resolver chatroom_id para {}", clean))
+    }
 }
 
 #[derive(Debug, Clone)]

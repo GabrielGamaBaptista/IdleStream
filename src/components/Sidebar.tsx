@@ -17,8 +17,8 @@ export const Sidebar: React.FC = () => {
   const kickStreams = config.streams.filter((s) => s.platform === 'kick').length;
 
   return (
-    <aside className="w-64 border-r border-neutral-800 bg-neutral-900/50 p-4 flex flex-col justify-between select-none">
-      <div className="space-y-6">
+    <aside className="hidden md:flex w-64 border-r border-neutral-800 bg-neutral-900/50 p-4 flex-col select-none overflow-y-auto h-full min-h-0">
+      <div className="space-y-6 shrink-0">
         {/* Navigation Tabs */}
         <div>
           <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 px-3">
@@ -134,7 +134,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Quick Add Buttons */}
-      <div className="space-y-2 pt-4 border-t border-neutral-800">
+      <div className="space-y-2 pt-4 mt-6 border-t border-neutral-800 shrink-0">
         <button
           onClick={() => setAddStreamOpen(true)}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition shadow-sm hover:shadow-indigo-500/20 cursor-pointer"

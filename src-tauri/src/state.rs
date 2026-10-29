@@ -479,7 +479,8 @@ impl AppState {
         let this = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(45)).await;
+                // Intervalo de vigília: 300 segundos (5 minutos) para economia extrema de bateria e dados
+                tokio::time::sleep(Duration::from_secs(300)).await;
 
                 let streams = {
                     let cfg = this.config.lock().await;

@@ -314,6 +314,46 @@ pub async fn save_kick_session(
 }
 
 #[tauri::command]
+pub async fn save_twitch_token(
+    state: StateHandle<'_>,
+    account_id: String,
+    token: String,
+) -> Result<AppConfig, String> {
+    let mut cfg = state.config.lock().await;
+    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.oauth_token = Some(token);
+        state.config_store.save(&cfg)?;
+    }
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn save_kick_credentials_direct(
+    state: StateHandle<'_>,
+    account_id: String,
+    kick_session: String,
+    session_token: Option<String>,
+    xsrf_token: Option<String>,
+) -> Result<AppConfig, String> {
+    let mut cfg = state.config.lock().await;
+    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.kick_session = Some(kick_session);
+        if let Some(st) = session_token {
+            if !st.is_empty() {
+                acc.session_token = Some(st);
+            }
+        }
+        if let Some(xt) = xsrf_token {
+            if !xt.is_empty() {
+                acc.xsrf_token = Some(xt);
+            }
+        }
+        state.config_store.save(&cfg)?;
+    }
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }

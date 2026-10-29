@@ -66,7 +66,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       minimize_to_tray: true,
       start_with_windows: false,
       auto_reconnect: true,
-      reconnect_delay_secs: 10,
+      reconnect_delay_secs: 300,
       auto_live_only: true,
       kick_mute_audio: true,
       kick_hide_chat: true,
@@ -152,15 +152,62 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Silent background update check upon startup
       get().checkForUpdates(false).catch(() => {});
 
+      // Setup Android native authentication bridge callbacks
+      if (typeof window !== 'undefined') {
+        window.__onAndroidTwitchAuth = async (accountId: string, token: string) => {
+          try {
+            await invoke('save_twitch_token', { accountId, token });
+            await get().fetchConfig();
+            alert('Conta Twitch autenticada com sucesso!');
+          } catch (e) {
+            console.error('Falha ao salvar token Twitch:', e);
+            alert(`Falha ao salvar token Twitch: ${e}`);
+          }
+        };
+
+        window.__onAndroidKickAuth = async (
+          accountId: string,
+          kickSession: string,
+          sessionToken: string,
+          xsrfToken: string
+        ) => {
+          try {
+            await invoke('save_kick_credentials_direct', {
+              accountId,
+              kickSession,
+              sessionToken: sessionToken || null,
+              xsrfToken: xsrfToken || null,
+            });
+            await get().fetchConfig();
+            alert('Sessão da Kick salva com sucesso!');
+          } catch (e) {
+            console.error('Falha ao salvar credenciais Kick:', e);
+            alert(`Falha ao salvar sessão Kick: ${e}`);
+          }
+        };
+      }
+
       // Listen to backend stream status changes (event-driven, 0% CPU polling)
       await listen<StreamRuntimeStatus>('stream-status-update', (event) => {
         const status = event.payload;
-        set((state) => ({
-          statuses: {
+        set((state) => {
+          const nextStatuses = {
             ...state.statuses,
             [status.stream_id]: status,
-          },
-        }));
+          };
+          if (typeof window !== 'undefined' && window.AndroidBridge) {
+            try {
+              const activeCount = Object.values(nextStatuses).filter((s) => s.status === 'connected').length;
+              const standbyCount = Object.values(nextStatuses).filter((s) => s.status === 'standby').length;
+              const title = `IdleStream (${activeCount} live • ${standbyCount} vigília)`;
+              const text = status.channel_points
+                ? `Pontos: ${status.channel_points} • Rodando em segundo plano`
+                : `Monitorando streams em segundo plano • 24/7`;
+              window.AndroidBridge.updateNotification(title, text);
+            } catch (ignored) {}
+          }
+          return { statuses: nextStatuses };
+        });
       });
 
       set({ isInitialized: true });

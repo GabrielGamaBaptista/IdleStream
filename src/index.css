@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+html, body {
+  background-color: #09090b;
+  color: #f4f4f5;
+  color-scheme: dark;
+}
+
 @layer base {
   body {
     @apply bg-neutral-950 text-neutral-100 select-none overflow-hidden font-sans;

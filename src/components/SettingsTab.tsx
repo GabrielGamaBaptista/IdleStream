@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { Save, CheckCircle2 } from 'lucide-react';
+import { BatteryBanner } from './BatteryBanner';
 
 export const SettingsTab: React.FC = () => {
   const { config, updateSettings } = useAppStore();
@@ -22,6 +23,8 @@ export const SettingsTab: React.FC = () => {
           Ajuste as preferências de inicialização, comportamento da bandeja e otimizações de recursos.
         </p>
       </div>
+
+      <BatteryBanner />
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Modo Vigília / Standby Section */}

@@ -13,129 +13,263 @@ pub struct KickChannelInfo {
     pub is_live: bool,
 }
 
+const BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 /// Busca informações do canal via API oficial da Kick
-pub fn fetch_channel_info(channel_slug: &str) -> Result<KickChannelInfo, String> {
-    let mut cmd = std::process::Command::new("curl.exe");
-    cmd.args([
-        "-s",
-        "-m", "10",
-        &format!("https://kick.com/api/v2/channels/{}", channel_slug),
-        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "-H", "Accept: application/json",
-        "-H", "Referer: https://kick.com/",
-        "-H", "Origin: https://kick.com",
-    ]);
+pub async fn fetch_channel_info(channel_slug: &str) -> Result<KickChannelInfo, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let url = format!("https://kick.com/api/v2/channels/{}", channel_slug);
+
+    if let Ok(resp) = client
+        .get(&url)
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .header("Accept", "application/json")
+        .header("Referer", "https://kick.com/")
+        .header("Origin", "https://kick.com")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(channel_id) = json["id"].as_u64() {
+                    let user_id = json["user"]["id"]
+                        .as_u64()
+                        .or_else(|| json["user_id"].as_u64())
+                        .unwrap_or(channel_id);
+
+                    let (is_live, livestream_id) = match json.get("livestream") {
+                        Some(live) if !live.is_null() => {
+                            let is_l = live["is_live"].as_bool().unwrap_or(true);
+                            let lid = live["id"].as_u64();
+                            (is_l, lid)
+                        }
+                        _ => (false, None),
+                    };
+
+                    return Ok(KickChannelInfo {
+                        channel_id,
+                        user_id,
+                        livestream_id,
+                        is_live,
+                    });
+                }
+            }
+        }
+    }
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let slug = channel_slug.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = std::process::Command::new("curl.exe");
+            cmd.args([
+                "-s",
+                "-m", "10",
+                &format!("https://kick.com/api/v2/channels/{}", slug),
+                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "-H", "Accept: application/json",
+                "-H", "Referer: https://kick.com/",
+                "-H", "Origin: https://kick.com",
+            ]);
+
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+            let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
+            if !output.status.success() {
+                return Err("Curl falhou ao consultar canal da Kick".into());
+            }
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let json: serde_json::Value = serde_json::from_str(&stdout)
+                .map_err(|e| format!("JSON inválido da Kick: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
+
+            let channel_id = json["id"].as_u64().ok_or("channel id não encontrado")?;
+            let user_id = json["user"]["id"]
+                .as_u64()
+                .or_else(|| json["user_id"].as_u64())
+                .unwrap_or(channel_id);
+
+            let (is_live, livestream_id) = match json.get("livestream") {
+                Some(live) if !live.is_null() => {
+                    let is_l = live["is_live"].as_bool().unwrap_or(true);
+                    let lid = live["id"].as_u64();
+                    (is_l, lid)
+                }
+                _ => (false, None),
+            };
+
+            Ok(KickChannelInfo {
+                channel_id,
+                user_id,
+                livestream_id,
+                is_live,
+            })
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
     }
 
-    let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
-    if !output.status.success() {
-        return Err("Curl falhou ao consultar canal da Kick".into());
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(format!("Falha ao consultar canal da Kick ({}) via reqwest", channel_slug))
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| format!("JSON inválido da Kick: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
-
-    let channel_id = json["id"].as_u64().ok_or("channel id não encontrado")?;
-    let user_id = json["user"]["id"]
-        .as_u64()
-        .or_else(|| json["user_id"].as_u64())
-        .unwrap_or(channel_id);
-
-    let (is_live, livestream_id) = match json.get("livestream") {
-        Some(live) if !live.is_null() => {
-            let is_l = live["is_live"].as_bool().unwrap_or(true);
-            let lid = live["id"].as_u64();
-            (is_l, lid)
-        }
-        _ => (false, None),
-    };
-
-    Ok(KickChannelInfo {
-        channel_id,
-        user_id,
-        livestream_id,
-        is_live,
-    })
 }
 
 /// Obtém o viewer WebSocket token para contabilizar watch time e farmar pontos
-pub fn fetch_viewer_ws_token(
+pub async fn fetch_viewer_ws_token(
     session_token: &str,
     channel_slug: &str,
     channel_id: u64,
     user_id: u64,
 ) -> Result<String, String> {
-    let mut cmd = std::process::Command::new("curl.exe");
-    cmd.args([
-        "-s",
-        "-m", "10",
-        "https://websockets.kick.com/viewer/v1/token",
-        "-H", &format!("Authorization: Bearer {}", session_token),
-        "-H", &format!("X-Chatroom: {}", channel_id),
-        "-H", &format!("X-User-Id: {}", user_id),
-        "-H", "X-Client-Token: e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823",
-        "-H", &format!("Referer: https://kick.com/{}/", channel_slug),
-        "-H", "Origin: https://kick.com",
-        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "-H", "Accept: application/json",
-    ]);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    if let Ok(resp) = client
+        .get("https://websockets.kick.com/viewer/v1/token")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("X-Chatroom", channel_id.to_string())
+        .header("X-User-Id", user_id.to_string())
+        .header("X-Client-Token", "e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823")
+        .header("Referer", format!("https://kick.com/{}/", channel_slug))
+        .header("Origin", "https://kick.com")
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .header("Accept", "application/json")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(token) = json["data"]["token"].as_str().or_else(|| json["token"].as_str()) {
+                    return Ok(token.to_string());
+                }
+            }
+        }
+    }
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
+        let st = session_token.to_string();
+        let slug = channel_slug.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = std::process::Command::new("curl.exe");
+            cmd.args([
+                "-s",
+                "-m", "10",
+                "https://websockets.kick.com/viewer/v1/token",
+                "-H", &format!("Authorization: Bearer {}", st),
+                "-H", &format!("X-Chatroom: {}", channel_id),
+                "-H", &format!("X-User-Id: {}", user_id),
+                "-H", "X-Client-Token: e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823",
+                "-H", &format!("Referer: https://kick.com/{}/", slug),
+                "-H", "Origin: https://kick.com",
+                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "-H", "Accept: application/json",
+            ]);
+
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+
+            let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let json: serde_json::Value = serde_json::from_str(&stdout)
+                .map_err(|e| format!("JSON de WS token inválido: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
+
+            let token = json["data"]["token"]
+                .as_str()
+                .or_else(|| json["token"].as_str())
+                .ok_or_else(|| format!("Campo token não encontrado na resposta: {}", stdout))?;
+
+            Ok(token.to_string())
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
     }
 
-    let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| format!("JSON de WS token inválido: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
-
-    let token = json["data"]["token"]
-        .as_str()
-        .or_else(|| json["token"].as_str())
-        .ok_or_else(|| format!("Campo token não encontrado na resposta: {}", stdout))?;
-
-    Ok(token.to_string())
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Falha ao obter token WebSocket da Kick via reqwest".to_string())
+    }
 }
 
 /// Consulta o saldo atual de pontos de canal na Kick
-pub fn fetch_channel_points(session_token: &str, channel_slug: &str) -> Result<i64, String> {
-    let mut cmd = std::process::Command::new("curl.exe");
-    cmd.args([
-        "-s",
-        "-m", "10",
-        &format!("https://kick.com/api/v2/channels/{}/points", channel_slug),
-        "-H", &format!("Authorization: Bearer {}", session_token),
-        "-H", &format!("Referer: https://kick.com/{}/", channel_slug),
-        "-H", "Origin: https://kick.com",
-        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "-H", "Accept: application/json",
-    ]);
+pub async fn fetch_channel_points(session_token: &str, channel_slug: &str) -> Result<i64, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let url = format!("https://kick.com/api/v2/channels/{}/points", channel_slug);
+
+    if let Ok(resp) = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Referer", format!("https://kick.com/{}/", channel_slug))
+        .header("Origin", "https://kick.com")
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .header("Accept", "application/json")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                let points = json["data"]["points"]
+                    .as_i64()
+                    .or_else(|| json["points"].as_i64())
+                    .unwrap_or(0);
+                return Ok(points);
+            }
+        }
+    }
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
+        let st = session_token.to_string();
+        let slug = channel_slug.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = std::process::Command::new("curl.exe");
+            cmd.args([
+                "-s",
+                "-m", "10",
+                &format!("https://kick.com/api/v2/channels/{}/points", slug),
+                "-H", &format!("Authorization: Bearer {}", st),
+                "-H", &format!("Referer: https://kick.com/{}/", slug),
+                "-H", "Origin: https://kick.com",
+                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "-H", "Accept: application/json",
+            ]);
+
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+
+            let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let json: serde_json::Value = serde_json::from_str(&stdout)
+                .map_err(|e| format!("JSON de pontos inválido: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
+
+            let points = json["data"]["points"]
+                .as_i64()
+                .or_else(|| json["points"].as_i64())
+                .unwrap_or(0);
+
+            Ok(points)
+        })
+        .await
+        .map_err(|e| format!("Task error: {}", e))?
     }
 
-    let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| format!("JSON de pontos inválido: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
-
-    let points = json["data"]["points"]
-        .as_i64()
-        .or_else(|| json["points"].as_i64())
-        .unwrap_or(0);
-
-    Ok(points)
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(format!("Falha ao consultar pontos da Kick ({}) via reqwest", channel_slug))
+    }
 }
 
 pub struct KickWatcherHandle {
@@ -173,9 +307,9 @@ pub fn start_kick_watcher(
 
             // 1. Obtém dados do canal
             let slug = channel_slug.clone();
-            let ch_info = match tokio::task::spawn_blocking(move || fetch_channel_info(&slug)).await {
-                Ok(Ok(info)) => info,
-                Ok(Err(e)) => {
+            let ch_info = match fetch_channel_info(&slug).await {
+                Ok(info) => info,
+                Err(e) => {
                     on_status(StatusKind::Error, Some(format!("Erro Kick: {}", e)), None);
                     tokio::select! {
                         _ = stop_rx.recv() => break,
@@ -185,21 +319,14 @@ pub fn start_kick_watcher(
                         }
                     }
                 }
-                Err(e) => {
-                    on_status(StatusKind::Error, Some(format!("Task error: {}", e)), None);
-                    tokio::select! {
-                        _ = stop_rx.recv() => break,
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)) => continue,
-                    }
-                }
             };
 
             // Se o canal estiver offline, notifica e aguarda
             if !ch_info.is_live || ch_info.livestream_id.is_none() {
-                on_status(StatusKind::Standby, Some("Streamer offline no Kick (vigília ativa)".into()), None);
+                on_status(StatusKind::Standby, Some("Streamer offline no Kick (vigília ativa - 300s)".into()), None);
                 tokio::select! {
                     _ = stop_rx.recv() => break,
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => continue,
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(300)) => continue,
                 }
             }
 
@@ -210,18 +337,14 @@ pub fn start_kick_watcher(
             // 2. Consulta pontos iniciais
             let token_clone = session_token.clone();
             let slug_clone = channel_slug.clone();
-            let initial_points = tokio::task::spawn_blocking(move || {
-                fetch_channel_points(&token_clone, &slug_clone).ok()
-            }).await.unwrap_or(None);
+            let initial_points = fetch_channel_points(&token_clone, &slug_clone).await.ok();
 
             // 3. Obtém o viewer WS token
             let token_clone = session_token.clone();
             let slug_clone = channel_slug.clone();
-            let ws_token = match tokio::task::spawn_blocking(move || {
-                fetch_viewer_ws_token(&token_clone, &slug_clone, channel_id, user_id)
-            }).await {
-                Ok(Ok(t)) => t,
-                Ok(Err(e)) => {
+            let ws_token = match fetch_viewer_ws_token(&token_clone, &slug_clone, channel_id, user_id).await {
+                Ok(t) => t,
+                Err(e) => {
                     on_status(StatusKind::Error, Some(format!("Erro WS Token: {}", e)), initial_points);
                     tokio::select! {
                         _ = stop_rx.recv() => break,
@@ -230,10 +353,6 @@ pub fn start_kick_watcher(
                             continue;
                         }
                     }
-                }
-                Err(e) => {
-                    on_status(StatusKind::Error, Some(format!("Task join error: {}", e)), initial_points);
-                    continue;
                 }
             };
 
@@ -326,9 +445,7 @@ pub fn start_kick_watcher(
                     _ = points_interval.tick() => {
                         let token_c = session_token.clone();
                         let slug_c = channel_slug.clone();
-                        if let Ok(Ok(new_pts)) = tokio::task::spawn_blocking(move || {
-                            fetch_channel_points(&token_c, &slug_c)
-                        }).await {
+                        if let Ok(new_pts) = fetch_channel_points(&token_c, &slug_c).await {
                             current_points = Some(new_pts);
                             on_status(StatusKind::Connected, None, current_points);
                         }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:android": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1",
     "preview": "vite preview",
     "tauri": "tauri"
   },

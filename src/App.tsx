@@ -9,6 +9,7 @@ import { StatusBar } from './components/StatusBar';
 import { AddStreamModal } from './components/AddStreamModal';
 import { EditStreamModal } from './components/EditStreamModal';
 import { AddAccountModal } from './components/AddAccountModal';
+import { BottomNav } from './components/BottomNav';
 import { Tv, Plus } from 'lucide-react';
 import { StreamConfig } from './types';
 
@@ -18,6 +19,7 @@ export default function App() {
     activeTab,
     config,
     platformFilter,
+    setPlatformFilter,
     setAddStreamOpen,
   } = useAppStore();
 
@@ -33,35 +35,69 @@ export default function App() {
   });
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans pt-[env(safe-area-inset-top)]">
       {/* Top Header */}
       <Header />
 
       {/* Main Container */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden bg-neutral-950">
         {/* Left Sidebar */}
         <Sidebar />
 
         {/* Dynamic Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-neutral-950 to-neutral-900/30">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 bg-neutral-950">
           {activeTab === 'streams' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight">
+                  <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">
                     Livestreams Conectadas
                   </h2>
-                  <p className="text-xs text-neutral-400 mt-1">
-                    Gerencie suas transmissões da Twitch e Kick. Streams em vigília/offline consomem 0 MB de memória.
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Gerencie suas transmissões. Streams em vigília consomem 0 MB de memória.
                   </p>
                 </div>
 
                 <button
                   onClick={() => setAddStreamOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/20 cursor-pointer"
+                  className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/20 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Adicionar Stream</span>
+                </button>
+              </div>
+
+              {/* Mobile Platform Filter Pills */}
+              <div className="flex md:hidden items-center gap-2 overflow-x-auto pb-1">
+                <button
+                  onClick={() => setPlatformFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
+                    platformFilter === 'all'
+                      ? 'bg-neutral-800 text-white font-semibold border border-neutral-700'
+                      : 'text-neutral-400 bg-neutral-900/60'
+                  }`}
+                >
+                  Todas ({config.streams.length})
+                </button>
+                <button
+                  onClick={() => setPlatformFilter('twitch')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
+                    platformFilter === 'twitch'
+                      ? 'bg-purple-950/80 text-purple-200 border border-purple-800/60 font-semibold'
+                      : 'text-neutral-400 bg-neutral-900/60'
+                  }`}
+                >
+                  Twitch ({config.streams.filter((s) => s.platform === 'twitch').length})
+                </button>
+                <button
+                  onClick={() => setPlatformFilter('kick')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
+                    platformFilter === 'kick'
+                      ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-800/60 font-semibold'
+                      : 'text-neutral-400 bg-neutral-900/60'
+                  }`}
+                >
+                  Kick ({config.streams.filter((s) => s.platform === 'kick').length})
                 </button>
               </div>
 
@@ -107,6 +143,9 @@ export default function App() {
 
       {/* Bottom Status Bar */}
       <StatusBar />
+
+      {/* Mobile Bottom Navigation */}
+      <BottomNav />
 
       {/* Modals */}
       <AddStreamModal />
