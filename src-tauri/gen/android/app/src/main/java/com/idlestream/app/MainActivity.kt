@@ -109,6 +109,7 @@ class MainActivity : TauriActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        android.util.Log.d("IdleStream", "onNewIntent action=${intent.action}")
         when (intent.action) {
             "com.idlestream.TEST_TWITCH_AUTH" -> {
                 val accId = intent.getStringExtra("account_id") ?: ""
@@ -137,16 +138,27 @@ class MainActivity : TauriActivity() {
         this.mainWebView = webView
         webView.setBackgroundColor(android.graphics.Color.parseColor("#0a0a0a"))
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
+        android.util.Log.d("IdleStream", "onWebViewCreate initialized with $webView")
     }
 
     fun notifyTwitchAuthSuccess(accountId: String, token: String) {
         runOnUiThread {
             val safeToken = token.replace("'", "\\'")
             val safeAccId = accountId.replace("'", "\\'")
-            mainWebView?.evaluateJavascript(
-                "if (window.__onAndroidTwitchAuth) { window.__onAndroidTwitchAuth('$safeAccId', '$safeToken'); }",
-                null
-            )
+            android.util.Log.d("IdleStream", "notifyTwitchAuthSuccess accId=$safeAccId, webView=$mainWebView")
+            val script = """
+                (function() {
+                    const accId = '$safeAccId';
+                    const tok = '$safeToken';
+                    if (typeof window.__onAndroidTwitchAuth === 'function') {
+                        try { window.__onAndroidTwitchAuth(accId, tok); } catch(e) { console.error(e); }
+                    }
+                    window.dispatchEvent(new CustomEvent('android-twitch-auth', { detail: { accountId: accId, token: tok } }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script) { res ->
+                android.util.Log.d("IdleStream", "notifyTwitchAuthSuccess evaluateJavascript result: $res")
+            }
         }
     }
 
@@ -156,10 +168,24 @@ class MainActivity : TauriActivity() {
             val safeSessionToken = sessionToken.replace("'", "\\'")
             val safeXsrfToken = xsrfToken.replace("'", "\\'")
             val safeAccId = accountId.replace("'", "\\'")
-            mainWebView?.evaluateJavascript(
-                "if (window.__onAndroidKickAuth) { window.__onAndroidKickAuth('$safeAccId', '$safeKickSession', '$safeSessionToken', '$safeXsrfToken'); }",
-                null
-            )
+            android.util.Log.d("IdleStream", "notifyKickAuthSuccess accId=$safeAccId, webView=$mainWebView")
+            val script = """
+                (function() {
+                    const accId = '$safeAccId';
+                    const ks = '$safeKickSession';
+                    const st = '$safeSessionToken';
+                    const xs = '$safeXsrfToken';
+                    if (typeof window.__onAndroidKickAuth === 'function') {
+                        try { window.__onAndroidKickAuth(accId, ks, st, xs); } catch(e) { console.error(e); }
+                    }
+                    window.dispatchEvent(new CustomEvent('android-kick-auth', {
+                        detail: { accountId: accId, kickSession: ks, sessionToken: st, xsrfToken: xs }
+                    }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script) { res ->
+                android.util.Log.d("IdleStream", "notifyKickAuthSuccess evaluateJavascript result: $res")
+            }
         }
     }
 }

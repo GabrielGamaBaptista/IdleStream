@@ -16,7 +16,16 @@ export const AddAccountModal: React.FC = () => {
 
   // Hook to capture token if authenticated via Android Twitch Activity inside this modal
   useEffect(() => {
+    const handleAuthEvent = (e: any) => {
+      const { token } = e.detail || {};
+      if (token) {
+        setOauthToken(token);
+        setIsAuthenticating(false);
+      }
+    };
+
     if (typeof window !== 'undefined') {
+      window.addEventListener('android-twitch-auth', handleAuthEvent);
       const prevCallback = window.__onAndroidTwitchAuth;
       window.__onAndroidTwitchAuth = (accId: string, token: string) => {
         setOauthToken(token);
@@ -26,6 +35,7 @@ export const AddAccountModal: React.FC = () => {
         }
       };
       return () => {
+        window.removeEventListener('android-twitch-auth', handleAuthEvent);
         window.__onAndroidTwitchAuth = prevCallback;
       };
     }

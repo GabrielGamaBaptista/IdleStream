@@ -154,37 +154,54 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Setup Android native authentication bridge callbacks
       if (typeof window !== 'undefined') {
-        window.__onAndroidTwitchAuth = async (accountId: string, token: string) => {
+        const handleTwitchAuth = async (accountId: string, token: string) => {
           try {
-            await invoke('save_twitch_token', { accountId, token });
-            await get().fetchConfig();
-            alert('Conta Twitch autenticada com sucesso!');
+            if (accountId && accountId !== 'temp_add_account') {
+              await invoke('save_twitch_token', { accountId, token });
+              await get().fetchConfig();
+            }
           } catch (e) {
             console.error('Falha ao salvar token Twitch:', e);
-            alert(`Falha ao salvar token Twitch: ${e}`);
           }
         };
 
-        window.__onAndroidKickAuth = async (
+        const handleKickAuth = async (
           accountId: string,
           kickSession: string,
           sessionToken: string,
           xsrfToken: string
         ) => {
           try {
-            await invoke('save_kick_credentials_direct', {
-              accountId,
-              kickSession,
-              sessionToken: sessionToken || null,
-              xsrfToken: xsrfToken || null,
-            });
-            await get().fetchConfig();
-            alert('Sessão da Kick salva com sucesso!');
+            if (accountId && accountId !== 'temp_add_account') {
+              await invoke('save_kick_credentials_direct', {
+                accountId,
+                kickSession,
+                sessionToken: sessionToken || null,
+                xsrfToken: xsrfToken || null,
+              });
+              await get().fetchConfig();
+            }
           } catch (e) {
             console.error('Falha ao salvar credenciais Kick:', e);
-            alert(`Falha ao salvar sessão Kick: ${e}`);
           }
         };
+
+        window.__onAndroidTwitchAuth = handleTwitchAuth;
+        window.__onAndroidKickAuth = handleKickAuth;
+
+        window.addEventListener('android-twitch-auth', (e: any) => {
+          const { accountId, token } = e.detail || {};
+          if (accountId && token) {
+            handleTwitchAuth(accountId, token);
+          }
+        });
+
+        window.addEventListener('android-kick-auth', (e: any) => {
+          const { accountId, kickSession, sessionToken, xsrfToken } = e.detail || {};
+          if (accountId && kickSession) {
+            handleKickAuth(accountId, kickSession, sessionToken, xsrfToken);
+          }
+        });
       }
 
       // Listen to backend stream status changes (event-driven, 0% CPU polling)

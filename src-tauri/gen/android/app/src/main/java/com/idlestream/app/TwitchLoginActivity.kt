@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -71,6 +72,9 @@ class TwitchLoginActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
+                if (url != null && checkInterceptUrl(url)) {
+                    view?.stopLoading()
+                }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -85,6 +89,31 @@ class TwitchLoginActivity : AppCompatActivity() {
                 }
                 return false
             }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                val failingUrl = request?.url?.toString() ?: ""
+                if (checkInterceptUrl(failingUrl)) {
+                    view?.stopLoading()
+                }
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onReceivedError(
+                view: WebView?,
+                errorCode: Int,
+                description: String?,
+                failingUrl: String?
+            ) {
+                super.onReceivedError(view, errorCode, description, failingUrl)
+                if (failingUrl != null && checkInterceptUrl(failingUrl)) {
+                    view?.stopLoading()
+                }
+            }
         }
 
         val authUrl = "https://id.twitch.tv/oauth2/authorize" +
@@ -93,41 +122,84 @@ class TwitchLoginActivity : AppCompatActivity() {
                 "&response_type=token" +
                 "&scope=chat:read+chat:edit"
 
-        webView.loadUrl(authUrl)
+        val testUrl = intent.getStringExtra("test_redirect_url")
+        if (!testUrl.isNullOrEmpty()) {
+            android.util.Log.d("IdleStream", "TwitchLoginActivity testing redirect directly: $testUrl")
+            checkInterceptUrl(testUrl)
+        } else {
+            webView.loadUrl(authUrl)
+        }
+    }
+
+    private fun extractParam(url: String, paramName: String): String? {
+        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
+        // 1. Try standard query parameter (?key=value)
+        val fromQuery = uri?.getQueryParameter(paramName)
+        if (!fromQuery.isNullOrEmpty()) return fromQuery
+
+        // 2. Try fragment string (#key=value&...)
+        val fragment = uri?.fragment
+        if (!fragment.isNullOrEmpty()) {
+            for (part in fragment.split('&')) {
+                val eq = part.indexOf('=')
+                if (eq != -1) {
+                    val key = part.substring(0, eq)
+                    val value = part.substring(eq + 1)
+                    if (key.equals(paramName, ignoreCase = true)) {
+                        return Uri.decode(value)
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback raw string inspection for edge-cases
+        val marker = "$paramName="
+        val idx = url.indexOf(marker)
+        if (idx != -1) {
+            val start = idx + marker.length
+            val endAmp = url.indexOf('&', start)
+            val endHash = url.indexOf('#', start)
+            val end = when {
+                endAmp != -1 && endHash != -1 -> minOf(endAmp, endHash)
+                endAmp != -1 -> endAmp
+                endHash != -1 -> endHash
+                else -> url.length
+            }
+            return Uri.decode(url.substring(start, end))
+        }
+
+        return null
     }
 
     private fun checkInterceptUrl(url: String): Boolean {
         if (isCompleted) return true
 
         if (url.startsWith("http://localhost") || url.startsWith("https://localhost")) {
-            // Token is in hash fragment or query: http://localhost/#access_token=...&scope=...
-            var token: String? = null
-            val hashIdx = url.indexOf('#')
-            val queryIdx = url.indexOf('?')
-
-            val paramsString = if (hashIdx >= 0) {
-                url.substring(hashIdx + 1)
-            } else if (queryIdx >= 0) {
-                url.substring(queryIdx + 1)
-            } else {
-                ""
+            android.util.Log.d("IdleStream", "checkInterceptUrl intercepted localhost: $url")
+            // Check for OAuth error response
+            val error = extractParam(url, "error")
+            if (!error.isNullOrEmpty()) {
+                val errorDesc = extractParam(url, "error_description") ?: error
+                isCompleted = true
+                android.util.Log.w("IdleStream", "checkInterceptUrl OAuth error: $errorDesc")
+                Toast.makeText(this, "Autorização Twitch: $errorDesc", Toast.LENGTH_LONG).show()
+                finish()
+                return true
             }
 
-            for (part in paramsString.split('&')) {
-                val kv = part.split('=')
-                if (kv.size == 2 && kv[0] == "access_token") {
-                    token = Uri.decode(kv[1])
-                    break
-                }
-            }
-
+            // Check for access_token
+            val token = extractParam(url, "access_token")
             if (!token.isNullOrEmpty()) {
                 isCompleted = true
+                android.util.Log.i("IdleStream", "checkInterceptUrl successfully captured token for accountId: $accountId")
                 MainActivity.instance?.notifyTwitchAuthSuccess(accountId, token)
                 Toast.makeText(this, "Conta Twitch autenticada com sucesso!", Toast.LENGTH_SHORT).show()
                 finish()
                 return true
             }
+
+            // If it reached localhost without token yet, prevent ERR_CONNECTION_REFUSED
+            return true
         }
         return false
     }
