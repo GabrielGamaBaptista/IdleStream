@@ -84,6 +84,7 @@ class MainActivity : TauriActivity() {
         instance = this
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        KickHttpBridge.ensureRegistered()
 
         // Solicita permissão de notificação no Android 13+ (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

@@ -18,107 +18,42 @@ const BROWSER_USER_AGENT: &str =
 
 /// Busca informações do canal via API oficial da Kick
 pub async fn fetch_channel_info(channel_slug: &str) -> Result<KickChannelInfo, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+    let clean_slug = channel_slug.trim().trim_start_matches('/').to_lowercase();
+    let url = format!("https://kick.com/api/v2/channels/{}", clean_slug);
 
-    let url = format!("https://kick.com/api/v2/channels/{}", channel_slug);
+    let headers = [
+        ("User-Agent", BROWSER_USER_AGENT),
+        ("Accept", "application/json"),
+        ("Referer", "https://kick.com/"),
+        ("Origin", "https://kick.com"),
+    ];
 
-    if let Ok(resp) = client
-        .get(&url)
-        .header("User-Agent", BROWSER_USER_AGENT)
-        .header("Accept", "application/json")
-        .header("Referer", "https://kick.com/")
-        .header("Origin", "https://kick.com")
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(channel_id) = json["id"].as_u64() {
-                    let user_id = json["user"]["id"]
-                        .as_u64()
-                        .or_else(|| json["user_id"].as_u64())
-                        .unwrap_or(channel_id);
+    let (_, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
 
-                    let (is_live, livestream_id) = match json.get("livestream") {
-                        Some(live) if !live.is_null() => {
-                            let is_l = live["is_live"].as_bool().unwrap_or(true);
-                            let lid = live["id"].as_u64();
-                            (is_l, lid)
-                        }
-                        _ => (false, None),
-                    };
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("JSON inválido da Kick: {} (resp: {})", e, &body[..body.len().min(120)]))?;
 
-                    return Ok(KickChannelInfo {
-                        channel_id,
-                        user_id,
-                        livestream_id,
-                        is_live,
-                    });
-                }
-            }
+    let channel_id = json["id"].as_u64().ok_or("channel id não encontrado")?;
+    let user_id = json["user"]["id"]
+        .as_u64()
+        .or_else(|| json["user_id"].as_u64())
+        .unwrap_or(channel_id);
+
+    let (is_live, livestream_id) = match json.get("livestream") {
+        Some(live) if !live.is_null() => {
+            let is_l = live["is_live"].as_bool().unwrap_or(true);
+            let lid = live["id"].as_u64();
+            (is_l, lid)
         }
-    }
+        _ => (false, None),
+    };
 
-    #[cfg(target_os = "windows")]
-    {
-        let slug = channel_slug.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut cmd = std::process::Command::new("curl.exe");
-            cmd.args([
-                "-s",
-                "-m", "10",
-                &format!("https://kick.com/api/v2/channels/{}", slug),
-                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-H", "Accept: application/json",
-                "-H", "Referer: https://kick.com/",
-                "-H", "Origin: https://kick.com",
-            ]);
-
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-
-            let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
-            if !output.status.success() {
-                return Err("Curl falhou ao consultar canal da Kick".into());
-            }
-
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let json: serde_json::Value = serde_json::from_str(&stdout)
-                .map_err(|e| format!("JSON inválido da Kick: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
-
-            let channel_id = json["id"].as_u64().ok_or("channel id não encontrado")?;
-            let user_id = json["user"]["id"]
-                .as_u64()
-                .or_else(|| json["user_id"].as_u64())
-                .unwrap_or(channel_id);
-
-            let (is_live, livestream_id) = match json.get("livestream") {
-                Some(live) if !live.is_null() => {
-                    let is_l = live["is_live"].as_bool().unwrap_or(true);
-                    let lid = live["id"].as_u64();
-                    (is_l, lid)
-                }
-                _ => (false, None),
-            };
-
-            Ok(KickChannelInfo {
-                channel_id,
-                user_id,
-                livestream_id,
-                is_live,
-            })
-        })
-        .await
-        .map_err(|e| format!("Task error: {}", e))?
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err(format!("Falha ao consultar canal da Kick ({}) via reqwest", channel_slug))
-    }
+    Ok(KickChannelInfo {
+        channel_id,
+        user_id,
+        livestream_id,
+        is_live,
+    })
 }
 
 /// Obtém o viewer WebSocket token para contabilizar watch time e farmar pontos
@@ -128,148 +63,67 @@ pub async fn fetch_viewer_ws_token(
     channel_id: u64,
     user_id: u64,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+    let slug = channel_slug.to_string();
+    let auth_header = format!("Bearer {}", session_token);
+    let chatroom_header = channel_id.to_string();
+    let user_id_header = user_id.to_string();
+    let referer = format!("https://kick.com/{}/", slug);
 
-    if let Ok(resp) = client
-        .get("https://websockets.kick.com/viewer/v1/token")
-        .header("Authorization", format!("Bearer {}", session_token))
-        .header("X-Chatroom", channel_id.to_string())
-        .header("X-User-Id", user_id.to_string())
-        .header("X-Client-Token", "e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823")
-        .header("Referer", format!("https://kick.com/{}/", channel_slug))
-        .header("Origin", "https://kick.com")
-        .header("User-Agent", BROWSER_USER_AGENT)
-        .header("Accept", "application/json")
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(token) = json["data"]["token"].as_str().or_else(|| json["token"].as_str()) {
-                    return Ok(token.to_string());
-                }
-            }
-        }
-    }
+    let headers = [
+        ("Authorization", auth_header.as_str()),
+        ("X-Chatroom", chatroom_header.as_str()),
+        ("X-User-Id", user_id_header.as_str()),
+        ("X-Client-Token", "e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823"),
+        ("Referer", referer.as_str()),
+        ("Origin", "https://kick.com"),
+        ("User-Agent", BROWSER_USER_AGENT),
+        ("Accept", "application/json"),
+    ];
 
-    #[cfg(target_os = "windows")]
-    {
-        let st = session_token.to_string();
-        let slug = channel_slug.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut cmd = std::process::Command::new("curl.exe");
-            cmd.args([
-                "-s",
-                "-m", "10",
-                "https://websockets.kick.com/viewer/v1/token",
-                "-H", &format!("Authorization: Bearer {}", st),
-                "-H", &format!("X-Chatroom: {}", channel_id),
-                "-H", &format!("X-User-Id: {}", user_id),
-                "-H", "X-Client-Token: e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823",
-                "-H", &format!("Referer: https://kick.com/{}/", slug),
-                "-H", "Origin: https://kick.com",
-                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-H", "Accept: application/json",
-            ]);
+    let (_, body) = crate::kick::http::kick_http_request(
+        "GET",
+        "https://websockets.kick.com/viewer/v1/token",
+        Some(&headers),
+        None,
+        10,
+    ).await?;
 
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000);
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("JSON de WS token inválido: {} (resp: {})", e, &body[..body.len().min(120)]))?;
 
-            let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let json: serde_json::Value = serde_json::from_str(&stdout)
-                .map_err(|e| format!("JSON de WS token inválido: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
+    let token = json["data"]["token"]
+        .as_str()
+        .or_else(|| json["token"].as_str())
+        .ok_or_else(|| format!("Campo token não encontrado na resposta: {}", body))?;
 
-            let token = json["data"]["token"]
-                .as_str()
-                .or_else(|| json["token"].as_str())
-                .ok_or_else(|| format!("Campo token não encontrado na resposta: {}", stdout))?;
-
-            Ok(token.to_string())
-        })
-        .await
-        .map_err(|e| format!("Task error: {}", e))?
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err("Falha ao obter token WebSocket da Kick via reqwest".to_string())
-    }
+    Ok(token.to_string())
 }
 
 /// Consulta o saldo atual de pontos de canal na Kick
 pub async fn fetch_channel_points(session_token: &str, channel_slug: &str) -> Result<i64, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
-
     let url = format!("https://kick.com/api/v2/channels/{}/points", channel_slug);
+    let auth_header = format!("Bearer {}", session_token);
+    let referer = format!("https://kick.com/{}/", channel_slug);
 
-    if let Ok(resp) = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", session_token))
-        .header("Referer", format!("https://kick.com/{}/", channel_slug))
-        .header("Origin", "https://kick.com")
-        .header("User-Agent", BROWSER_USER_AGENT)
-        .header("Accept", "application/json")
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                let points = json["data"]["points"]
-                    .as_i64()
-                    .or_else(|| json["points"].as_i64())
-                    .unwrap_or(0);
-                return Ok(points);
-            }
-        }
-    }
+    let headers = [
+        ("Authorization", auth_header.as_str()),
+        ("Referer", referer.as_str()),
+        ("Origin", "https://kick.com"),
+        ("User-Agent", BROWSER_USER_AGENT),
+        ("Accept", "application/json"),
+    ];
 
-    #[cfg(target_os = "windows")]
-    {
-        let st = session_token.to_string();
-        let slug = channel_slug.to_string();
-        tokio::task::spawn_blocking(move || {
-            let mut cmd = std::process::Command::new("curl.exe");
-            cmd.args([
-                "-s",
-                "-m", "10",
-                &format!("https://kick.com/api/v2/channels/{}/points", slug),
-                "-H", &format!("Authorization: Bearer {}", st),
-                "-H", &format!("Referer: https://kick.com/{}/", slug),
-                "-H", "Origin: https://kick.com",
-                "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "-H", "Accept: application/json",
-            ]);
+    let (_, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
 
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000);
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("JSON de pontos inválido: {} (resp: {})", e, &body[..body.len().min(120)]))?;
 
-            let output = cmd.output().map_err(|e| format!("Falha ao executar curl: {}", e))?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let json: serde_json::Value = serde_json::from_str(&stdout)
-                .map_err(|e| format!("JSON de pontos inválido: {} (resp: {})", e, &stdout[..stdout.len().min(120)]))?;
+    let points = json["data"]["points"]
+        .as_i64()
+        .or_else(|| json["points"].as_i64())
+        .unwrap_or(0);
 
-            let points = json["data"]["points"]
-                .as_i64()
-                .or_else(|| json["points"].as_i64())
-                .unwrap_or(0);
-
-            Ok(points)
-        })
-        .await
-        .map_err(|e| format!("Task error: {}", e))?
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err(format!("Falha ao consultar pontos da Kick ({}) via reqwest", channel_slug))
-    }
+    Ok(points)
 }
 
 pub struct KickWatcherHandle {

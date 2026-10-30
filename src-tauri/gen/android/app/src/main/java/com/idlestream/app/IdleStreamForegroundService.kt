@@ -74,6 +74,7 @@ class IdleStreamForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        KickHttpBridge.ensureRegistered()
         isRunning = true
         createNotificationChannel()
         acquireWakeLock()
