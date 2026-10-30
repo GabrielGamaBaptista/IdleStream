@@ -59,4 +59,28 @@ class ForegroundServiceLifecycleAndroidTest {
         IdleStreamForegroundService.stop(context)
         Thread.sleep(500)
     }
+
+    @Test
+    fun testUpdateNotificationFromNativeBridge() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        IdleStreamForegroundService.start(context)
+        Thread.sleep(800)
+
+        assertTrue(IdleStreamForegroundService.isRunning)
+
+        // Simula chamada originada do backend Rust (JNI)
+        KickHttpBridge.updateNotificationFromNative(
+            "IdleStream (3 live • 1 vigília)",
+            "Pontos: 2,4 mil • Rodando em segundo plano"
+        )
+        Thread.sleep(500)
+
+        // Verifica que o serviço permanece ativo e saudável
+        assertTrue("Serviço deve continuar ativo após notificação nativa", IdleStreamForegroundService.isRunning)
+        assertTrue("WakeLock deve ser mantido", IdleStreamForegroundService.isWakeLockHeld)
+        assertTrue("WifiLock deve ser mantido", IdleStreamForegroundService.isWifiLockHeld)
+
+        IdleStreamForegroundService.stop(context)
+        Thread.sleep(500)
+    }
 }

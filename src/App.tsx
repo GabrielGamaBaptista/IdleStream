@@ -10,6 +10,7 @@ import { AddStreamModal } from './components/AddStreamModal';
 import { EditStreamModal } from './components/EditStreamModal';
 import { AddAccountModal } from './components/AddAccountModal';
 import { BottomNav } from './components/BottomNav';
+import { BatteryBanner } from './components/BatteryBanner';
 import { Tv, Plus } from 'lucide-react';
 import { StreamConfig } from './types';
 
@@ -48,6 +49,8 @@ export default function App() {
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 bg-neutral-950">
           {activeTab === 'streams' && (
             <div className="space-y-6">
+              <BatteryBanner />
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">

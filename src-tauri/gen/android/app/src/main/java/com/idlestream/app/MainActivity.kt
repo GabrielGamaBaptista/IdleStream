@@ -180,6 +180,15 @@ class MainActivity : TauriActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        try {
+            mainWebView?.resumeTimers()
+        } catch (e: Throwable) {
+            // Ignore
+        }
+    }
+
     override fun onDestroy() {
         if (instance == this) {
             instance = null

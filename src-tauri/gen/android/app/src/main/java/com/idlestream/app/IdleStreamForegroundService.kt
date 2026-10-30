@@ -32,6 +32,9 @@ class IdleStreamForegroundService : Service() {
         const val EXTRA_TEXT = "extra_text"
 
         @Volatile
+        var instance: IdleStreamForegroundService? = null
+
+        @Volatile
         var isRunning: Boolean = false
             private set
 
@@ -66,6 +69,16 @@ class IdleStreamForegroundService : Service() {
         }
 
         fun updateStatus(context: Context, title: String, text: String) {
+            val service = instance
+            if (service != null) {
+                service.currentTitle = title
+                service.currentText = text
+                val notification = service.buildNotification(title, text)
+                val manager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(NOTIFICATION_ID, notification)
+                return
+            }
+
             val intent = Intent(context, IdleStreamForegroundService::class.java).apply {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_TITLE, title)
@@ -77,6 +90,22 @@ class IdleStreamForegroundService : Service() {
                 e.printStackTrace()
             }
         }
+
+        @JvmStatic
+        fun updateStatusDirect(title: String, text: String) {
+            val service = instance
+            if (service != null) {
+                service.currentTitle = title
+                service.currentText = text
+                val notification = service.buildNotification(title, text)
+                val manager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(NOTIFICATION_ID, notification)
+            } else {
+                MainActivity.instance?.let { ctx ->
+                    updateStatus(ctx, title, text)
+                }
+            }
+        }
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -86,6 +115,7 @@ class IdleStreamForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         KickHttpBridge.ensureRegistered()
         isRunning = true
         createNotificationChannel()
@@ -183,12 +213,14 @@ class IdleStreamForegroundService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Notificação persistente para manter streams e pontos ativos"
                 setShowBadge(false)
                 enableVibration(false)
                 enableLights(false)
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             manager.createNotificationChannel(channel)
         }
@@ -226,7 +258,9 @@ class IdleStreamForegroundService : Service() {
             .setSmallIcon(iconRes)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_media_pause, "Parar", stopPendingIntent)
             .build()
@@ -251,8 +285,14 @@ class IdleStreamForegroundService : Service() {
 
             if (wifiLock == null) {
                 val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val lockMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
                 wifiLock = wm?.createWifiLock(
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    lockMode,
                     "IdleStream::WifiLock"
                 )?.apply {
                     setReferenceCounted(false)
@@ -260,7 +300,7 @@ class IdleStreamForegroundService : Service() {
             }
             if (wifiLock?.isHeld == false) {
                 wifiLock?.acquire()
-                android.util.Log.d("IdleStream", "WifiLock acquired (WIFI_MODE_FULL_HIGH_PERF)")
+                android.util.Log.d("IdleStream", "WifiLock acquired (low-latency active)")
             }
             isWifiLockHeld = wifiLock?.isHeld == true
         } catch (e: Exception) {
@@ -293,6 +333,9 @@ class IdleStreamForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
         isRunning = false
         releaseLocks()
         super.onDestroy()

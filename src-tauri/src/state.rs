@@ -61,6 +61,19 @@ impl AppState {
 
     pub async fn emit_status(&self, status: &StreamRuntimeStatus) {
         let _ = self.app_handle.emit("stream-status-update", status);
+
+        let map = self.statuses.lock().await;
+        let active_count = map.values().filter(|s| s.status == StatusKind::Connected).count();
+        let standby_count = map.values().filter(|s| s.status == StatusKind::Standby).count();
+        let points = map.values().find_map(|s| s.channel_points.clone());
+        drop(map);
+
+        let title = format!("IdleStream ({} live • {} vigília)", active_count, standby_count);
+        let text = match points {
+            Some(pts) => format!("Pontos: {} • Rodando em segundo plano", pts),
+            None => "Monitorando streams em segundo plano • 24/7".to_string(),
+        };
+        crate::kick::http::update_android_notification(&title, &text);
     }
 
     pub async fn update_points(&self, stream_id: &str, account_id: &str, points: &str) {

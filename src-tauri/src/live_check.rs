@@ -7,23 +7,36 @@ pub async fn check_twitch_live(client: &reqwest::Client, channel_slug: &str) -> 
     let clean_channel = channel_slug.trim().trim_start_matches('#').to_lowercase();
     let url = format!("https://decapi.me/twitch/uptime/{}", clean_channel);
 
-    match client
-        .get(&url)
-        .timeout(Duration::from_secs(6))
-        .send()
-        .await
+    #[cfg(target_os = "android")]
     {
-        Ok(resp) => {
-            if let Ok(text) = resp.text().await {
+        match crate::kick::http::kick_http_request("GET", &url, None, None, 6).await {
+            Ok((status, text)) if (200..=299).contains(&status) => {
                 let trimmed = text.trim().to_lowercase();
                 !trimmed.contains("is offline") && !trimmed.contains("not found") && !trimmed.is_empty()
-            } else {
+            }
+            _ => false,
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        match client
+            .get(&url)
+            .timeout(Duration::from_secs(6))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if let Ok(text) = resp.text().await {
+                    let trimmed = text.trim().to_lowercase();
+                    !trimmed.contains("is offline") && !trimmed.contains("not found") && !trimmed.is_empty()
+                } else {
+                    false
+                }
+            }
+            Err(e) => {
+                eprintln!("[LiveCheck Twitch] Error for {}: {}", clean_channel, e);
                 false
             }
-        }
-        Err(e) => {
-            eprintln!("[LiveCheck Twitch] Error for {}: {}", clean_channel, e);
-            false
         }
     }
 }

@@ -12,7 +12,9 @@ pub enum Platform {
 pub struct Account {
     pub id: String,
     pub platform: Platform,
+    #[serde(default)]
     pub label: String,               // e.g. "Main Account", "Smurf 1"
+    #[serde(default)]
     pub username: String,            // Twitch username or Kick display username
     #[serde(default)]
     pub oauth_token: Option<String>, // Twitch oauth token (without "oauth:" prefix)
@@ -57,16 +59,33 @@ impl StreamConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
+    #[serde(default = "default_minimize_to_tray")]
     pub minimize_to_tray: bool,
+    #[serde(default)]
     pub start_with_windows: bool,
+    #[serde(default = "default_auto_reconnect")]
     pub auto_reconnect: bool,
+    #[serde(default = "default_reconnect_delay_secs")]
     pub reconnect_delay_secs: u64,
+    #[serde(default = "default_auto_live_only")]
     pub auto_live_only: bool, // Se true: só inicializa player/IRC quando o streamer estiver ao vivo!
+    #[serde(default = "default_kick_mute_audio")]
     pub kick_mute_audio: bool,
+    #[serde(default = "default_kick_hide_chat")]
     pub kick_hide_chat: bool,
+    #[serde(default = "default_kick_lowest_quality")]
     pub kick_lowest_quality: bool,
 }
+
+fn default_minimize_to_tray() -> bool { true }
+fn default_auto_reconnect() -> bool { true }
+fn default_reconnect_delay_secs() -> u64 { 10 }
+fn default_auto_live_only() -> bool { true }
+fn default_kick_mute_audio() -> bool { true }
+fn default_kick_hide_chat() -> bool { true }
+fn default_kick_lowest_quality() -> bool { true }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -85,8 +104,11 @@ impl Default for AppSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
+    #[serde(default)]
     pub accounts: Vec<Account>,
+    #[serde(default)]
     pub streams: Vec<StreamConfig>,
+    #[serde(default)]
     pub settings: AppSettings,
 }
 

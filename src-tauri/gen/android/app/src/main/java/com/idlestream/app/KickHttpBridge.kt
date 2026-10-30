@@ -36,6 +36,15 @@ object KickHttpBridge {
     }
 
     @JvmStatic
+    fun updateNotificationFromNative(title: String, text: String) {
+        try {
+            IdleStreamForegroundService.updateStatusDirect(title, text)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error updating notification from native: ${e.message}")
+        }
+    }
+
+    @JvmStatic
     fun request(
         method: String,
         urlStr: String,

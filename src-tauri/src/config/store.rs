@@ -1,4 +1,4 @@
-use super::models::AppConfig;
+use super::models::{Account, AppConfig, AppSettings, StreamConfig};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
@@ -46,8 +46,26 @@ impl ConfigStore {
                         config
                     }
                     Err(e) => {
-                        eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED: {}! Content: {}", e, clean_content);
-                        AppConfig::default()
+                        eprintln!("[ConfigStore] Direct deserialization warning: {}! Attempting lenient fallback...", e);
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(clean_content) {
+                            let accounts: Vec<Account> = val.get("accounts")
+                                .and_then(|a| serde_json::from_value(a.clone()).ok())
+                                .unwrap_or_default();
+                            let mut streams: Vec<StreamConfig> = val.get("streams")
+                                .and_then(|s| serde_json::from_value(s.clone()).ok())
+                                .unwrap_or_default();
+                            for stream in &mut streams {
+                                stream.ensure_migrated();
+                            }
+                            let settings: AppSettings = val.get("settings")
+                                .and_then(|s| serde_json::from_value(s.clone()).ok())
+                                .unwrap_or_default();
+                            eprintln!("[ConfigStore] Lenient fallback salvaged {} accounts and {} streams", accounts.len(), streams.len());
+                            AppConfig { accounts, streams, settings }
+                        } else {
+                            eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED completely: {}! Content: {}", e, clean_content);
+                            AppConfig::default()
+                        }
                     }
                 }
             }
