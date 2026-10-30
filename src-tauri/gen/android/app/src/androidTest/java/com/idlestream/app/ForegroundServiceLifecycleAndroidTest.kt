@@ -1,7 +1,6 @@
 package com.idlestream.app
 
 import android.content.Context
-import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse
@@ -22,6 +21,10 @@ class ForegroundServiceLifecycleAndroidTest {
         IdleStreamForegroundService.start(context)
         Thread.sleep(1000)
 
+        assertTrue("Serviço deve estar executando", IdleStreamForegroundService.isRunning)
+        assertTrue("WakeLock deve estar ativo para 24/7 background", IdleStreamForegroundService.isWakeLockHeld)
+        assertTrue("WifiLock deve estar ativo para sockets contínuos", IdleStreamForegroundService.isWifiLockHeld)
+
         // 2. Atualiza o status da notificação com informações de live
         IdleStreamForegroundService.updateStatus(
             context,
@@ -34,7 +37,9 @@ class ForegroundServiceLifecycleAndroidTest {
         IdleStreamForegroundService.stop(context)
         Thread.sleep(1000)
 
-        assertFalse(IdleStreamForegroundService.isRunning)
+        assertFalse("Serviço deve ser encerrado", IdleStreamForegroundService.isRunning)
+        assertFalse("WakeLock deve ser liberado", IdleStreamForegroundService.isWakeLockHeld)
+        assertFalse("WifiLock deve ser liberado", IdleStreamForegroundService.isWifiLockHeld)
     }
 
     @Test

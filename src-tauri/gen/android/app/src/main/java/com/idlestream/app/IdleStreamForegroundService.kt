@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -32,6 +33,14 @@ class IdleStreamForegroundService : Service() {
 
         @Volatile
         var isRunning: Boolean = false
+            private set
+
+        @Volatile
+        var isWakeLockHeld: Boolean = false
+            private set
+
+        @Volatile
+        var isWifiLockHeld: Boolean = false
             private set
 
         fun start(context: Context) {
@@ -71,6 +80,7 @@ class IdleStreamForegroundService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var currentTitle: String = "IdleStream Ativo (Segundo Plano)"
     private var currentText: String = "Modo vigília conectado • 24/7 ativo"
 
@@ -79,13 +89,15 @@ class IdleStreamForegroundService : Service() {
         KickHttpBridge.ensureRegistered()
         isRunning = true
         createNotificationChannel()
-        acquireWakeLock()
+        acquireLocks()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        acquireLocks()
+
         when (intent?.action) {
             ACTION_STOP -> {
-                releaseWakeLock()
+                releaseLocks()
                 isRunning = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -100,11 +112,6 @@ class IdleStreamForegroundService : Service() {
                 manager.notify(NOTIFICATION_ID, notification)
             }
             else -> {
-                val isActivityAlive = MainActivity.instance != null
-                if (!isActivityAlive) {
-                    currentTitle = "IdleStream • Toque para reativar"
-                    currentText = "Monitoramento pausado. Toque aqui para continuar o acompanhamento 24/7."
-                }
                 val notification = buildNotification(currentTitle, currentText)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -180,9 +187,12 @@ class IdleStreamForegroundService : Service() {
     }
 
     private fun buildNotification(title: String, text: String): Notification {
-        val launchIntent = Intent(this, MainActivity::class.java).apply {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        } ?: Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -214,37 +224,69 @@ class IdleStreamForegroundService : Service() {
             .build()
     }
 
-    private fun acquireWakeLock() {
+    private fun acquireLocks() {
         try {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "IdleStream::VigilanceWakeLock"
-            ).apply {
-                setReferenceCounted(false)
-                acquire()
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = pm.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "IdleStream::VigilanceWakeLock"
+                ).apply {
+                    setReferenceCounted(false)
+                }
             }
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire()
+                android.util.Log.d("IdleStream", "Partial WakeLock acquired (24/7 background CPU active)")
+            }
+            isWakeLockHeld = wakeLock?.isHeld == true
+
+            if (wifiLock == null) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                wifiLock = wm?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "IdleStream::WifiLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wifiLock?.isHeld == false) {
+                wifiLock?.acquire()
+                android.util.Log.d("IdleStream", "WifiLock acquired (WIFI_MODE_FULL_HIGH_PERF)")
+            }
+            isWifiLockHeld = wifiLock?.isHeld == true
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("IdleStream", "Error acquiring WakeLock/WifiLock: ${e.message}", e)
         }
     }
 
-    private fun releaseWakeLock() {
+    private fun releaseLocks() {
         try {
             wakeLock?.let {
                 if (it.isHeld) {
                     it.release()
+                    android.util.Log.d("IdleStream", "WakeLock released")
                 }
             }
             wakeLock = null
+            isWakeLockHeld = false
+
+            wifiLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    android.util.Log.d("IdleStream", "WifiLock released")
+                }
+            }
+            wifiLock = null
+            isWifiLockHeld = false
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("IdleStream", "Error releasing WakeLock/WifiLock: ${e.message}", e)
         }
     }
 
     override fun onDestroy() {
         isRunning = false
-        releaseWakeLock()
+        releaseLocks()
         super.onDestroy()
     }
 
