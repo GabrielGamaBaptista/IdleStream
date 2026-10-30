@@ -40,6 +40,18 @@
             android:paddingEnd="8dp" />
 
         <Button
+            android:id="@+id/btn_reset_session"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="🔄 Limpar"
+            android:textColor="#f59e0b"
+            android:textSize="12sp"
+            android:background="?android:attr/selectableItemBackground"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
             android:id="@+id/btn_save"
             android:layout_width="wrap_content"
             android:layout_height="38dp"

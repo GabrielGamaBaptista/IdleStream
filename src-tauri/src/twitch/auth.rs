@@ -6,16 +6,20 @@ use tiny_http::{Response, Server};
 // Public client id commonly used or standard Twitch CLI client id
 const DEFAULT_CLIENT_ID: &str = "gp762nuuoqcoxypju8c569th9wz7q5";
 
+pub fn build_auth_url(client_id: &str, redirect_uri: &str) -> String {
+    format!(
+        "https://id.twitch.tv/oauth2/authorize?client_id={}&redirect_uri={}&response_type=token&scope=chat:read+chat:edit&force_verify=true",
+        client_id, redirect_uri
+    )
+}
+
 pub fn run_oauth_flow(custom_client_id: Option<String>) -> Result<String, String> {
     let client_id = custom_client_id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string());
     let server = Server::http("127.0.0.1:0").map_err(|e| format!("Failed to bind local server: {}", e))?;
     let port = server.server_addr().to_ip().map(|addr| addr.port()).unwrap_or(17584);
     let redirect_uri = format!("http://localhost:{}", port);
 
-    let auth_url = format!(
-        "https://id.twitch.tv/oauth2/authorize?client_id={}&redirect_uri={}&response_type=token&scope=chat:read+chat:edit",
-        client_id, redirect_uri
-    );
+    let auth_url = build_auth_url(&client_id, &redirect_uri);
 
     // Open user's default browser (Desktop only)
     #[cfg(not(target_os = "android"))]
@@ -95,5 +99,20 @@ pub fn run_oauth_flow(custom_client_id: Option<String>) -> Result<String, String
     match rx.recv_timeout(Duration::from_secs(120)) {
         Ok(token) => Ok(token),
         Err(_) => Err("Tempo limite esgotado para login da Twitch.".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_twitch_auth_url_contains_force_verify() {
+        let url = build_auth_url("test_client_123", "http://localhost:8080");
+        assert!(url.contains("client_id=test_client_123"));
+        assert!(url.contains("redirect_uri=http://localhost:8080"));
+        assert!(url.contains("response_type=token"));
+        assert!(url.contains("scope=chat:read+chat:edit"));
+        assert!(url.contains("force_verify=true"), "Twitch OAuth URL must contain force_verify=true to isolate sessions");
     }
 }

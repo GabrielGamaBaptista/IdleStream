@@ -59,6 +59,9 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
@@ -83,5 +86,3 @@ dependencies {
 }
 
 apply(from = file("tauri.build.gradle.kts"))
-
-

@@ -37,10 +37,16 @@
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- Placeholder to balance center alignment -->
-        <View
-            android:layout_width="60dp"
-            android:layout_height="1dp" />
+        <Button
+            android:id="@+id/btn_reset_session_twitch"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="🔄 Limpar"
+            android:textColor="#a855f7"
+            android:textSize="12sp"
+            android:background="?android:attr/selectableItemBackground"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
     </LinearLayout>
 
     <ProgressBar
