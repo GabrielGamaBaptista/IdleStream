@@ -106,7 +106,9 @@ class TwitchLoginActivity : AppCompatActivity() {
         btnReset.setOnClickListener {
             Toast.makeText(this, "Limpando sessão da Twitch...", Toast.LENGTH_SHORT).show()
             SessionResetHelper.clearSession(this, webView) {
-                loadAuthUrl()
+                if (!isFinishing && !isDestroyed) {
+                    loadAuthUrl()
+                }
             }
         }
 

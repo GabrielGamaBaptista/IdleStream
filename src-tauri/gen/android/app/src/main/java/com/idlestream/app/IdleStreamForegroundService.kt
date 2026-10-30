@@ -1,5 +1,6 @@
 package com.idlestream.app
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
@@ -87,6 +89,7 @@ class IdleStreamForegroundService : Service() {
                 isRunning = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
+                MainActivity.instance?.finish()
                 return START_NOT_STICKY
             }
             ACTION_UPDATE -> {
@@ -97,6 +100,11 @@ class IdleStreamForegroundService : Service() {
                 manager.notify(NOTIFICATION_ID, notification)
             }
             else -> {
+                val isActivityAlive = MainActivity.instance != null
+                if (!isActivityAlive) {
+                    currentTitle = "IdleStream • Toque para reativar"
+                    currentText = "Monitoramento pausado. Toque aqui para continuar o acompanhamento 24/7."
+                }
                 val notification = buildNotification(currentTitle, currentText)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -112,6 +120,46 @@ class IdleStreamForegroundService : Service() {
         }
 
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        android.util.Log.d("IdleStream", "onTaskRemoved triggered - scheduling auto recovery")
+        tryRelaunchMainActivity()
+    }
+
+    private fun tryRelaunchMainActivity() {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            } ?: return
+
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                9999,
+                launchIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            if (alarmManager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 1000,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.set(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        SystemClock.elapsedRealtime() + 1000,
+                        pendingIntent
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun createNotificationChannel() {
@@ -133,7 +181,7 @@ class IdleStreamForegroundService : Service() {
 
     private fun buildNotification(title: String, text: String): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
             this,

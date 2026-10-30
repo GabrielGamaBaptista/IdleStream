@@ -102,10 +102,22 @@ class MainActivity : TauriActivity() {
         // Inicia o Foreground Service persistente para garantir execução 24/7
         IdleStreamForegroundService.start(this)
 
+        // Previne destruição ao pressionar o botão Voltar: move para segundo plano preservando Rust
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        })
+
         // Se ainda não estiver isento de otimização de bateria, solicita ao usuário
         if (!BatteryOptimizationHelper.isBatteryOptimizationIgnored(this)) {
             BatteryOptimizationHelper.requestIgnoreBatteryOptimization(this)
         }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        moveTaskToBack(true)
     }
 
     override fun onNewIntent(intent: Intent) {

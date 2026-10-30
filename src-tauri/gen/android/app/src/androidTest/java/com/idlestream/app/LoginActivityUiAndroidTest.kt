@@ -43,6 +43,7 @@ class LoginActivityUiAndroidTest {
                 // Simula clique no botão Reset/Limpar
                 assertTrue("Botão Reset deve ser clicável", btnReset.performClick())
             }
+            Thread.sleep(500)
         }
     }
 
@@ -78,6 +79,7 @@ class LoginActivityUiAndroidTest {
                 // Simula clique no botão Reset/Limpar
                 assertTrue("Botão Reset deve ser clicável", btnReset.performClick())
             }
+            Thread.sleep(500)
         }
     }
 }

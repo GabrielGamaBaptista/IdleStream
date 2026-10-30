@@ -151,7 +151,9 @@ class KickLoginActivity : AppCompatActivity() {
                         0 -> {
                             Toast.makeText(this, "Limpando sessão da Kick...", Toast.LENGTH_SHORT).show()
                             SessionResetHelper.clearSession(this, webView) {
-                                loadInitialUrl()
+                                if (!isFinishing && !isDestroyed) {
+                                    loadInitialUrl()
+                                }
                             }
                         }
                         1 -> {
