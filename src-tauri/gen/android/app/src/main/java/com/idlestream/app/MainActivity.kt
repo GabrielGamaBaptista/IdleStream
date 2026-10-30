@@ -78,11 +78,48 @@ class MainActivity : TauriActivity() {
                 activity.startActivity(intent)
             }
         }
+
+        @JavascriptInterface
+        fun getCrashLog(): String {
+            return try {
+                val f = java.io.File(activity.filesDir, "crash.log")
+                if (f.exists()) f.readText() else "Nenhum erro recente registrado."
+            } catch (e: Throwable) {
+                "Erro ao ler log: ${e.message}"
+            }
+        }
+
+        @JavascriptInterface
+        fun clearCrashLog(): Boolean {
+            return try {
+                val f = java.io.File(activity.filesDir, "crash.log")
+                if (f.exists()) f.delete() else true
+            } catch (e: Throwable) {
+                false
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         instance = this
         enableEdgeToEdge()
+
+        // Capturador global de exceções não tratadas para diagnóstico imediato
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("IdleStreamCrash", "FATAL UNCAUGHT EXCEPTION in thread ${thread.name}: ${throwable.message}", throwable)
+            try {
+                val crashFile = java.io.File(filesDir, "crash.log")
+                val sw = java.io.StringWriter()
+                throwable.printStackTrace(java.io.PrintWriter(sw))
+                val logText = "Timestamp: ${java.util.Date()}\nThread: ${thread.name}\nException: ${throwable.javaClass.name}: ${throwable.message}\nStacktrace:\n$sw\n"
+                crashFile.writeText(logText)
+            } catch (e: Throwable) {
+                // Ignore
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         super.onCreate(savedInstanceState)
         KickHttpBridge.ensureRegistered()
 
@@ -100,7 +137,11 @@ class MainActivity : TauriActivity() {
         }
 
         // Inicia o Foreground Service persistente para garantir execução 24/7
-        IdleStreamForegroundService.start(this)
+        try {
+            IdleStreamForegroundService.start(this)
+        } catch (e: Throwable) {
+            android.util.Log.e("IdleStream", "Error initiating IdleStreamForegroundService: ${e.message}", e)
+        }
 
         // Previne destruição ao pressionar o botão Voltar: move para segundo plano preservando Rust
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {

@@ -184,7 +184,13 @@ pub fn start_kick_watcher(
                 }
             }
 
-            let livestream_id = ch_info.livestream_id.unwrap();
+            let livestream_id = match ch_info.livestream_id {
+                Some(id) => id,
+                None => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
             let channel_id = ch_info.channel_id;
             let user_id = ch_info.user_id;
 

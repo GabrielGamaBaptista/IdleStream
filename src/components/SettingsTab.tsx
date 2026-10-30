@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Save, CheckCircle2 } from 'lucide-react';
+import { Save, CheckCircle2, Terminal, ClipboardCopy } from 'lucide-react';
 import { BatteryBanner } from './BatteryBanner';
 
 export const SettingsTab: React.FC = () => {
@@ -194,6 +194,33 @@ export const SettingsTab: React.FC = () => {
           )}
         </div>
       </form>
+
+      {/* Diagnóstico e Relatório de Logs */}
+      <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 space-y-3">
+        <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+          <Terminal className="w-4 h-4 text-neutral-400" />
+          <h3 className="text-sm font-semibold text-white">Diagnóstico e Logs do Sistema</h3>
+        </div>
+        <p className="text-xs text-neutral-400">
+          Se você enfrentar qualquer encerramento inesperado ou erro de conexão, gere e copie o relatório de diagnóstico abaixo para investigação.
+        </p>
+
+        <div className="pt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              const crashLog = window.AndroidBridge?.getCrashLog ? window.AndroidBridge.getCrashLog() : 'Nenhum log nativo do Android.';
+              const diag = `=== IDLESTREAM DIAGNOSTIC REPORT ===\nApp Version: 2.1.1\nPlatform: ${window.AndroidBridge?.isAndroid() ? 'Android' : 'Desktop'}\nBattery Optimization Ignored: ${window.AndroidBridge?.isBatteryOptimizationIgnored?.() ?? 'N/A'}\nActive Streams: ${JSON.stringify(config.streams.map(s => ({ id: s.id, channel: s.channel_slug, platform: s.platform, auto: s.auto_start })))}\n\n=== NATIVE CRASH/ERROR LOG ===\n${crashLog}`;
+              await navigator.clipboard.writeText(diag);
+              alert('Relatório de diagnóstico copiado para a área de transferência!');
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium transition cursor-pointer"
+          >
+            <ClipboardCopy className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Copiar Relatório de Diagnóstico</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

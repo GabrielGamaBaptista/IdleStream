@@ -115,13 +115,21 @@ class IdleStreamForegroundService : Service() {
                 val notification = buildNotification(currentTitle, currentText)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                     } else {
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        0
                     }
-                    startForeground(NOTIFICATION_ID, notification, serviceType)
+                    try {
+                        startForeground(NOTIFICATION_ID, notification, serviceType)
+                    } catch (e: Throwable) {
+                        android.util.Log.e("IdleStream", "Failed to startForeground (specialUse): ${e.message}", e)
+                    }
                 } else {
-                    startForeground(NOTIFICATION_ID, notification)
+                    try {
+                        startForeground(NOTIFICATION_ID, notification)
+                    } catch (e: Throwable) {
+                        android.util.Log.e("IdleStream", "Failed to startForeground: ${e.message}", e)
+                    }
                 }
             }
         }
@@ -288,6 +296,20 @@ class IdleStreamForegroundService : Service() {
         isRunning = false
         releaseLocks()
         super.onDestroy()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        android.util.Log.w("IdleStream", "Foreground service onTimeout called for fgsType=$fgsType, startId=$startId")
+        try {
+            super.onTimeout(startId, fgsType)
+        } catch (e: Throwable) {
+            android.util.Log.e("IdleStream", "super.onTimeout failed: ${e.message}")
+        }
+        try {
+            stopSelf(startId)
+        } catch (e: Throwable) {
+            android.util.Log.e("IdleStream", "stopSelf on timeout failed: ${e.message}")
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

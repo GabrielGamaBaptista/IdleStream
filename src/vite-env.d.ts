@@ -9,6 +9,8 @@ interface AndroidBridge {
   isAndroid(): boolean;
   openTwitchLogin(accountId: string): void;
   openKickLogin(accountId: string, accountLabel: string): void;
+  getCrashLog?(): string;
+  clearCrashLog?(): boolean;
 }
 
 interface Window {

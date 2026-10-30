@@ -20,7 +20,12 @@ use tauri::WindowEvent;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("[RUST PANIC] Fatal panic in Rust: {:?}", panic_info);
+        let msg = format!("[RUST PANIC] Fatal panic in Rust: {:?}", panic_info);
+        eprintln!("{}", msg);
+        #[cfg(target_os = "android")]
+        {
+            let _ = std::fs::write("/data/user/0/com.idlestream.app/files/panic.log", &msg);
+        }
     }));
 
     #[allow(unused_mut)]
