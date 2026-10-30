@@ -23,6 +23,9 @@ object KickHttpBridge {
     external fun registerNativeBridge()
 
     @JvmStatic
+    external fun testNativeKickHttpRequest(slug: String): String
+
+    @JvmStatic
     fun ensureRegistered() {
         try {
             registerNativeBridge()

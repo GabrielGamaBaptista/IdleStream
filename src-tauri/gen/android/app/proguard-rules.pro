@@ -1,21 +1,37 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ProGuard / R8 Rules for IdleStream Android
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve all IdleStream app classes, methods, and companion objects
+-keep class com.idlestream.app.** {
+    *;
+}
+-keepclassmembers class com.idlestream.app.** {
+    *;
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve all native methods across the application
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve JavascriptInterfaces for WebView
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Explicitly preserve JNI bridge classes and methods invoked by Rust
+-keep class com.idlestream.app.KickHttpBridge {
+    public static *;
+}
+-keepclassmembers class com.idlestream.app.KickHttpBridge {
+    public static *;
+}
+
+-keep class com.idlestream.app.MainActivity$WebAppInterface {
+    public *;
+}
+-keepclassmembers class com.idlestream.app.MainActivity$WebAppInterface {
+    public *;
+}
+
+# Preserve line numbers and annotations for debugging
+-keepattributes SourceFile,LineNumberTable,*Annotation*,JavascriptInterface

@@ -29,17 +29,27 @@ impl ConfigStore {
     }
 
     pub fn load(&self) -> AppConfig {
+        eprintln!("[ConfigStore] Checking path: {:?}, exists: {}", self.file_path, self.file_path.exists());
         if !self.file_path.exists() {
             return AppConfig::default();
         }
 
         match fs::read_to_string(&self.file_path) {
             Ok(content) => {
-                let mut config: AppConfig = serde_json::from_str(&content).unwrap_or_default();
-                for stream in &mut config.streams {
-                    stream.ensure_migrated();
+                let clean_content = content.trim_start_matches('\u{feff}');
+                match serde_json::from_str::<AppConfig>(clean_content) {
+                    Ok(mut config) => {
+                        for stream in &mut config.streams {
+                            stream.ensure_migrated();
+                        }
+                        eprintln!("[ConfigStore] Loaded {} streams successfully", config.streams.len());
+                        config
+                    }
+                    Err(e) => {
+                        eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED: {}! Content: {}", e, clean_content);
+                        AppConfig::default()
+                    }
                 }
-                config
             }
             Err(e) => {
                 eprintln!("Failed to read config file: {}", e);

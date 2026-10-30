@@ -30,6 +30,32 @@ pub extern "system" fn Java_com_idlestream_app_KickHttpBridge_registerNativeBrid
 }
 
 #[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_idlestream_app_KickHttpBridge_testNativeKickHttpRequest(
+    mut env: JNIEnv,
+    _class: JClass,
+    slug: JString,
+) -> jni::sys::jstring {
+    let slug_str: String = env.get_string(&slug).map(|s| s.into()).unwrap_or_default();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let res = runtime.block_on(async move {
+        let url = format!("https://kick.com/api/v2/channels/{}", slug_str);
+        kick_http_request("GET", &url, None, None, 10).await
+    });
+
+    let resp_text = match res {
+        Ok((status, body)) => format!("OK: status={} body_len={}", status, body.len()),
+        Err(e) => format!("ERR: {}", e),
+    };
+
+    env.new_string(resp_text).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(target_os = "android")]
 pub async fn kick_http_request(
     method: &str,
     url: &str,
@@ -77,17 +103,40 @@ pub async fn kick_http_request(
             JValue::Int(timeout_ms),
         ];
 
-        let result_obj = env
-            .call_static_method(
-                bridge_class,
-                "request",
-                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;",
-                &args,
-            )
-            .map_err(|e| format!("Erro ao chamar KickHttpBridge.request: {}", e))?;
+        let result_obj = match env.call_static_method(
+            bridge_class,
+            "request",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;",
+            &args,
+        ) {
+            Ok(val) => val,
+            Err(e) => {
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
+                }
+                return Err(format!("Erro ao chamar KickHttpBridge.request: {}", e));
+            }
+        };
 
-        let j_str: JString = result_obj.l().map_err(|e| e.to_string())?.into();
-        let rust_str: String = env.get_string(&j_str).map_err(|e| e.to_string())?.into();
+        let j_str: JString = match result_obj.l() {
+            Ok(obj) => obj.into(),
+            Err(e) => {
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
+                }
+                return Err(format!("Objeto de retorno inválido: {}", e));
+            }
+        };
+
+        let rust_str: String = match env.get_string(&j_str) {
+            Ok(s) => s.into(),
+            Err(e) => {
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
+                }
+                return Err(format!("Erro ao ler string JNI: {}", e));
+            }
+        };
 
         let v: serde_json::Value = serde_json::from_str(&rust_str)
             .map_err(|e| format!("Resposta inválida do bridge: {} (raw: {})", e, rust_str))?;

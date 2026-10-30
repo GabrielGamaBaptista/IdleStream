@@ -19,6 +19,10 @@ use tauri::WindowEvent;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("[RUST PANIC] Fatal panic in Rust: {:?}", panic_info);
+    }));
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init());
@@ -127,17 +131,20 @@ pub fn run() {
             // Auto-start streams marked with auto_start
             let auto_start_state = app_state.clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                 let auto_ids: Vec<String> = {
                     let cfg = auto_start_state.config.lock().await;
+                    eprintln!("[AutoStart] Found {} total streams, checking auto_start...", cfg.streams.len());
                     cfg.streams
                         .iter()
                         .filter(|s| s.auto_start)
                         .map(|s| s.id.clone())
                         .collect()
                 };
+                eprintln!("[AutoStart] Starting {} auto-start streams: {:?}", auto_ids.len(), auto_ids);
                 for sid in auto_ids {
-                    let _ = auto_start_state.start_stream(&sid).await;
+                    let res = auto_start_state.start_stream(&sid).await;
+                    eprintln!("[AutoStart] Stream {} start result: {:?}", sid, res);
                 }
             });
 

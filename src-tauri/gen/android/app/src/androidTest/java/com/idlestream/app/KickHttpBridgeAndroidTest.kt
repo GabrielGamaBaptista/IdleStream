@@ -69,4 +69,12 @@ class KickHttpBridgeAndroidTest {
         val body = json.optString("body", "")
         assertTrue(body.contains("surskity"))
     }
+
+    @Test
+    fun testNativeKickHttpRequestFromRust() {
+        KickHttpBridge.ensureRegistered()
+        val result = KickHttpBridge.testNativeKickHttpRequest("surskity")
+        println("[TEST RESULT RUST HTTP]: $result")
+        assertTrue("Deve iniciar com OK: $result", result.startsWith("OK:"))
+    }
 }

@@ -14,6 +14,7 @@ pub struct Account {
     pub platform: Platform,
     pub label: String,               // e.g. "Main Account", "Smurf 1"
     pub username: String,            // Twitch username or Kick display username
+    #[serde(default)]
     pub oauth_token: Option<String>, // Twitch oauth token (without "oauth:" prefix)
     #[serde(default)]
     pub kick_session: Option<String>, // Kick authentication session cookie
@@ -21,6 +22,7 @@ pub struct Account {
     pub xsrf_token: Option<String>,   // Kick XSRF-TOKEN cookie
     #[serde(default)]
     pub session_token: Option<String>, // Kick Bearer session token
+    #[serde(default)]
     pub enabled: bool,
 }
 
@@ -33,6 +35,7 @@ pub struct StreamConfig {
     pub account_ids: Vec<String>, // References to Account.id
     #[serde(default)]
     pub selected_account_id: Option<String>, // Active account for Kick rewards
+    #[serde(default)]
     pub auto_start: bool,     // Auto-start when application launches
     #[serde(default, skip_serializing)]
     pub account_id: Option<String>, // Legacy single account backward compatibility
