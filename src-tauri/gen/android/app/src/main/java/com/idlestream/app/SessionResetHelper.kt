@@ -41,6 +41,7 @@ object SessionResetHelper {
         // 4. Limpa cookies de forma assíncrona e executa o callback após o flush
         try {
             val cookieManager = CookieManager.getInstance()
+            cookieManager.removeSessionCookies(null)
             cookieManager.removeAllCookies { success ->
                 cookieManager.flush()
                 Log.d(TAG, "SessionResetHelper: Todos os cookies e sessões foram eliminados com sucesso ($success).")
