@@ -11,6 +11,9 @@ interface AndroidBridge {
   openKickLogin(accountId: string, accountLabel: string): void;
   getCrashLog?(): string;
   clearCrashLog?(): boolean;
+  canInstallPackages?(): boolean;
+  requestInstallPermission?(): void;
+  downloadAndInstallApk?(apkUrl: string): void;
 }
 
 interface Window {

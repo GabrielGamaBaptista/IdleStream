@@ -28,7 +28,14 @@ pub async fn fetch_channel_info(channel_slug: &str) -> Result<KickChannelInfo, S
         ("Origin", "https://kick.com"),
     ];
 
-    let (_, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
+    let (status, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
+
+    if status == 429 {
+        return Err(format!("Rate limit da Kick (HTTP 429) ao consultar canal {}", clean_slug));
+    }
+    if !(200..=299).contains(&status) {
+        return Err(format!("Erro HTTP {} ao consultar canal {}: {}", status, clean_slug, &body[..body.len().min(100)]));
+    }
 
     let json: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("JSON inválido da Kick: {} (resp: {})", e, &body[..body.len().min(120)]))?;
@@ -80,7 +87,7 @@ pub async fn fetch_viewer_ws_token(
         ("Accept", "application/json"),
     ];
 
-    let (_, body) = crate::kick::http::kick_http_request(
+    let (status, body) = crate::kick::http::kick_http_request(
         "GET",
         "https://websockets.kick.com/viewer/v1/token",
         Some(&headers),
@@ -88,13 +95,23 @@ pub async fn fetch_viewer_ws_token(
         10,
     ).await?;
 
+    if status == 429 {
+        return Err(format!("Rate limit da Kick (HTTP 429): muitas requisições simultâneas ao obter token (resp: {})", body));
+    }
+    if status == 401 || status == 403 {
+        return Err(format!("Sessão da Kick inválida ou expirada (HTTP {}). Reautentique sua conta.", status));
+    }
+    if !(200..=299).contains(&status) {
+        return Err(format!("Erro HTTP {} ao obter WS token: {}", status, &body[..body.len().min(120)]));
+    }
+
     let json: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("JSON de WS token inválido: {} (resp: {})", e, &body[..body.len().min(120)]))?;
 
     let token = json["data"]["token"]
         .as_str()
         .or_else(|| json["token"].as_str())
-        .ok_or_else(|| format!("Campo token não encontrado na resposta: {}", body))?;
+        .ok_or_else(|| format!("Campo token não encontrado na resposta (status {}): {}", status, body))?;
 
     Ok(token.to_string())
 }
@@ -113,7 +130,14 @@ pub async fn fetch_channel_points(session_token: &str, channel_slug: &str) -> Re
         ("Accept", "application/json"),
     ];
 
-    let (_, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
+    let (status, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
+
+    if status == 429 {
+        return Err("Rate limit da Kick (HTTP 429) em pontos".to_string());
+    }
+    if !(200..=299).contains(&status) {
+        return Err(format!("HTTP {} ao consultar pontos", status));
+    }
 
     let json: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("JSON de pontos inválido: {} (resp: {})", e, &body[..body.len().min(120)]))?;
@@ -164,11 +188,23 @@ pub fn start_kick_watcher(
             let ch_info = match fetch_channel_info(&slug).await {
                 Ok(info) => info,
                 Err(e) => {
-                    on_status(StatusKind::Error, Some(format!("Erro Kick: {}", e)), None);
+                    let is_429 = e.contains("429") || e.contains("Rate limit");
+                    let backoff = if is_429 {
+                        retry_delay_secs = (retry_delay_secs.max(30) * 2).min(180);
+                        retry_delay_secs
+                    } else {
+                        retry_delay_secs = (retry_delay_secs * 2).min(60);
+                        retry_delay_secs
+                    };
+                    let user_msg = if is_429 {
+                        format!("Rate limit Kick (429): aguardando {}s para tentar novamente...", backoff)
+                    } else {
+                        format!("Erro Kick: {}", e)
+                    };
+                    on_status(StatusKind::Error, Some(user_msg), None);
                     tokio::select! {
                         _ = stop_rx.recv() => break,
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)) => {
-                            retry_delay_secs = (retry_delay_secs * 2).min(60);
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(backoff)) => {
                             continue;
                         }
                     }
@@ -205,11 +241,23 @@ pub fn start_kick_watcher(
             let ws_token = match fetch_viewer_ws_token(&token_clone, &slug_clone, channel_id, user_id).await {
                 Ok(t) => t,
                 Err(e) => {
-                    on_status(StatusKind::Error, Some(format!("Erro WS Token: {}", e)), initial_points);
+                    let is_429 = e.contains("429") || e.contains("Rate limit");
+                    let backoff = if is_429 {
+                        retry_delay_secs = (retry_delay_secs.max(30) * 2).min(180);
+                        retry_delay_secs
+                    } else {
+                        retry_delay_secs = (retry_delay_secs * 2).min(60);
+                        retry_delay_secs
+                    };
+                    let user_msg = if is_429 {
+                        format!("Rate limit Kick (429): aguardando {}s para reobter token...", backoff)
+                    } else {
+                        format!("Erro WS Token: {}", e)
+                    };
+                    on_status(StatusKind::Error, Some(user_msg), initial_points);
                     tokio::select! {
                         _ = stop_rx.recv() => break,
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)) => {
-                            retry_delay_secs = (retry_delay_secs * 2).min(60);
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(backoff)) => {
                             continue;
                         }
                     }

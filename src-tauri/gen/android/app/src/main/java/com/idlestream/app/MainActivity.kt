@@ -98,6 +98,38 @@ class MainActivity : TauriActivity() {
                 false
             }
         }
+
+        @JavascriptInterface
+        fun canInstallPackages(): Boolean {
+            return AppUpdateHelper.canInstallPackages(activity)
+        }
+
+        @JavascriptInterface
+        fun requestInstallPermission() {
+            activity.runOnUiThread {
+                AppUpdateHelper.openInstallPermissionSettings(activity)
+            }
+        }
+
+        @JavascriptInterface
+        fun downloadAndInstallApk(apkUrl: String) {
+            activity.runOnUiThread {
+                activity.notifyUpdateStatus("Baixando atualização (0%)...", 0)
+            }
+            AppUpdateHelper.downloadAndInstall(
+                activity = activity,
+                apkUrl = apkUrl,
+                onProgress = { percent ->
+                    activity.notifyUpdateProgress(percent)
+                },
+                onError = { error ->
+                    activity.notifyUpdateError(error)
+                },
+                onReadyToInstall = {
+                    activity.notifyUpdateStatus("Abrindo instalador de pacotes...", 100)
+                }
+            )
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -249,6 +281,41 @@ class MainActivity : TauriActivity() {
             mainWebView?.evaluateJavascript(script) { res ->
                 android.util.Log.d("IdleStream", "notifyKickAuthSuccess evaluateJavascript result: $res")
             }
+        }
+    }
+
+    fun notifyUpdateProgress(percent: Int) {
+        runOnUiThread {
+            val script = """
+                (function() {
+                    window.dispatchEvent(new CustomEvent('android-update-progress', { detail: { percent: $percent } }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script, null)
+        }
+    }
+
+    fun notifyUpdateStatus(status: String, percent: Int) {
+        runOnUiThread {
+            val safeStatus = status.replace("'", "\\'")
+            val script = """
+                (function() {
+                    window.dispatchEvent(new CustomEvent('android-update-status', { detail: { status: '$safeStatus', percent: $percent } }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script, null)
+        }
+    }
+
+    fun notifyUpdateError(error: String) {
+        runOnUiThread {
+            val safeError = error.replace("'", "\\'")
+            val script = """
+                (function() {
+                    window.dispatchEvent(new CustomEvent('android-update-error', { detail: { error: '$safeError' } }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script, null)
         }
     }
 }

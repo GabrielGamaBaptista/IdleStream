@@ -42,6 +42,11 @@ impl ConfigStore {
                         for stream in &mut config.streams {
                             stream.ensure_migrated();
                         }
+                        for slot in &mut config.game_slots {
+                            if slot.url.is_empty() || slot.url.contains("pokeidle.net") {
+                                slot.url = "https://pokeidle.io/app".to_string();
+                            }
+                        }
                         eprintln!("[ConfigStore] Loaded {} streams successfully", config.streams.len());
                         config
                     }
@@ -60,8 +65,16 @@ impl ConfigStore {
                             let settings: AppSettings = val.get("settings")
                                 .and_then(|s| serde_json::from_value(s.clone()).ok())
                                 .unwrap_or_default();
+                            let mut game_slots: Vec<crate::config::GameSlotConfig> = val.get("game_slots")
+                                .and_then(|g| serde_json::from_value(g.clone()).ok())
+                                .unwrap_or_else(crate::config::default_game_slots);
+                            for slot in &mut game_slots {
+                                if slot.url.is_empty() || slot.url.contains("pokeidle.net") {
+                                    slot.url = "https://pokeidle.io/app".to_string();
+                                }
+                            }
                             eprintln!("[ConfigStore] Lenient fallback salvaged {} accounts and {} streams", accounts.len(), streams.len());
-                            AppConfig { accounts, streams, settings }
+                            AppConfig { accounts, streams, settings, game_slots }
                         } else {
                             eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED completely: {}! Content: {}", e, clean_content);
                             AppConfig::default()

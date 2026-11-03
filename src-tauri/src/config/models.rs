@@ -102,7 +102,77 @@ impl Default for AppSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameSlotConfig {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default = "default_game_color")]
+    pub color: String,
+    #[serde(default)]
+    pub auto_start: bool,
+    #[serde(default = "default_true")]
+    pub enable_hunt_extension: bool,
+    #[serde(default = "default_zoom")]
+    pub zoom: f64,
+}
+
+fn default_zoom() -> f64 {
+    1.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_game_color() -> String {
+    "#6366F1".to_string()
+}
+
+pub fn default_game_slots() -> Vec<GameSlotConfig> {
+    vec![
+        GameSlotConfig {
+            id: "slot-1".into(),
+            label: "Conta 1".into(),
+            url: "https://pokeidle.io/app".into(),
+            color: "#6366F1".into(),
+            auto_start: false,
+            enable_hunt_extension: true,
+            zoom: 1.0,
+        },
+        GameSlotConfig {
+            id: "slot-2".into(),
+            label: "Conta 2".into(),
+            url: "https://pokeidle.io/app".into(),
+            color: "#10B981".into(),
+            auto_start: false,
+            enable_hunt_extension: true,
+            zoom: 1.0,
+        },
+        GameSlotConfig {
+            id: "slot-3".into(),
+            label: "Conta 3".into(),
+            url: "https://pokeidle.io/app".into(),
+            color: "#F59E0B".into(),
+            auto_start: false,
+            enable_hunt_extension: true,
+            zoom: 1.0,
+        },
+        GameSlotConfig {
+            id: "slot-4".into(),
+            label: "Conta 4".into(),
+            url: "https://pokeidle.io/app".into(),
+            color: "#EF4444".into(),
+            auto_start: false,
+            enable_hunt_extension: true,
+            zoom: 1.0,
+        },
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub accounts: Vec<Account>,
@@ -110,6 +180,19 @@ pub struct AppConfig {
     pub streams: Vec<StreamConfig>,
     #[serde(default)]
     pub settings: AppSettings,
+    #[serde(default = "default_game_slots")]
+    pub game_slots: Vec<GameSlotConfig>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            accounts: Vec::new(),
+            streams: Vec::new(),
+            settings: AppSettings::default(),
+            game_slots: default_game_slots(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

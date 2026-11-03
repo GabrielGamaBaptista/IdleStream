@@ -14,6 +14,21 @@ pub async fn get_config(state: StateHandle<'_>) -> Result<AppConfig, String> {
 }
 
 #[tauri::command]
+pub async fn update_game_slot(
+    state: StateHandle<'_>,
+    slot: crate::config::GameSlotConfig,
+) -> Result<AppConfig, String> {
+    let mut cfg = state.config.lock().await;
+    if let Some(existing) = cfg.game_slots.iter_mut().find(|s| s.id == slot.id) {
+        *existing = slot;
+    } else {
+        cfg.game_slots.push(slot);
+    }
+    state.config_store.save(&cfg)?;
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
 pub async fn save_config(state: StateHandle<'_>, config: AppConfig) -> Result<(), String> {
     let mut cfg = state.config.lock().await;
     *cfg = config.clone();

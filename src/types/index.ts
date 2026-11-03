@@ -34,10 +34,30 @@ export interface AppSettings {
   kick_lowest_quality: boolean;
 }
 
+export interface GameSlotConfig {
+  id: string;
+  label: string;
+  url: string;
+  color: string;
+  auto_start: boolean;
+  enable_hunt_extension?: boolean;
+  zoom?: number;
+}
+
+export interface SlotBounds {
+  slot_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible: boolean;
+}
+
 export interface AppConfig {
   accounts: Account[];
   streams: StreamConfig[];
   settings: AppSettings;
+  game_slots?: GameSlotConfig[];
 }
 
 export type StatusKind = 'disconnected' | 'standby' | 'connecting' | 'connected' | 'error';

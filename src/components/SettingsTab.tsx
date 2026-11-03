@@ -1,12 +1,24 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Save, CheckCircle2, Terminal, ClipboardCopy } from 'lucide-react';
+import { Save, CheckCircle2, Terminal, ClipboardCopy, RefreshCw, Sparkles, Download, Smartphone, Monitor } from 'lucide-react';
 import { BatteryBanner } from './BatteryBanner';
 
 export const SettingsTab: React.FC = () => {
-  const { config, updateSettings } = useAppStore();
+  const {
+    config,
+    updateSettings,
+    appVersion,
+    updateAvailable,
+    updateDownloadProgress,
+    isCheckingUpdate,
+    isInstallingUpdate,
+    updateStatusMessage,
+    checkForUpdates,
+    installUpdate,
+  } = useAppStore();
   const [form, setForm] = useState(config.settings);
   const [saved, setSaved] = useState(false);
+  const isAndroid = typeof window !== 'undefined' && Boolean(window.AndroidBridge?.isAndroid?.());
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,6 +207,97 @@ export const SettingsTab: React.FC = () => {
         </div>
       </form>
 
+      {/* Atualizações do Aplicativo */}
+      <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white">Atualizações do Aplicativo</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-neutral-800/80 text-neutral-300 font-medium">
+              {isAndroid ? (
+                <>
+                  <Smartphone className="w-3 h-3 text-emerald-400" />
+                  <span>Android (APK)</span>
+                </>
+              ) : (
+                <>
+                  <Monitor className="w-3 h-3 text-blue-400" />
+                  <span>Desktop (Windows)</span>
+                </>
+              )}
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded-md bg-neutral-800/80 text-neutral-300 font-mono">
+              v{appVersion}
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs text-neutral-400">
+          O IdleStream verifica automaticamente novas releases no GitHub. {isAndroid ? 'No Android, a atualização é baixada diretamente e abre o instalador do sistema para confirmação.' : 'No Windows, a atualização substitui o aplicativo automaticamente.'}
+        </p>
+
+        {updateAvailable ? (
+          <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-800/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-emerald-300 block">
+                  🎉 Nova versão v{updateAvailable.version} disponível!
+                </span>
+                {updateAvailable.body && (
+                  <p className="text-[11px] text-neutral-400 mt-0.5 line-clamp-2">
+                    {updateAvailable.body}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => installUpdate()}
+                disabled={isInstallingUpdate}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/30 transition cursor-pointer disabled:opacity-70 shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>
+                  {isInstallingUpdate
+                    ? (updateDownloadProgress !== null && updateDownloadProgress > 0
+                        ? `Baixando (${updateDownloadProgress}%)...`
+                        : 'Instalando...')
+                    : 'Instalar Atualização'}
+                </span>
+              </button>
+            </div>
+
+            {isInstallingUpdate && updateDownloadProgress !== null && (
+              <div className="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${updateDownloadProgress}%` }}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between pt-1">
+            <button
+              type="button"
+              onClick={() => checkForUpdates(true)}
+              disabled={isCheckingUpdate}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700/60 transition cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin text-emerald-400' : ''}`} />
+              <span>{isCheckingUpdate ? 'Buscando atualizações...' : 'Verificar Atualizações Agora'}</span>
+            </button>
+
+            {updateStatusMessage && (
+              <span className="text-xs text-emerald-400 font-medium">
+                {updateStatusMessage}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Diagnóstico e Relatório de Logs */}
       <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 space-y-3">
         <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
@@ -210,7 +313,7 @@ export const SettingsTab: React.FC = () => {
             type="button"
             onClick={async () => {
               const crashLog = window.AndroidBridge?.getCrashLog ? window.AndroidBridge.getCrashLog() : 'Nenhum log nativo do Android.';
-              const diag = `=== IDLESTREAM DIAGNOSTIC REPORT ===\nApp Version: 2.1.1\nPlatform: ${window.AndroidBridge?.isAndroid() ? 'Android' : 'Desktop'}\nBattery Optimization Ignored: ${window.AndroidBridge?.isBatteryOptimizationIgnored?.() ?? 'N/A'}\nActive Streams: ${JSON.stringify(config.streams.map(s => ({ id: s.id, channel: s.channel_slug, platform: s.platform, auto: s.auto_start })))}\n\n=== NATIVE CRASH/ERROR LOG ===\n${crashLog}`;
+              const diag = `=== IDLESTREAM DIAGNOSTIC REPORT ===\nApp Version: 2.2.0\nPlatform: ${window.AndroidBridge?.isAndroid() ? 'Android' : 'Desktop'}\nBattery Optimization Ignored: ${window.AndroidBridge?.isBatteryOptimizationIgnored?.() ?? 'N/A'}\nActive Streams: ${JSON.stringify(config.streams.map(s => ({ id: s.id, channel: s.channel_slug, platform: s.platform, auto: s.auto_start })))}\n\n=== NATIVE CRASH/ERROR LOG ===\n${crashLog}`;
               await navigator.clipboard.writeText(diag);
               alert('Relatório de diagnóstico copiado para a área de transferência!');
             }}

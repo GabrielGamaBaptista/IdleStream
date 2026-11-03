@@ -10,6 +10,7 @@ export const Header: React.FC = () => {
     stopAll,
     appVersion,
     updateAvailable,
+    updateDownloadProgress,
     isCheckingUpdate,
     isInstallingUpdate,
     updateStatusMessage,
@@ -49,11 +50,17 @@ export const Header: React.FC = () => {
                 <button
                   onClick={() => installUpdate()}
                   disabled={isInstallingUpdate}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] md:text-xs font-semibold shadow-md shadow-emerald-600/30 transition animate-pulse cursor-pointer"
-                  title={`Nova versão v${updateAvailable.version} disponível! Clique para instalar e reiniciar automaticamente.`}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] md:text-xs font-semibold shadow-md shadow-emerald-600/30 transition animate-pulse cursor-pointer disabled:opacity-80"
+                  title={`Nova versão v${updateAvailable.version} disponível! Clique para instalar.`}
                 >
                   <Sparkles className="w-3 h-3" />
-                  <span>{isInstallingUpdate ? 'Instalando...' : `v${updateAvailable.version}`}</span>
+                  <span>
+                    {isInstallingUpdate
+                      ? (updateDownloadProgress !== null && updateDownloadProgress > 0
+                          ? `Baixando ${updateDownloadProgress}%`
+                          : 'Instalando...')
+                      : `v${updateAvailable.version}`}
+                  </span>
                 </button>
               ) : (
                 <button

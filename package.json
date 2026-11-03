@@ -1,13 +1,16 @@
 {
   "name": "idlestream",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "build:android": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1",
     "preview": "vite preview",
+    "test:version": "jiti ./scripts/test-version.ts",
+    "test:games": "jiti ./scripts/test-games.ts",
+    "test:perf": "jiti ./scripts/benchmark-performance.ts",
     "tauri": "tauri"
   },
   "dependencies": {

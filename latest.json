@@ -1,0 +1,11 @@
+{
+  "version": "2.2.0",
+  "notes": "IdleStream v2.2.0 — Multi-Account Idle Gaming (PokeIdle), Zoom por Aba, Extensão /hunt Integrada, Restauração de Bandeja, Modo Econômico ao Vivo e Blindagem Rate-Limit Kick",
+  "pub_date": "2026-11-03T19:20:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjFzV3A2aEd2dExzUHNyb2ZDbkRJMFlVNlJicm1uQWlBVFBFeENRUTFiQlJDZytoQ00zK2JpV0ZmazhRUzNFTEh1SHhwQ2ZXSU9BdDhyVFNhejFWRndvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzMzNjA4CWZpbGU6SWRsZVN0cmVhbV8yLjIuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246Mi4yLjAKSUx3cXBSanJEK3V0MmpHNWZaTjh6S2dNMDJzSVIyNmpNY0FOYWJ4cXArOUtPYUlkL2dWZ3pNd3pvV0lLUUJPQ3Y2eFR3RXJCekl0TjJObmhqTHFVQXc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v2.2.0/IdleStream_2.2.0_x64-setup.exe"
+    }
+  }
+}

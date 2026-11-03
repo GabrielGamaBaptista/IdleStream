@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Tv, Users, Settings } from 'lucide-react';
+import { Tv, Gamepad2, Users, Settings } from 'lucide-react';
 
 export const BottomNav: React.FC = () => {
   const { activeTab, setActiveTab, config } = useAppStore();
@@ -25,6 +25,21 @@ export const BottomNav: React.FC = () => {
           )}
         </div>
         <span className="text-[11px] mt-1">Streams</span>
+      </button>
+
+      <button
+        onClick={() => setActiveTab('games')}
+        className={`flex flex-col items-center justify-center py-1 px-4 rounded-xl transition cursor-pointer relative ${
+          activeTab === 'games' ? 'text-indigo-400 font-semibold' : 'text-neutral-400 hover:text-neutral-200'
+        }`}
+      >
+        <div className="relative">
+          <Gamepad2 className="w-5 h-5" />
+          <span className="absolute -top-1.5 -right-2 px-1.5 py-0.2 rounded-full bg-indigo-600 text-[10px] text-white font-bold font-mono">
+            4
+          </span>
+        </div>
+        <span className="text-[11px] mt-1">Jogos</span>
       </button>
 
       <button

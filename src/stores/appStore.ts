@@ -1,27 +1,30 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { check, Update } from '@tauri-apps/plugin-updater';
-import { Account, AppConfig, AppSettings, Platform, StreamConfig, StreamRuntimeStatus } from '../types';
+import { Update } from '@tauri-apps/plugin-updater';
+import { Account, AppConfig, AppSettings, GameSlotConfig, Platform, StreamConfig, StreamRuntimeStatus } from '../types';
+import { checkForAppUpdates, installAppUpdate, UnifiedUpdateResult } from '../services/updaterService';
 
 interface AppState {
   appVersion: string;
   updateAvailable: { version: string; body?: string } | null;
   pendingUpdate: Update | null;
+  unifiedUpdate: UnifiedUpdateResult | null;
+  updateDownloadProgress: number | null;
   isCheckingUpdate: boolean;
   isInstallingUpdate: boolean;
   updateStatusMessage: string | null;
 
   config: AppConfig;
   statuses: Record<string, StreamRuntimeStatus>;
-  activeTab: 'streams' | 'accounts' | 'settings';
+  activeTab: 'streams' | 'games' | 'accounts' | 'settings';
   platformFilter: 'all' | Platform;
   isAddStreamOpen: boolean;
   isAddAccountOpen: boolean;
   isInitialized: boolean;
   visibleKickWindows: Record<string, boolean>;
 
-  setActiveTab: (tab: 'streams' | 'accounts' | 'settings') => void;
+  setActiveTab: (tab: 'streams' | 'games' | 'accounts' | 'settings') => void;
   setPlatformFilter: (filter: 'all' | Platform) => void;
   setAddStreamOpen: (open: boolean) => void;
   setAddAccountOpen: (open: boolean) => void;
@@ -49,12 +52,15 @@ interface AppState {
   stopAll: () => Promise<void>;
 
   updateSettings: (settings: AppSettings) => Promise<void>;
+  updateGameSlot: (slot: GameSlotConfig) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '2.1.1',
+  appVersion: '2.2.0',
   updateAvailable: null,
   pendingUpdate: null,
+  unifiedUpdate: null,
+  updateDownloadProgress: null,
   isCheckingUpdate: false,
   isInstallingUpdate: false,
   updateStatusMessage: null,
@@ -81,7 +87,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   isInitialized: false,
   visibleKickWindows: {},
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => {
+    if (tab !== 'games') {
+      invoke('game_hide_all').catch(() => {});
+    }
+    set({ activeTab: tab });
+  },
   setPlatformFilter: (filter) => set({ platformFilter: filter }),
   setAddStreamOpen: (open) => set({ isAddStreamOpen: open }),
   setAddAccountOpen: (open) => set({ isAddAccountOpen: open }),
@@ -101,16 +112,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       updateStatusMessage: manual ? 'Buscando atualizações no GitHub...' : null,
     });
     try {
-      const update = await check();
-      if (update?.available) {
+      const res = await checkForAppUpdates(get().appVersion);
+      if (res.hasUpdate) {
         set({
-          updateAvailable: { version: update.version, body: update.body },
-          pendingUpdate: update,
-          updateStatusMessage: `Nova versão v${update.version} disponível!`,
+          updateAvailable: { version: res.version, body: res.body },
+          unifiedUpdate: res,
+          pendingUpdate: res.desktopUpdate ?? null,
+          updateStatusMessage: `Nova versão v${res.version} disponível!`,
         });
       } else {
         set({
           updateAvailable: null,
+          unifiedUpdate: null,
           pendingUpdate: null,
           updateStatusMessage: manual ? 'Você já está na versão mais recente!' : null,
         });
@@ -130,14 +143,31 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   installUpdate: async () => {
-    const { pendingUpdate } = get();
-    if (!pendingUpdate) return;
-    set({ isInstallingUpdate: true, updateStatusMessage: 'Baixando e instalando atualização...' });
+    const { unifiedUpdate, pendingUpdate } = get();
+    if (!unifiedUpdate && !pendingUpdate) return;
+    set({
+      isInstallingUpdate: true,
+      updateDownloadProgress: 0,
+      updateStatusMessage: 'Iniciando atualização...',
+    });
     try {
-      await pendingUpdate.downloadAndInstall();
+      if (unifiedUpdate) {
+        await installAppUpdate(unifiedUpdate, (p) => {
+          set({
+            updateDownloadProgress: p,
+            updateStatusMessage: `Baixando atualização (${p}%)...`,
+          });
+        });
+      } else if (pendingUpdate) {
+        await pendingUpdate.downloadAndInstall();
+      }
     } catch (err: any) {
       alert(`Falha ao instalar atualização: ${err}`);
-      set({ isInstallingUpdate: false, updateStatusMessage: null });
+      set({
+        isInstallingUpdate: false,
+        updateDownloadProgress: null,
+        updateStatusMessage: null,
+      });
     }
   },
 
@@ -201,6 +231,35 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (accountId && kickSession) {
             handleKickAuth(accountId, kickSession, sessionToken, xsrfToken);
           }
+        });
+
+        // Eventos nativos de atualização do Android
+        window.addEventListener('android-update-progress', (e: any) => {
+          const percent = e.detail?.percent ?? 0;
+          set({
+            isInstallingUpdate: true,
+            updateDownloadProgress: percent,
+            updateStatusMessage: `Baixando atualização (${percent}%)...`,
+          });
+        });
+
+        window.addEventListener('android-update-status', (e: any) => {
+          const status = e.detail?.status;
+          const percent = e.detail?.percent;
+          set({
+            updateStatusMessage: status,
+            updateDownloadProgress: percent ?? null,
+          });
+        });
+
+        window.addEventListener('android-update-error', (e: any) => {
+          const error = e.detail?.error || 'Erro desconhecido';
+          alert(`Falha no download da atualização: ${error}`);
+          set({
+            isInstallingUpdate: false,
+            updateDownloadProgress: null,
+            updateStatusMessage: null,
+          });
         });
       }
 
@@ -328,5 +387,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newConfig = { ...get().config, settings };
     await invoke('save_config', { config: newConfig });
     set({ config: newConfig });
+  },
+
+  updateGameSlot: async (slot) => {
+    try {
+      const updated = await invoke<AppConfig>('update_game_slot', { slot });
+      set({ config: updated });
+    } catch (e) {
+      console.error('Falha ao atualizar slot de jogo:', e);
+    }
   },
 }));

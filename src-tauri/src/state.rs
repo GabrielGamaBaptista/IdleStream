@@ -318,7 +318,7 @@ impl AppState {
                 let this = Arc::clone(self);
                 let mut started_count = 0;
 
-                for account in accounts {
+                for (idx, account) in accounts.iter().enumerate() {
                     let session_token = match &account.session_token {
                         Some(t) if !t.is_empty() => t.clone(),
                         _ => {
@@ -326,6 +326,11 @@ impl AppState {
                             continue;
                         }
                     };
+
+                    if idx > 0 {
+                        // Escalonamento de 2.5s entre contas para evitar rate-limit (429) na Kick
+                        tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+                    }
 
                     let session_key = format!("{}:{}", stream_id, account.id);
                     {

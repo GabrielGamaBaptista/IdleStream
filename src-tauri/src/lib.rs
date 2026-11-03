@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod config;
+pub mod games;
 pub mod kick;
 pub mod live_check;
 pub mod state;
@@ -13,12 +14,37 @@ use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+#[cfg(desktop)]
+use tauri::Emitter;
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::WindowEvent;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    {
+        // === BANCO DE FLAGS DE HIPER-PERFORMANCE & ECONOMIA DE MEMÓRIA (WEBVIEW2) ===
+        // 1. Anti-Sleep: Garante que timers e farm continuem 24/7 sem suspensão de background
+        // 2. RAM Reduction: Limita heap do V8 para 256MB, in-process GPU, merge de processos
+        // 3. Garbage Collection: Habilita window.gc() para purga periódica de texturas
+        // 4. Bloat Disabler: Desativa spare renderers, media router, autofill e tradução
+        std::env::set_var(
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--disable-background-timer-throttling \
+             --disable-renderer-backgrounding \
+             --disable-backgrounding-occluded-windows \
+             --disable-features=CalculateNativeWinOcclusion,SpareRendererForSitePerProcess,TranslateUI,MediaRouter,AutofillServerCommunication \
+             --enable-features=SharedArrayBuffer \
+             --renderer-process-limit=4 \
+             --in-process-gpu \
+             --disable-extensions \
+             --disable-default-apps \
+             --no-default-browser-check \
+             --js-flags=\"--max-old-space-size=256 --optimize-for-size --expose-gc\""
+        );
+    }
+
     std::panic::set_hook(Box::new(|panic_info| {
         let msg = format!("[RUST PANIC] Fatal panic in Rust: {:?}", panic_info);
         eprintln!("{}", msg);
@@ -51,6 +77,9 @@ pub fn run() {
             let app_state = Arc::new(AppState::new(app_handle.clone()));
             app.manage(app_state.clone());
 
+            let game_manager = Arc::new(games::manager::GameLayoutManager::new(app_handle.clone()));
+            app.manage(game_manager.clone());
+
             // Start background vigilance loop (Auto-Live detection & standby recovery)
             app_state.start_vigilance_loop();
 
@@ -79,8 +108,15 @@ pub fn run() {
                             match event.id.as_ref() {
                                 "show" => {
                                     if let Some(win) = app_handle_tray.get_webview_window("main") {
+                                        let _ = win.unminimize();
                                         let _ = win.show();
                                         let _ = win.set_focus();
+                                        let _ = win.emit("window-restored", ());
+                                    } else if let Some(win) = app_handle_tray.get_window("main") {
+                                        let _ = win.unminimize();
+                                        let _ = win.show();
+                                        let _ = win.set_focus();
+                                        let _ = win.emit("window-restored", ());
                                     }
                                 }
                                 "start_all" => {
@@ -114,16 +150,31 @@ pub fn run() {
                             }
                         })
                         .on_tray_icon_event(|tray, event| {
-                            if let TrayIconEvent::Click {
-                                button: MouseButton::Left,
-                                button_state: MouseButtonState::Up,
-                                ..
-                            } = event
-                            {
+                            let should_restore = match event {
+                                TrayIconEvent::Click {
+                                    button: MouseButton::Left,
+                                    button_state: MouseButtonState::Up,
+                                    ..
+                                } => true,
+                                TrayIconEvent::DoubleClick {
+                                    button: MouseButton::Left,
+                                    ..
+                                } => true,
+                                _ => false,
+                            };
+
+                            if should_restore {
                                 let app = tray.app_handle();
                                 if let Some(win) = app.get_webview_window("main") {
+                                    let _ = win.unminimize();
                                     let _ = win.show();
                                     let _ = win.set_focus();
+                                    let _ = win.emit("window-restored", ());
+                                } else if let Some(win) = app.get_window("main") {
+                                    let _ = win.unminimize();
+                                    let _ = win.show();
+                                    let _ = win.set_focus();
+                                    let _ = win.emit("window-restored", ());
                                 }
                             }
                         })
@@ -175,6 +226,17 @@ pub fn run() {
             save_twitch_token,
             save_kick_credentials_direct,
             get_app_version,
+            update_game_slot,
+            games::commands::game_start_slot,
+            games::commands::game_stop_slot,
+            games::commands::game_apply_layout,
+            games::commands::game_update_slots_bounds,
+            games::commands::game_reload_slot,
+            games::commands::game_set_slot_zoom,
+            games::commands::game_set_eco_mode,
+            games::commands::game_get_eco_mode,
+            games::commands::game_hide_all,
+            games::commands::game_get_active_slots,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

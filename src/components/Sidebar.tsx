@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Tv, Users, Settings, Plus, Filter } from 'lucide-react';
+import { Tv, Users, Settings, Plus, Filter, Gamepad2 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const {
@@ -39,6 +39,23 @@ export const Sidebar: React.FC = () => {
               </div>
               <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-950 text-neutral-400 border border-neutral-800 font-mono">
                 {config.streams.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('games')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition cursor-pointer ${
+                activeTab === 'games'
+                  ? 'bg-neutral-800 text-white'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Gamepad2 className="w-4 h-4 text-indigo-400" />
+                <span>Idle Games</span>
+              </div>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-800/60 font-mono">
+                4
               </span>
             </button>
 
