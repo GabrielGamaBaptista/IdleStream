@@ -1,10 +1,10 @@
 {
   "version": "3.0.1",
   "notes": "IdleStream v3.0.1 — 4 Sessões Nativas de Idle Game no Mobile, Modo Imersivo Tela Cheia, Super Economia 10 FPS, Suporte a PokeIdle Ultra Economy e Isolamento Total de Contas",
-  "pub_date": "2026-11-04T12:00:00Z",
+  "pub_date": "2026-11-04T18:35:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjFzV3A2aEd2dExzUHNyb2ZDbkRJMFlVNlJicm1uQWlBVFBFeENRUTFiQlJDZytoQ00zK2JpV0ZmazhRUzNFTEh1SHhwQ2ZXSU9BdDhyVFNhejFWRndvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNzMzNjA4CWZpbGU6SWRsZVN0cmVhbV8zLjAuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjEKSUx3cXBSanJEK3V0MmpHNWZaTjh6S2dNMDJzSVIyNmpNY0FOYWJ4cXArOUtPYUlkL2dWZ3pNd3pvV0lLUUJPQ3Y2eFR3RXJCekl0TjJObmhqTHFVQXc9PQo=",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjV4bHoyY0FMekRHaGRWTW5mMlZhakdwciszV2Mzdi9uUTNBeXBYWmNDVnhaUDZIM24rckZXK244TlEzdEw4VWdTMEF1STVlalRqeWVwQ3BXVzFJRndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODE4Mzk1CWZpbGU6SWRsZVN0cmVhbV8zLjAuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjEKRFpVdnIrWGZpQUNlS1BjeE4xa0syQ0x5YnRUcHZndEN0REtNNWdoSG5icy9EbU00SFNGWTlvZ0poUHVPNDc1dlgrRG9ablZ4MTRCY2l5R0NSR25FQ2c9PQo=",
       "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.1/IdleStream_3.0.1_x64-setup.exe"
     }
   }
