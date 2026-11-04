@@ -350,88 +350,88 @@ export const GameWorkspace: React.FC = () => {
 
       {/* Barra de Ferramentas Superior (Estilo IdleDeck) */}
       {isToolbarVisible && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-neutral-900/90 border-b border-neutral-800 shrink-0 z-20">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-neutral-900/90 border-b border-neutral-800 shrink-0 z-20">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-sm font-bold text-white tracking-tight">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className="text-xs sm:text-sm font-bold text-white tracking-tight">
                 Poke Idle World
               </span>
             </div>
 
             <div className="flex items-center gap-1.5 text-xs">
-              <span className="px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700/80 font-mono text-[11px]">
+              <span className="px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700/80 font-mono text-[10px] sm:text-[11px] shrink-0">
                 {activeSlots.length}/4 ativas
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-mono text-[11px] flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                Always-Running 24/7
+              <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-mono text-[10px] sm:text-[11px] flex items-center gap-1 shrink-0">
+                <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span className="hidden xs:inline">Always-Running </span>24/7
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto py-0.5 shrink-0">
             {/* Ações Globais */}
             {activeSlots.length < gameSlots.length && (
               <button
                 onClick={handleStartAll}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-emerald-600/30"
+                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-emerald-600/30 shrink-0"
                 title="Iniciar todas as contas simultaneamente"
               >
                 <Play className="w-3 h-3 fill-current" />
-                <span>Iniciar Todas</span>
+                <span>Iniciar{isMobile ? '' : ' Todas'}</span>
               </button>
             )}
 
             {activeSlots.length > 0 && (
               <button
                 onClick={handleStopAll}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 text-xs font-medium border border-neutral-700 transition cursor-pointer"
+                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 text-xs font-medium border border-neutral-700 transition cursor-pointer shrink-0"
                 title="Parar todas as contas"
               >
                 <Square className="w-3 h-3" />
-                <span>Parar Todas</span>
+                <span>Parar{isMobile ? '' : ' Todas'}</span>
               </button>
             )}
 
             {/* Seletor Multi-Nível de FPS e Modo Econômico */}
-            <div className="flex bg-neutral-800/90 rounded-lg p-0.5 border border-neutral-700/80 text-[11px]">
+            <div className="flex bg-neutral-800/90 rounded-lg p-0.5 border border-neutral-700/80 text-[11px] shrink-0">
               <button
                 onClick={() => handleSetFpsTier('60')}
-                className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
                   fpsTier === '60'
                     ? 'bg-neutral-700 text-white shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200'
                 }`}
                 title="60 FPS: Taxa cheia de quadros e máxima fluidez"
               >
-                60 FPS
+                {isMobile ? '60' : '60 FPS'}
               </button>
               <button
                 onClick={() => handleSetFpsTier('30')}
-                className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
                   fpsTier === '30'
                     ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/80 shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200'
                 }`}
                 title="30 FPS: Modo Econômico (50% menos CPU/GPU)"
               >
-                🍃 30 FPS
+                🍃 {isMobile ? '30' : '30 FPS'}
               </button>
               <button
                 onClick={() => handleSetFpsTier('10')}
-                className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
                   fpsTier === '10'
                     ? 'bg-amber-950 text-amber-300 border border-amber-600/80 shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200'
                 }`}
                 title="10 FPS: Modo Super Economia (85% menos CPU/GPU mantendo caça 100%)"
               >
-                🔋 10 FPS
+                🔋 {isMobile ? '10' : '10 FPS'}
               </button>
               <button
                 onClick={handleToggleGlobalUltra}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
                   isPokeIdleUltra
                     ? 'bg-purple-950 text-purple-200 border border-purple-600/80 shadow-xs'
                     : 'text-neutral-400 hover:text-purple-300'
@@ -444,26 +444,26 @@ export const GameWorkspace: React.FC = () => {
             </div>
 
             {/* Seletores de Layout (Responsivo Mobile vs Desktop) */}
-            <div className="flex bg-neutral-800 rounded-lg p-0.5 border border-neutral-700/80">
+            <div className="flex bg-neutral-800 rounded-lg p-0.5 border border-neutral-700/80 shrink-0">
               <button
                 onClick={() => setLayoutMode('grid')}
-                className={`p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
+                className={`p-1 sm:p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
                   layoutMode === 'grid' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
                 title="Grade 2x2 (Ver as 4 contas simultâneas)"
               >
-                <LayoutGrid className="w-4 h-4" />
-                {isMobile && <span className="text-[10px]">4 Jogos</span>}
+                <LayoutGrid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                {isMobile && <span className="text-[10px]">4x</span>}
               </button>
               <button
                 onClick={() => setLayoutMode('focus')}
-                className={`p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
+                className={`p-1 sm:p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
                   layoutMode === 'focus' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
                 title="Modo Foco (1 Conta em destaque total)"
               >
-                <Maximize2 className="w-4 h-4" />
-                {isMobile && <span className="text-[10px]">Foco</span>}
+                <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                {isMobile && <span className="text-[10px]">1x</span>}
               </button>
               {!isMobile && (
                 <button
@@ -481,7 +481,7 @@ export const GameWorkspace: React.FC = () => {
             {/* Toggle Modo Tela Cheia / Ocultar Menus */}
             <button
               onClick={toggleImmersiveMode}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0 ${
                 isImmersiveMode
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
                   : 'bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/80 hover:bg-neutral-700'
@@ -498,7 +498,7 @@ export const GameWorkspace: React.FC = () => {
                 setIsToolbarVisible(false);
                 setTimeout(syncBounds, 60);
               }}
-              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+              className="p-1 sm:p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
               title="Recolher barra superior dos jogos (Modo 100% Tela Cheia)"
             >
               <ChevronUp className="w-4 h-4" />
@@ -509,7 +509,7 @@ export const GameWorkspace: React.FC = () => {
 
       {/* Se estiver no Modo Foco, exibir abas superiores para alternância rápida de conta */}
       {layoutMode === 'focus' && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 border-b border-neutral-800 shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 border-b border-neutral-800 shrink-0 overflow-x-auto no-scrollbar">
           {gameSlots.map((slot, idx) => {
             const isRunning = activeSlots.includes(slot.id);
             const isFocused = focusedSlotId === slot.id;
@@ -517,17 +517,16 @@ export const GameWorkspace: React.FC = () => {
               <button
                 key={slot.id}
                 onClick={() => setFocusedSlotId(slot.id)}
-                className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0 ${
                   isFocused
                     ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
                     : 'bg-neutral-800/80 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
                 }`}
               >
                 <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: isRunning ? '#10b981' : '#6b7280' }}
+                  className={`w-2 h-2 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-600'}`}
                 />
-                <span>{slot.label || `Conta ${idx + 1}`}</span>
+                <span className="truncate max-w-[90px] sm:max-w-none">{slot.label || `Conta ${idx + 1}`}</span>
                 <span className="text-[10px] opacity-60 font-mono">#{idx + 1}</span>
               </button>
             );
@@ -676,8 +675,8 @@ export const GameWorkspace: React.FC = () => {
         }`}
       >
         {/* Cabeçalho do Card (Estilo IdleDeck) */}
-        <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-900 border-b border-neutral-800/80 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center justify-between gap-1.5 px-2.5 sm:px-3 py-1.5 bg-neutral-900 border-b border-neutral-800/80 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink">
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${
                 isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-600'
@@ -697,12 +696,12 @@ export const GameWorkspace: React.FC = () => {
                     : 'bg-neutral-800 text-neutral-400 border border-neutral-700/50'
                 }`}
               >
-                {fpsTier === '10' ? '🔋 10 FPS' : fpsTier === '30' ? '🍃 30 FPS' : '⚡ 60 FPS'}
+                {fpsTier === '10' ? '🔋 10' : fpsTier === '30' ? '🍃 30' : '⚡ 60'}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
             {isRunning && (
               <button
                 onClick={() => handleToggleSlotUltra(slot.id)}

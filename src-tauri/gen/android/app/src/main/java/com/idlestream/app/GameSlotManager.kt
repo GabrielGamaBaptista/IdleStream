@@ -2,6 +2,7 @@ package com.idlestream.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
 import android.view.MotionEvent
@@ -9,7 +10,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.FrameLayout
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONArray
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -87,11 +91,44 @@ class GameSlotManager(private val activity: MainActivity) {
                         allowFileAccess = false
                         allowContentAccess = false
                         cacheMode = WebSettings.LOAD_DEFAULT
+                        javaScriptCanOpenWindowsAutomatically = true
+                        setSupportMultipleWindows(false)
                     }
+
+                    // Remove '; wv' e 'Version/X.X' para que Google OAuth, Cloudflare e Discord
+                    // tratem a WebView como um navegador Chrome Mobile normal, evitando bloqueios
+                    val originalUa = settings.userAgentString
+                    settings.userAgentString = originalUa
+                        .replace("; wv", "")
+                        .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
+
+                    // Habilita cookies padrão e de terceiros para redirecionamentos OAuth
+                    val cookieManager = CookieManager.getInstance()
+                    cookieManager.setAcceptCookie(true)
+                    cookieManager.setAcceptThirdPartyCookies(this, true)
 
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
+                    val isolationScript = getStorageIsolationScript(slotId)
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                        try {
+                            WebViewCompat.addDocumentStartJavaScript(
+                                this,
+                                isolationScript,
+                                Collections.singleton("*")
+                            )
+                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso para $slotId")
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Falha ao registrar addDocumentStartJavaScript: ${e.message}")
+                        }
+                    }
+
                     webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: Bitmap?) {
+                            super.onPageStarted(view, pageUrl, favicon)
+                            view?.evaluateJavascript(getStorageIsolationScript(slotId), null)
+                        }
+
                         override fun onPageFinished(view: WebView?, pageUrl: String?) {
                             super.onPageFinished(view, pageUrl)
                             injectEngineScripts(slotId, view, pageUrl)
@@ -113,11 +150,8 @@ class GameSlotManager(private val activity: MainActivity) {
         }
     }
 
-    private fun injectEngineScripts(slotId: String, view: WebView?, url: String?) {
-        if (view == null) return
-
-        // 1. Isolamento de localStorage para que 4 contas não colidam no PokeIdle
-        val storageIsolation = """
+    private fun getStorageIsolationScript(slotId: String): String {
+        return """
             (function() {
                 if (window.__slotStorageIsolated) return;
                 window.__slotStorageIsolated = true;
@@ -130,20 +164,98 @@ class GameSlotManager(private val activity: MainActivity) {
                 const rawKey = proto.key;
 
                 proto.getItem = function(k) {
-                    if (this === window.localStorage) return rawGet.call(this, PREFIX + k);
+                    if (this === window.localStorage) {
+                        const val = rawGet.call(this, PREFIX + k);
+                        if (val !== null && val !== undefined) return val;
+                        // Fallback para chave original (garante resgate de tokens/idas de OAuth)
+                        return rawGet.call(this, k);
+                    }
                     return rawGet.call(this, k);
                 };
+
                 proto.setItem = function(k, v) {
-                    if (this === window.localStorage) return rawSet.call(this, PREFIX + k, v);
+                    if (this === window.localStorage) {
+                        const strVal = String(v);
+                        rawSet.call(this, PREFIX + k, strVal);
+                        // Chaves críticas de autenticação OAuth (PokeIdle e Discord/Google)
+                        if (k === 'oauth-ida' || k.startsWith('oauth')) {
+                            rawSet.call(this, k, strVal);
+                        }
+                        return;
+                    }
                     return rawSet.call(this, k, v);
                 };
+
                 proto.removeItem = function(k) {
-                    if (this === window.localStorage) return rawRemove.call(this, PREFIX + k);
+                    if (this === window.localStorage) {
+                        rawRemove.call(this, PREFIX + k);
+                        if (k === 'oauth-ida' || k.startsWith('oauth')) {
+                            rawRemove.call(this, k);
+                        }
+                        return;
+                    }
                     return rawRemove.call(this, k);
                 };
+
+                proto.clear = function() {
+                    if (this === window.localStorage) {
+                        const toRemove = [];
+                        for (let i = 0; i < this.length; i++) {
+                            const k = rawKey.call(this, i);
+                            if (k && k.startsWith(PREFIX)) {
+                                toRemove.push(k);
+                            }
+                        }
+                        for (let i = 0; i < toRemove.length; i++) {
+                            rawRemove.call(this, toRemove[i]);
+                        }
+                        return;
+                    }
+                    return rawClear.call(this);
+                };
+
+                try {
+                    const storageProxy = new Proxy(window.localStorage, {
+                        get(target, prop, receiver) {
+                            if (typeof prop === 'string') {
+                                if (prop in proto) {
+                                    const val = target[prop];
+                                    return typeof val === 'function' ? val.bind(target) : val;
+                                }
+                                return target.getItem(prop);
+                            }
+                            return Reflect.get(target, prop, receiver);
+                        },
+                        set(target, prop, value, receiver) {
+                            if (typeof prop === 'string') {
+                                target.setItem(prop, value);
+                                return true;
+                            }
+                            return Reflect.set(target, prop, value, receiver);
+                        },
+                        deleteProperty(target, prop) {
+                            if (typeof prop === 'string') {
+                                target.removeItem(prop);
+                                return true;
+                            }
+                            return Reflect.deleteProperty(target, prop);
+                        }
+                    });
+                    Object.defineProperty(window, 'localStorage', {
+                        configurable: true,
+                        enumerable: true,
+                        get: () => storageProxy
+                    });
+                } catch (_) {}
             })();
         """.trimIndent()
-        view.evaluateJavascript(storageIsolation, null)
+    }
+
+    private fun injectEngineScripts(slotId: String, view: WebView?, url: String?) {
+        if (view == null) return
+
+        // 1. Isolamento de localStorage redundante para garantir inicialização
+        view.evaluateJavascript(getStorageIsolationScript(slotId), null)
 
         // 2. Motor Anti-Sleep e Throttling de FPS
         val antiSleepScript = loadAssetScript("games/anti_sleep.js")
