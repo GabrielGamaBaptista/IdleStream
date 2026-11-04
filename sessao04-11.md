@@ -131,3 +131,27 @@ Identificados e corrigidos dois problemas críticos na release v3.0.1:
    - Compilado instalador Windows assinado com Minisign (`IdleStream_3.0.1_x64-setup.exe.sig`).
    - Compilado APK Android release (`IdleStream_3.0.1_arm64.apk` — 9.62 MB).
    - Atualizado manifesto `latest.json` com a nova assinatura e feito upload dos 5 artefatos na tag `v3.0.1` do GitHub.
+
+---
+
+## 💎 8. Release v3.0.2 (Isolamento Nativo Multi-Profile & Google OAuth Independente)
+
+Identificado e corrigido o compartilhamento de sessão entre as contas no mobile:
+
+1. **Problema**:
+   - Ao fazer login no slot "Conta 1", os slots "Conta 2", "Conta 3" e "Conta 4" abriam automaticamente logados com a Conta 1.
+   - O Google OAuth reaproveitava os cookies globais da sessão anterior e impedia selecionar outras contas do Google.
+   - A chave de sessão `sessao` caía no fallback legado do `localStorage`.
+
+2. **Solução Implementada em `GameSlotManager.kt`**:
+   - **Multi-Profile Nativo AndroidX (`MULTI_PROFILE`)**: Cada slot utiliza `ProfileStore.getInstance().getOrCreateProfile("slot_$slotId")` e `WebViewCompat.setProfile(webView, "slot_$slotId")`, garantindo isolamento total em nível de Chromium para cookies, cache e banco de dados.
+   - **Forçar Seletor de Contas no Google OAuth (`prompt=select_account`)**: Intercepção automática de URLs do Google (`accounts.google.com`) no `onPageStarted` e `shouldOverrideUrlLoading`, injetando `prompt=select_account` para que cada slot permita autenticar uma conta diferente do Google.
+   - **Isolamento Rígido de LocalStorage**: Removido fallback da chave `sessao` no script de isolamento injetado; apenas chaves transitórias de handshake (`oauth-ida`, `oauth_state`) são compartilhadas para completar o fluxo do PokeIdle. Purga proativa de `sessao` legado no início.
+
+3. **Artefatos Gerados e Publicados na Tag v3.0.2**:
+   - `IdleStream_3.0.2_arm64.apk` (9.72 MB)
+   - `IdleStream_3.0.2_x64-setup.exe` (2.74 MB)
+   - `IdleStream_3.0.2_x64-setup.exe.sig` (Assinatura Minisign oficial)
+   - `idlestream.exe` (Binário portátil Windows)
+   - `latest.json` (Manifesto assinado)
+

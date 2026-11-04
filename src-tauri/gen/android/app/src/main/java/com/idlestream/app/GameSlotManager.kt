@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.FrameLayout
+import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
@@ -34,6 +35,59 @@ class PassThroughFrameLayout(context: Context) : FrameLayout(context) {
 class GameSlotManager(private val activity: MainActivity) {
     companion object {
         private const val TAG = "GameSlotManager"
+
+        fun isGoogleAuthUrl(url: String?): Boolean {
+            if (url.isNullOrBlank()) return false
+            val lower = url.lowercase()
+            if (!lower.contains("accounts.google.com")) return false
+
+            val isOAuthEndpoint = lower.contains("/o/oauth2/") || lower.contains("/oauth2/") || lower.contains("/signin/oauth")
+            val hasOAuthParams = lower.contains("response_type=") ||
+                    (lower.contains("client_id=") && lower.contains("redirect_uri="))
+
+            val isInternalGoogleNav = lower.contains("/oauthchooseaccount") ||
+                    lower.contains("/signin/v2/challenge") ||
+                    lower.contains("/signin/challenge")
+
+            return (isOAuthEndpoint || hasOAuthParams) && !isInternalGoogleNav
+        }
+
+        fun ensureSelectAccountPrompt(url: String): String {
+            val promptRegex = Regex("""([?&])prompt=([^&#]*)""", RegexOption.IGNORE_CASE)
+            val match = promptRegex.find(url)
+
+            if (match != null) {
+                val prefix = match.groupValues[1]
+                val currentPrompt = match.groupValues[2]
+                val decodedPrompt = try {
+                    java.net.URLDecoder.decode(currentPrompt, "UTF-8")
+                } catch (_: Exception) {
+                    currentPrompt
+                }
+
+                if (decodedPrompt.contains("select_account", ignoreCase = true)) {
+                    return url
+                }
+
+                val newPrompt = if (decodedPrompt.isBlank()) {
+                    "select_account"
+                } else {
+                    "select_account%20$currentPrompt"
+                }
+                return url.replaceRange(match.range, "${prefix}prompt=$newPrompt")
+            } else {
+                val hashIdx = url.indexOf('#')
+                return if (hashIdx != -1) {
+                    val beforeHash = url.substring(0, hashIdx)
+                    val afterHash = url.substring(hashIdx)
+                    val sep = if (beforeHash.contains("?")) "&" else "?"
+                    "${beforeHash}${sep}prompt=select_account${afterHash}"
+                } else {
+                    val sep = if (url.contains("?")) "&" else "?"
+                    "${url}${sep}prompt=select_account"
+                }
+            }
+        }
     }
 
     private var container: PassThroughFrameLayout? = null
@@ -102,10 +156,28 @@ class GameSlotManager(private val activity: MainActivity) {
                         .replace("; wv", "")
                         .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
 
-                    // Habilita cookies padrão e de terceiros para redirecionamentos OAuth
-                    val cookieManager = CookieManager.getInstance()
-                    cookieManager.setAcceptCookie(true)
-                    cookieManager.setAcceptThirdPartyCookies(this, true)
+                    // Isolamento NATIVO de Cookies e Sessões via Multi-Profile (AndroidX WebKit)
+                    val profileName = "slot_$slotId"
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+                        try {
+                            val profileStore = ProfileStore.getInstance()
+                            val profile = profileStore.getOrCreateProfile(profileName)
+                            WebViewCompat.setProfile(this, profileName)
+                            val profileCookieManager = profile.cookieManager
+                            profileCookieManager.setAcceptCookie(true)
+                            profileCookieManager.setAcceptThirdPartyCookies(this, true)
+                            Log.d(TAG, "Multi-profile $profileName configurado com sucesso para $slotId")
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Falha ao aplicar MULTI_PROFILE ($profileName): ${e.message}")
+                            val cookieManager = CookieManager.getInstance()
+                            cookieManager.setAcceptCookie(true)
+                            cookieManager.setAcceptThirdPartyCookies(this, true)
+                        }
+                    } else {
+                        val cookieManager = CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
+                    }
 
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
@@ -126,7 +198,30 @@ class GameSlotManager(private val activity: MainActivity) {
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, pageUrl, favicon)
+                            // Força prompt=select_account para permitir selecionar contas Google diferentes
+                            if (pageUrl != null && isGoogleAuthUrl(pageUrl)) {
+                                val modifiedUrl = ensureSelectAccountPrompt(pageUrl)
+                                if (modifiedUrl != pageUrl) {
+                                    Log.i(TAG, "Injetando prompt=select_account no Google OAuth (slot $slotId): $modifiedUrl")
+                                    view?.stopLoading()
+                                    view?.loadUrl(modifiedUrl)
+                                    return
+                                }
+                            }
                             view?.evaluateJavascript(getStorageIsolationScript(slotId), null)
+                        }
+
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                            val reqUrl = request?.url?.toString()
+                            if (reqUrl != null && isGoogleAuthUrl(reqUrl)) {
+                                val modifiedUrl = ensureSelectAccountPrompt(reqUrl)
+                                if (modifiedUrl != reqUrl) {
+                                    Log.i(TAG, "Injetando prompt=select_account no Google OAuth (shouldOverride, slot $slotId): $modifiedUrl")
+                                    view?.loadUrl(modifiedUrl)
+                                    return true
+                                }
+                            }
+                            return false
                         }
 
                         override fun onPageFinished(view: WebView?, pageUrl: String?) {
@@ -163,12 +258,20 @@ class GameSlotManager(private val activity: MainActivity) {
                 const rawClear = proto.clear;
                 const rawKey = proto.key;
 
+                // Higieniza qualquer sessão global antiga para evitar contaminação entre contas
+                try {
+                    rawRemove.call(window.localStorage, 'sessao');
+                } catch (_) {}
+
                 proto.getItem = function(k) {
                     if (this === window.localStorage) {
                         const val = rawGet.call(this, PREFIX + k);
                         if (val !== null && val !== undefined) return val;
-                        // Fallback para chave original (garante resgate de tokens/idas de OAuth)
-                        return rawGet.call(this, k);
+                        // APENAS chaves efêmeras anti-CSRF do OAuth têm fallback, NUNCA a sessão do jogo!
+                        if (k === 'oauth-ida' || k === 'oauth_state') {
+                            return rawGet.call(this, k);
+                        }
+                        return null;
                     }
                     return rawGet.call(this, k);
                 };
@@ -177,8 +280,8 @@ class GameSlotManager(private val activity: MainActivity) {
                     if (this === window.localStorage) {
                         const strVal = String(v);
                         rawSet.call(this, PREFIX + k, strVal);
-                        // Chaves críticas de autenticação OAuth (PokeIdle e Discord/Google)
-                        if (k === 'oauth-ida' || k.startsWith('oauth')) {
+                        // APENAS chaves efêmeras de ida ao OAuth são espelhadas
+                        if (k === 'oauth-ida') {
                             rawSet.call(this, k, strVal);
                         }
                         return;
@@ -189,7 +292,7 @@ class GameSlotManager(private val activity: MainActivity) {
                 proto.removeItem = function(k) {
                     if (this === window.localStorage) {
                         rawRemove.call(this, PREFIX + k);
-                        if (k === 'oauth-ida' || k.startsWith('oauth')) {
+                        if (k === 'oauth-ida') {
                             rawRemove.call(this, k);
                         }
                         return;

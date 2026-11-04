@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { GameSlotConfig, SlotBounds } from '../src/types/index.ts';
 
 console.log('================================================================');
-console.log('🧪 BATERIA DE TESTES METICULOSA: IDLESTREAM v3.0.1 (MOBILE & PC)');
+console.log('🧪 BATERIA DE TESTES METICULOSA: IDLESTREAM v3.0.2 (MOBILE & PC)');
 console.log('================================================================\n');
 
 // ============================================================================
