@@ -23,6 +23,7 @@ export default function App() {
     platformFilter,
     setPlatformFilter,
     setAddStreamOpen,
+    isImmersiveMode,
   } = useAppStore();
 
   const [editingStream, setEditingStream] = useState<StreamConfig | null>(null);
@@ -31,20 +32,26 @@ export default function App() {
     init();
   }, [init]);
 
+  const isFullscreenGames = isImmersiveMode && activeTab === 'games';
+
   const displayedStreams = config.streams.filter((s) => {
     if (platformFilter === 'all') return true;
     return s.platform === platformFilter;
   });
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans pt-[env(safe-area-inset-top)]">
+    <div
+      className={`flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans ${
+        isFullscreenGames ? 'p-0 m-0' : 'pt-[env(safe-area-inset-top)]'
+      }`}
+    >
       {/* Top Header */}
-      <Header />
+      {!isFullscreenGames && <Header />}
 
       {/* Main Container */}
       <div className="flex flex-1 min-h-0 overflow-hidden bg-neutral-950">
         {/* Left Sidebar */}
-        <Sidebar />
+        {!isFullscreenGames && <Sidebar />}
 
         {/* Dynamic Content Area */}
         <main
@@ -154,10 +161,10 @@ export default function App() {
       </div>
 
       {/* Bottom Status Bar */}
-      <StatusBar />
+      {!isFullscreenGames && <StatusBar />}
 
       {/* Mobile Bottom Navigation */}
-      <BottomNav />
+      {!isFullscreenGames && <BottomNav />}
 
       {/* Modals */}
       <AddStreamModal />

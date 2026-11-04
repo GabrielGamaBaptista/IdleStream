@@ -50,6 +50,12 @@ $destAssets = "src-tauri/gen/android/app/src/main/assets"
 New-Item -ItemType Directory -Force -Path $destAssets | Out-Null
 Copy-Item -Path "dist/*" -Destination $destAssets -Recurse -Force
 
+# Copiar scripts de jogos e extensões para os assets do Android
+$destGames = "$destAssets/games"
+New-Item -ItemType Directory -Force -Path $destGames | Out-Null
+Copy-Item -Path "src-tauri/src/games/anti_sleep.js" -Destination "$destGames/anti_sleep.js" -Force
+Copy-Item -Path "src-tauri/src/games/hunt_extension.js" -Destination "$destGames/hunt_extension.js" -Force
+
 Write-Host "==> [5/5] Montando APK Gradle ($BuildType)..." -ForegroundColor Cyan
 if ($Target -eq "x86_64-linux-android") {
     $gradleTask = if ($BuildType -eq "release") { "assembleX86_64Release" } else { "assembleX86_64Debug" }
@@ -72,7 +78,7 @@ $apkPath = Get-ChildItem -Path "src-tauri/gen/android/app/build/outputs/apk" -Re
 
 if ($apkPath) {
     $sizeMb = [math]::Round($apkPath.Length / 1MB, 2)
-    $destRootApk = "IdleStream_2.2.0_arm64.apk"
+    $destRootApk = "IdleStream_3.0.1_arm64.apk"
     Copy-Item -Path $apkPath.FullName -Destination $destRootApk -Force
     Write-Host "`n========================================================" -ForegroundColor Green
     Write-Host " APK GERADO COM SUCESSO!" -ForegroundColor Green

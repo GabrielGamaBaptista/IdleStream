@@ -18,6 +18,7 @@ class MainActivity : TauriActivity() {
     }
 
     private var mainWebView: WebView? = null
+    val gameSlotManager by lazy { GameSlotManager(this) }
 
     class WebAppInterface(private val activity: MainActivity) {
         @JavascriptInterface
@@ -130,6 +131,65 @@ class MainActivity : TauriActivity() {
                 }
             )
         }
+
+        // ============================================================
+        // MÉTODOS NATIVOS DO GAME SLOT MANAGER (ANDROID)
+        // ============================================================
+
+        @JavascriptInterface
+        fun startGameSlot(slotId: String, url: String, zoom: Double) {
+            activity.gameSlotManager.startSlot(slotId, url, zoom)
+        }
+
+        @JavascriptInterface
+        fun stopGameSlot(slotId: String) {
+            activity.gameSlotManager.stopSlot(slotId)
+        }
+
+        @JavascriptInterface
+        fun reloadGameSlot(slotId: String) {
+            activity.gameSlotManager.reloadSlot(slotId)
+        }
+
+        @JavascriptInterface
+        fun updateGameSlotBounds(jsonBounds: String) {
+            activity.gameSlotManager.updateBounds(jsonBounds)
+        }
+
+        @JavascriptInterface
+        fun setGameSlotZoom(slotId: String, zoom: Double) {
+            activity.gameSlotManager.setSlotZoom(slotId, zoom)
+        }
+
+        @JavascriptInterface
+        fun setGameSlotFps(fps: Int) {
+            activity.gameSlotManager.setFps(fps)
+        }
+
+        @JavascriptInterface
+        fun togglePokeIdleUltra(slotId: String, forceState: String) {
+            val stateOpt = when (forceState) {
+                "true" -> true
+                "false" -> false
+                else -> null
+            }
+            activity.gameSlotManager.togglePokeIdleUltra(if (slotId.isEmpty()) null else slotId, stateOpt)
+        }
+
+        @JavascriptInterface
+        fun hideAllGameSlots() {
+            activity.gameSlotManager.hideAll()
+        }
+
+        @JavascriptInterface
+        fun getActiveGameSlots(): String {
+            val list = activity.gameSlotManager.getActiveSlots()
+            val arr = org.json.JSONArray()
+            for (id in list) {
+                arr.put(id)
+            }
+            return arr.toString()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -216,12 +276,16 @@ class MainActivity : TauriActivity() {
         super.onPause()
         try {
             mainWebView?.resumeTimers()
+            gameSlotManager.resumeAllTimers()
         } catch (e: Throwable) {
             // Ignore
         }
     }
 
     override fun onDestroy() {
+        try {
+            gameSlotManager.destroy()
+        } catch (_: Throwable) {}
         if (instance == this) {
             instance = null
         }

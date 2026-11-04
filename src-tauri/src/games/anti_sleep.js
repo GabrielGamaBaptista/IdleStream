@@ -5,6 +5,7 @@
   try {
     let isEcoMode = true;
     let isMutedByEco = true;
+    let targetFps = 30; // 60, 30, ou 10 (Super Economia)
 
     // ============================================================
     // 1. FORÇAR VISIBILIDADE ATIVA PERMANENTE (ANTI-SLEEP SPOOFING)
@@ -63,16 +64,16 @@
       }
     };
 
-    // Loop com setInterval imune a throttling do navegador
-    let frameCount = 0;
+    // Loop imune a throttling do navegador com suporte a 60 FPS, 30 FPS e Super Economia (10 FPS)
+    let lastFlush = 0;
     setInterval(() => {
-      frameCount++;
-      // Em modo econômico, renderiza a 30 FPS economizando 50% de CPU/GPU
-      if (isEcoMode && frameCount % 2 !== 0) {
-        return;
+      const now = performance.now();
+      const minInterval = 1000 / (targetFps || 30);
+      if (now - lastFlush >= minInterval - 2) {
+        lastFlush = now;
+        flushCallbacks();
       }
-      flushCallbacks();
-    }, 16);
+    }, 8);
 
     // ============================================================
     // 4. ECONOMIA DE CPU: CONTROLE INTELIGENTE DE ÁUDIO
@@ -158,11 +159,37 @@
     }
 
     // ============================================================
-    // 7. FUNÇÃO DE CONTROLE AO VIVO DO MODO ECONÔMICO
+    // 7. FUNÇÃO DE CONTROLE AO VIVO DO MODO ECONÔMICO & FPS TIER
     // ============================================================
-    window.__setIdleStreamEcoMode = function (enabled) {
+    const updateBadge = () => {
+      const badge = document.getElementById('__idlestream_eco_badge__');
+      if (!badge) return;
+      if (targetFps === 10) {
+        badge.innerHTML = '🔋 <span>Super Eco (10 FPS)</span>';
+        badge.style.display = 'flex';
+      } else if (isEcoMode || targetFps === 30) {
+        badge.innerHTML = '🍃 <span>Econômico (30 FPS)</span>';
+        badge.style.display = 'flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    };
+
+    window.__setIdleStreamFps = function (fps) {
+      targetFps = Number(fps) || 30;
+      isEcoMode = targetFps < 60;
+      isMutedByEco = isEcoMode;
+      window.__setIdleStreamEcoMode(isEcoMode, targetFps);
+    };
+
+    window.__setIdleStreamEcoMode = function (enabled, customFps) {
       isEcoMode = !!enabled;
       isMutedByEco = !!enabled;
+      if (customFps) {
+        targetFps = customFps;
+      } else {
+        targetFps = isEcoMode ? 30 : 60;
+      }
 
       const htmlEl = document.documentElement;
       const bodyEl = document.body;
@@ -182,10 +209,7 @@
         }
       }
 
-      const badge = document.getElementById('__idlestream_eco_badge__');
-      if (badge) {
-        badge.style.display = isEcoMode ? 'flex' : 'none';
-      }
+      updateBadge();
 
       if (!isEcoMode) {
         document.querySelectorAll('audio, video').forEach((m) => {
@@ -202,7 +226,34 @@
         }
       }
 
-      console.log('[IdleStream] Modo Econômico atualizado para:', isEcoMode);
+      console.log('[IdleStream] Modo Econômico atualizado:', { isEcoMode, targetFps });
+    };
+
+    // ============================================================
+    // 8. CONTROLE DO MODO ULTRA ECONOMIA NATIVO DO POKEIDLE (Stats Card)
+    // ============================================================
+    window.__togglePokeIdleUltra = function (forceState) {
+      try {
+        const isCurrent = localStorage.getItem('cfg-ultra') === '1';
+        const targetState = forceState !== undefined ? !!forceState : !isCurrent;
+        localStorage.setItem('cfg-ultra', targetState ? '1' : '0');
+
+        // Tentar acionar o interruptor nativo do jogo se estiver na tela
+        const btn = document.getElementById('cfg-ultra');
+        if (btn) {
+          const isOn = btn.classList.contains('on');
+          if (isOn !== targetState) {
+            btn.click();
+          }
+        } else {
+          // Se o botão não estiver no DOM aberto, disparar evento de storage e recarregar
+          window.dispatchEvent(new Event('storage'));
+          document.documentElement.classList.toggle('modo-ultra', targetState);
+        }
+        console.log('[IdleStream] PokeIdle Ultra Economia alternado para:', targetState);
+      } catch (err) {
+        console.error('[IdleStream] Erro ao alternar PokeIdle Ultra:', err);
+      }
     };
 
     console.log('[IdleStream] Hi-Performance & Anti-Sleep engine ativo.');

@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { Update } from '@tauri-apps/plugin-updater';
 import { Account, AppConfig, AppSettings, GameSlotConfig, Platform, StreamConfig, StreamRuntimeStatus } from '../types';
 import { checkForAppUpdates, installAppUpdate, UnifiedUpdateResult } from '../services/updaterService';
+import { gamePlatformService } from '../services/gamePlatformService';
 
 interface AppState {
   appVersion: string;
@@ -23,11 +24,14 @@ interface AppState {
   isAddAccountOpen: boolean;
   isInitialized: boolean;
   visibleKickWindows: Record<string, boolean>;
+  isImmersiveMode: boolean;
 
   setActiveTab: (tab: 'streams' | 'games' | 'accounts' | 'settings') => void;
   setPlatformFilter: (filter: 'all' | Platform) => void;
   setAddStreamOpen: (open: boolean) => void;
   setAddAccountOpen: (open: boolean) => void;
+  toggleImmersiveMode: () => void;
+  setImmersiveMode: (val: boolean) => void;
 
   init: () => Promise<void>;
   fetchAppVersion: () => Promise<void>;
@@ -56,7 +60,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '2.2.0',
+  appVersion: '3.0.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -86,16 +90,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   isAddAccountOpen: false,
   isInitialized: false,
   visibleKickWindows: {},
+  isImmersiveMode: false,
 
   setActiveTab: (tab) => {
     if (tab !== 'games') {
-      invoke('game_hide_all').catch(() => {});
+      gamePlatformService.hideAll().catch(() => {});
+      // Se mudar de aba enquanto estiver em modo imersivo, restaurar menus normais
+      set({ isImmersiveMode: false });
     }
     set({ activeTab: tab });
   },
   setPlatformFilter: (filter) => set({ platformFilter: filter }),
   setAddStreamOpen: (open) => set({ isAddStreamOpen: open }),
   setAddAccountOpen: (open) => set({ isAddAccountOpen: open }),
+  toggleImmersiveMode: () => set((state) => ({ isImmersiveMode: !state.isImmersiveMode })),
+  setImmersiveMode: (val) => set({ isImmersiveMode: val }),
 
   fetchAppVersion: async () => {
     try {

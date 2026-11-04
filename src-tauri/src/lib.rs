@@ -235,6 +235,8 @@ pub fn run() {
             games::commands::game_set_slot_zoom,
             games::commands::game_set_eco_mode,
             games::commands::game_get_eco_mode,
+            games::commands::game_set_fps,
+            games::commands::game_toggle_pokeidle_ultra,
             games::commands::game_hide_all,
             games::commands::game_get_active_slots,
         ])

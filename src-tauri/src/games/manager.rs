@@ -321,6 +321,50 @@ impl GameLayoutManager {
         Ok(())
     }
 
+    /// Altera o limite de FPS (60, 30 ou 10 Super Economia) em todas as child webviews ativas
+    pub async fn set_fps(&self, fps: u32) -> Result<(), String> {
+        #[cfg(desktop)]
+        {
+            let script = format!(
+                "if (typeof window.__setIdleStreamFps === 'function') {{ window.__setIdleStreamFps({}); }}",
+                fps
+            );
+
+            let slots_map = self.active_slots.lock().await;
+            for slot_id in slots_map.keys() {
+                if let Some(wv) = self.app.get_webview(slot_id) {
+                    let _ = wv.eval(&script);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Alterna o Modo Ultra Economia oficial do PokeIdle (card escuro de estatísticas)
+    pub async fn toggle_pokeidle_ultra(&self, slot_id: Option<&str>, enabled: Option<bool>) -> Result<(), String> {
+        #[cfg(desktop)]
+        {
+            let script = match enabled {
+                Some(en) => format!("if (typeof window.__togglePokeIdleUltra === 'function') {{ window.__togglePokeIdleUltra({}); }}", en),
+                None => "if (typeof window.__togglePokeIdleUltra === 'function') {{ window.__togglePokeIdleUltra(); }}".to_string(),
+            };
+
+            let slots_map = self.active_slots.lock().await;
+            if let Some(sid) = slot_id {
+                if let Some(wv) = self.app.get_webview(sid) {
+                    let _ = wv.eval(&script);
+                }
+            } else {
+                for sid in slots_map.keys() {
+                    if let Some(wv) = self.app.get_webview(sid) {
+                        let _ = wv.eval(&script);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Oculta todas as child webviews quando o usuário sai da aba de Jogos (ex: vai para Streams)
     /// As contas continuam ativas rodando em background com nosso motor anti-sleep!
     pub async fn hide_all_game_views(&self) -> Result<(), String> {

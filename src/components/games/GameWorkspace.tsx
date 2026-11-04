@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
 import { GameSlotConfig, SlotBounds } from '../../types';
+import { gamePlatformService, isAndroidPlatform } from '../../services/gamePlatformService';
 import {
   LayoutGrid,
   Maximize2,
   Columns,
-  Zap,
   RotateCw,
   Settings,
   Play,
@@ -15,26 +14,50 @@ import {
   ShieldCheck,
   Flame,
   X,
+  ChevronDown,
+  ChevronUp,
+  Expand,
+  Shrink,
+  BarChart3,
 } from 'lucide-react';
 
 export const GameWorkspace: React.FC = () => {
-  const { config, updateGameSlot } = useAppStore();
+  const { config, updateGameSlot, isImmersiveMode, toggleImmersiveMode, setImmersiveMode } = useAppStore();
   const gameSlots = config.game_slots || [];
 
   const [activeSlots, setActiveSlots] = useState<string[]>([]);
   const [layoutMode, setLayoutMode] = useState<'grid' | 'focus' | 'sidebar'>('grid');
   const [focusedSlotId, setFocusedSlotId] = useState<string>('slot-1');
-  const [ecoMode, setEcoMode] = useState<boolean>(true);
+  const [fpsTier, setFpsTier] = useState<'60' | '30' | '10'>('30');
+  const [isPokeIdleUltra, setIsPokeIdleUltra] = useState<boolean>(false);
   const [editingSlot, setEditingSlot] = useState<GameSlotConfig | null>(null);
   const [slotZooms, setSlotZooms] = useState<Record<string, number>>({});
+  const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return isAndroidPlatform() || window.innerWidth < 768;
+  });
 
   // Referências para os containers DOM onde cada WebView deve se posicionar
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Atualizar lista de slots ativos do Rust
+  // Monitorar tamanho de tela para layout mobile responsivo
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = isAndroidPlatform() || window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile && layoutMode === 'sidebar') {
+        setLayoutMode('focus');
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [layoutMode]);
+
+  // Atualizar lista de slots ativos do backend / bridge
   const refreshActiveSlots = useCallback(async () => {
     try {
-      const active = await invoke<string[]>('game_get_active_slots');
+      const active = await gamePlatformService.getActiveSlots();
       setActiveSlots(active);
     } catch (e) {
       console.warn('Erro ao buscar slots ativos:', e);
@@ -43,26 +66,47 @@ export const GameWorkspace: React.FC = () => {
 
   useEffect(() => {
     refreshActiveSlots();
+    const interval = setInterval(refreshActiveSlots, 2000);
+    return () => clearInterval(interval);
   }, [refreshActiveSlots]);
 
   // Carregar status do modo econômico do backend
   useEffect(() => {
-    invoke<boolean>('game_get_eco_mode')
-      .then((enabled) => setEcoMode(enabled))
+    gamePlatformService.getEcoMode()
+      .then((enabled) => {
+        setFpsTier(enabled ? '30' : '60');
+      })
       .catch((e) => console.warn('Erro ao obter status eco_mode:', e));
   }, []);
 
-  const handleToggleEcoMode = async () => {
-    const nextMode = !ecoMode;
-    setEcoMode(nextMode);
+  const handleSetFpsTier = async (tier: '60' | '30' | '10') => {
+    setFpsTier(tier);
     try {
-      await invoke('game_set_eco_mode', { enabled: nextMode });
+      await gamePlatformService.setFps(Number(tier));
     } catch (e) {
-      console.error('Erro ao alternar modo econômico:', e);
+      console.error('Erro ao definir taxa de quadros (FPS):', e);
     }
   };
 
-  // Função para calcular e sincronizar as coordenadas de cada slot com o Rust
+  const handleToggleGlobalUltra = async () => {
+    const nextState = !isPokeIdleUltra;
+    setIsPokeIdleUltra(nextState);
+    try {
+      await gamePlatformService.togglePokeIdleUltra(undefined, nextState);
+    } catch (e) {
+      console.error('Erro ao alternar Modo Ultra PokeIdle:', e);
+    }
+  };
+
+  const handleToggleSlotUltra = async (slotId: string) => {
+    try {
+      await gamePlatformService.togglePokeIdleUltra(slotId);
+    } catch (e) {
+      console.error(`Erro ao alternar Ultra no slot ${slotId}:`, e);
+    }
+  };
+
+  // Função para calcular e sincronizar as coordenadas de cada slot com a plataforma nativa
   const syncBounds = useCallback(() => {
     // Se o modal de configurações estiver aberto, ocultamos temporariamente as WebViews nativas
     // para que não fiquem sobrepostas ao modal na tela. O farm continua rodando normalmente.
@@ -94,7 +138,7 @@ export const GameWorkspace: React.FC = () => {
       } else if (layoutMode === 'focus') {
         isVisible = slot.id === focusedSlotId;
       } else if (layoutMode === 'sidebar') {
-        isVisible = true; // No sidebar, todos os slots são visíveis (1 grande + 3 laterais)
+        isVisible = true;
       }
 
       const rect = el.getBoundingClientRect();
@@ -109,22 +153,34 @@ export const GameWorkspace: React.FC = () => {
     }
 
     if (bounds.length > 0) {
-      invoke('game_update_slots_bounds', { bounds }).catch((e) => {
+      gamePlatformService.updateSlotsBounds(bounds).catch((e) => {
         console.warn('Falha ao atualizar bounds de jogos:', e);
       });
     }
   }, [gameSlots, activeSlots, layoutMode, focusedSlotId, editingSlot]);
 
-  // Fechar modal ao pressionar a tecla Escape
+  // Fechar modal ao pressionar a tecla Escape ou sair do modo imersivo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && editingSlot) {
-        setEditingSlot(null);
+      if (e.key === 'Escape') {
+        if (editingSlot) {
+          setEditingSlot(null);
+        } else if (isImmersiveMode || !isToolbarVisible) {
+          setImmersiveMode(false);
+          setIsToolbarVisible(true);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingSlot]);
+  }, [editingSlot, isImmersiveMode, isToolbarVisible, setImmersiveMode]);
+
+  // Recalcular limites quando o modo imersivo ou visibilidade da barra mudar
+  useEffect(() => {
+    syncBounds();
+    const t = setTimeout(syncBounds, 80);
+    return () => clearTimeout(t);
+  }, [isImmersiveMode, isToolbarVisible, syncBounds]);
 
   // Monitorar redimensionamento, foco na janela e restauração da bandeja do sistema
   useEffect(() => {
@@ -169,7 +225,7 @@ export const GameWorkspace: React.FC = () => {
     const roundedZoom = Math.round(zoom * 100) / 100;
     setSlotZooms((prev) => ({ ...prev, [slotId]: roundedZoom }));
     try {
-      await invoke('game_set_slot_zoom', { slotId, zoom: roundedZoom });
+      await gamePlatformService.setSlotZoom(slotId, roundedZoom);
     } catch (e) {
       console.warn('Erro ao definir zoom no backend:', e);
     }
@@ -202,23 +258,27 @@ export const GameWorkspace: React.FC = () => {
 
   const handleStartSlot = async (slotId: string, url: string) => {
     try {
+      setActiveSlots((prev) => (prev.includes(slotId) ? prev : [...prev, slotId]));
       const slot = gameSlots.find((s) => s.id === slotId);
       const zoom = slotZooms[slotId] ?? slot?.zoom ?? 1.0;
-      await invoke('game_start_slot', {
+      await gamePlatformService.startSlot(
         slotId,
-        url: url.trim() || 'https://pokeidle.io/app',
-        zoom,
-      });
+        url.trim() || 'https://pokeidle.io/app',
+        zoom
+      );
       await refreshActiveSlots();
-      setTimeout(syncBounds, 250);
+      setTimeout(syncBounds, 150);
+      setTimeout(syncBounds, 400);
     } catch (e) {
+      setActiveSlots((prev) => prev.filter((id) => id !== slotId));
       alert(`Erro ao iniciar jogo no slot ${slotId}: ${e}`);
     }
   };
 
   const handleStopSlot = async (slotId: string) => {
     try {
-      await invoke('game_stop_slot', { slotId });
+      setActiveSlots((prev) => prev.filter((id) => id !== slotId));
+      await gamePlatformService.stopSlot(slotId);
       await refreshActiveSlots();
       setTimeout(syncBounds, 100);
     } catch (e) {
@@ -228,7 +288,7 @@ export const GameWorkspace: React.FC = () => {
 
   const handleReloadSlot = async (slotId: string) => {
     try {
-      await invoke('game_reload_slot', { slotId });
+      await gamePlatformService.reloadSlot(slotId);
     } catch (e) {
       console.error('Erro ao recarregar slot:', e);
     }
@@ -251,98 +311,201 @@ export const GameWorkspace: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-neutral-950 overflow-hidden select-none">
+    <div className="flex flex-col h-full w-full bg-neutral-950 overflow-hidden select-none relative">
+      {/* Botão/Pílula Flutuante no Canto para Restaurar Menus ou Barra Superior */}
+      {(!isToolbarVisible || isImmersiveMode) && (
+        <div className="fixed top-2.5 right-3 z-50 flex items-center gap-1.5 bg-neutral-900/90 hover:bg-neutral-900 text-neutral-200 border border-neutral-700/80 shadow-2xl backdrop-blur-md px-2.5 py-1 rounded-full transition-all animate-in fade-in duration-200">
+          {!isToolbarVisible && (
+            <button
+              onClick={() => {
+                setIsToolbarVisible(true);
+                setTimeout(syncBounds, 60);
+              }}
+              className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+              title="Reabrir barra de ferramentas dos jogos"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+              <span>Barra Jogos</span>
+            </button>
+          )}
+
+          {!isToolbarVisible && isImmersiveMode && <span className="w-px h-3 bg-neutral-700" />}
+
+          {isImmersiveMode && (
+            <button
+              onClick={() => {
+                toggleImmersiveMode();
+                setIsToolbarVisible(true);
+                setTimeout(syncBounds, 60);
+              }}
+              className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition cursor-pointer"
+              title="Restaurar menus do aplicativo (ESC)"
+            >
+              <Shrink className="w-3.5 h-3.5" />
+              <span>Restaurar Menus</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Barra de Ferramentas Superior (Estilo IdleDeck) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-neutral-900/90 border-b border-neutral-800 shrink-0 z-20">
-        <div className="flex items-center gap-3">
+      {isToolbarVisible && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-neutral-900/90 border-b border-neutral-800 shrink-0 z-20">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-sm font-bold text-white tracking-tight">
+                Poke Idle World
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700/80 font-mono text-[11px]">
+                {activeSlots.length}/4 ativas
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-mono text-[11px] flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                Always-Running 24/7
+              </span>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-sm font-bold text-white tracking-tight">
-              Poke Idle World
-            </span>
-          </div>
+            {/* Ações Globais */}
+            {activeSlots.length < gameSlots.length && (
+              <button
+                onClick={handleStartAll}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-emerald-600/30"
+                title="Iniciar todas as contas simultaneamente"
+              >
+                <Play className="w-3 h-3 fill-current" />
+                <span>Iniciar Todas</span>
+              </button>
+            )}
 
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700/80 font-mono text-[11px]">
-              {activeSlots.length}/4 ativas
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 font-mono text-[11px] flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-emerald-400" />
-              Always-Running 24/7
-            </span>
+            {activeSlots.length > 0 && (
+              <button
+                onClick={handleStopAll}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 text-xs font-medium border border-neutral-700 transition cursor-pointer"
+                title="Parar todas as contas"
+              >
+                <Square className="w-3 h-3" />
+                <span>Parar Todas</span>
+              </button>
+            )}
+
+            {/* Seletor Multi-Nível de FPS e Modo Econômico */}
+            <div className="flex bg-neutral-800/90 rounded-lg p-0.5 border border-neutral-700/80 text-[11px]">
+              <button
+                onClick={() => handleSetFpsTier('60')}
+                className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                  fpsTier === '60'
+                    ? 'bg-neutral-700 text-white shadow-xs'
+                    : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+                title="60 FPS: Taxa cheia de quadros e máxima fluidez"
+              >
+                60 FPS
+              </button>
+              <button
+                onClick={() => handleSetFpsTier('30')}
+                className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                  fpsTier === '30'
+                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/80 shadow-xs'
+                    : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+                title="30 FPS: Modo Econômico (50% menos CPU/GPU)"
+              >
+                🍃 30 FPS
+              </button>
+              <button
+                onClick={() => handleSetFpsTier('10')}
+                className={`px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                  fpsTier === '10'
+                    ? 'bg-amber-950 text-amber-300 border border-amber-600/80 shadow-xs'
+                    : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+                title="10 FPS: Modo Super Economia (85% menos CPU/GPU mantendo caça 100%)"
+              >
+                🔋 10 FPS
+              </button>
+              <button
+                onClick={handleToggleGlobalUltra}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
+                  isPokeIdleUltra
+                    ? 'bg-purple-950 text-purple-200 border border-purple-600/80 shadow-xs'
+                    : 'text-neutral-400 hover:text-purple-300'
+                }`}
+                title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de estatísticas, desliga Canvas)"
+              >
+                <BarChart3 className="w-3 h-3 text-purple-400" />
+                <span className="hidden sm:inline">Ultra PokeIdle</span>
+              </button>
+            </div>
+
+            {/* Seletores de Layout (Responsivo Mobile vs Desktop) */}
+            <div className="flex bg-neutral-800 rounded-lg p-0.5 border border-neutral-700/80">
+              <button
+                onClick={() => setLayoutMode('grid')}
+                className={`p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
+                  layoutMode === 'grid' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+                title="Grade 2x2 (Ver as 4 contas simultâneas)"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                {isMobile && <span className="text-[10px]">4 Jogos</span>}
+              </button>
+              <button
+                onClick={() => setLayoutMode('focus')}
+                className={`p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
+                  layoutMode === 'focus' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+                title="Modo Foco (1 Conta em destaque total)"
+              >
+                <Maximize2 className="w-4 h-4" />
+                {isMobile && <span className="text-[10px]">Foco</span>}
+              </button>
+              {!isMobile && (
+                <button
+                  onClick={() => setLayoutMode('sidebar')}
+                  className={`p-1.5 rounded-md transition cursor-pointer ${
+                    layoutMode === 'sidebar' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                  title="Principal + Miniaturas Laterais"
+                >
+                  <Columns className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Toggle Modo Tela Cheia / Ocultar Menus */}
+            <button
+              onClick={toggleImmersiveMode}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                isImmersiveMode
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                  : 'bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/80 hover:bg-neutral-700'
+              }`}
+              title={isImmersiveMode ? 'Restaurar menus da aplicação' : 'Ocultar menus (Tela Cheia)'}
+            >
+              {isImmersiveMode ? <Shrink className="w-3.5 h-3.5" /> : <Expand className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isImmersiveMode ? 'Restaurar Menus' : 'Tela Cheia'}</span>
+            </button>
+
+            {/* Minimizar Barra Superior */}
+            <button
+              onClick={() => {
+                setIsToolbarVisible(false);
+                setTimeout(syncBounds, 60);
+              }}
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+              title="Recolher barra superior dos jogos (Modo 100% Tela Cheia)"
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Ações Globais */}
-          {activeSlots.length < gameSlots.length && (
-            <button
-              onClick={handleStartAll}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-emerald-600/30"
-              title="Iniciar todas as contas simultaneamente"
-            >
-              <Play className="w-3 h-3 fill-current" />
-              <span>Iniciar Todas</span>
-            </button>
-          )}
-
-          {activeSlots.length > 0 && (
-            <button
-              onClick={handleStopAll}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-red-950/80 hover:text-red-300 text-neutral-400 text-xs font-medium border border-neutral-700 transition cursor-pointer"
-              title="Parar todas as contas"
-            >
-              <Square className="w-3 h-3" />
-              <span>Parar Todas</span>
-            </button>
-          )}
-
-          {/* Toggle Modo Econômico */}
-          <button
-            onClick={handleToggleEcoMode}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-              ecoMode
-                ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/80 shadow-sm shadow-emerald-900/40'
-                : 'bg-neutral-800/80 text-neutral-400 border border-neutral-700 hover:text-neutral-200'
-            }`}
-            title="Modo Econômico: reduz uso de CPU/GPU em 50% mantendo 100% do farm em background"
-          >
-            <Zap className={`w-3.5 h-3.5 ${ecoMode ? 'text-emerald-400 fill-current' : 'text-neutral-500'}`} />
-            <span>{ecoMode ? '🍃 Econômico: Ativo' : '⚡ Desempenho (60 FPS)'}</span>
-          </button>
-
-          {/* Seletores de Layout */}
-          <div className="flex bg-neutral-800 rounded-lg p-0.5 border border-neutral-700/80">
-            <button
-              onClick={() => setLayoutMode('grid')}
-              className={`p-1.5 rounded-md transition cursor-pointer ${
-                layoutMode === 'grid' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'
-              }`}
-              title="Grade 2x2 (Ver as 4 contas lado a lado)"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setLayoutMode('focus')}
-              className={`p-1.5 rounded-md transition cursor-pointer ${
-                layoutMode === 'focus' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'
-              }`}
-              title="Modo Foco (1 Conta em tela cheia)"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setLayoutMode('sidebar')}
-              className={`p-1.5 rounded-md transition cursor-pointer ${
-                layoutMode === 'sidebar' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'
-              }`}
-              title="Principal + Miniaturas Laterais"
-            >
-              <Columns className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Se estiver no Modo Foco, exibir abas superiores para alternância rápida de conta */}
       {layoutMode === 'focus' && (
@@ -527,17 +690,29 @@ export const GameWorkspace: React.FC = () => {
             {isRunning && (
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded font-mono shrink-0 transition-colors ${
-                  ecoMode
+                  fpsTier === '10'
+                    ? 'bg-amber-950 text-amber-300 border border-amber-800/50'
+                    : fpsTier === '30'
                     ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
                     : 'bg-neutral-800 text-neutral-400 border border-neutral-700/50'
                 }`}
               >
-                {ecoMode ? '🍃 Econômico' : '⚡ 60 FPS'}
+                {fpsTier === '10' ? '🔋 10 FPS' : fpsTier === '30' ? '🍃 30 FPS' : '⚡ 60 FPS'}
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {isRunning && (
+              <button
+                onClick={() => handleToggleSlotUltra(slot.id)}
+                className="p-1 rounded text-neutral-400 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer"
+                title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de Estatísticas)"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
+              </button>
+            )}
+
             {/* Controle de Zoom estilo Navegador */}
             <div className="flex items-center bg-neutral-800/90 rounded border border-neutral-700/60 text-[10px] text-neutral-300 overflow-hidden shrink-0">
               <button

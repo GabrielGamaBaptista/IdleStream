@@ -83,3 +83,20 @@ pub async fn game_get_eco_mode(
 ) -> Result<bool, String> {
     Ok(*state.eco_mode.lock().await)
 }
+
+#[tauri::command]
+pub async fn game_set_fps(
+    state: State<'_, Arc<GameLayoutManager>>,
+    fps: u32,
+) -> Result<(), String> {
+    state.set_fps(fps).await
+}
+
+#[tauri::command]
+pub async fn game_toggle_pokeidle_ultra(
+    state: State<'_, Arc<GameLayoutManager>>,
+    slot_id: Option<String>,
+    enabled: Option<bool>,
+) -> Result<(), String> {
+    state.toggle_pokeidle_ultra(slot_id.as_deref(), enabled).await
+}
