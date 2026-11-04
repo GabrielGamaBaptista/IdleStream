@@ -115,9 +115,19 @@ Durante a execução no emulador Pixel 5 (Android 13 / API 33), identificamos 4 
 
 ---
 
-## 📌 6. Próximos Passos & Pontos de Atenção para a Próxima Sessão
+---
 
-1. **Feedback de Usuários Reais no Android**: Testar a usabilidade das 4 contas em aparelhos físicos de diferentes tamanhos de tela (DPIs variados).
-2. **Consumo de Memória Prolongado**: Avaliar se após 24h ou 48h ininterruptas no celular há necessidade de forçar `onTrimMemory` ou purga periódica de WebViews.
-3. **Refinamento de Atalhos Touch no Mobile**: Considerar adicionar gestos (swipe horizontal) para navegar entre as contas no modo Foco.
-4. **Verificação de Chave de Assinatura**: Qualquer novo release para Windows deve ser precedido da exportação de `$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "idlestream_signing_key_2026"` conforme detalhado no [`RELEASE_GUIDE.md`](file:///c:/Projetos/Chatter/RELEASE_GUIDE.md).
+## 🚀 7. Hotfix v3.0.1 (Login Google OAuth & Responsividade Mobile)
+
+Identificados e corrigidos dois problemas críticos na release v3.0.1:
+
+1. **Correção de Login Google/OAuth 2FA no PokeIdle**:
+   - Diagnóstico: O script anti-CSRF do PokeIdle (`app.js`) validava `localStorage.getItem('oauth-ida')` no topo da página de retorno do Google. No Android, o isolamento era injetado tardiamente no `onPageFinished`, causando o erro *"Não deu para concluir este login aqui: por segurança, ele só vale na página que foi ao Google/Discord"*.
+   - Solução: Injeção síncrona prévia via `WebViewCompat.addDocumentStartJavaScript`, ativação de cookies de terceiros (`setAcceptThirdPartyCookies(true)`), fallback inteligente para chaves OAuth (`oauth-ida`) e remoção de `; wv` e `Version/X.X` do `User-Agent`.
+2. **Correção de Botões Cortados na Interface Mobile**:
+   - A barra superior de ferramentas de jogos e os cabeçalhos dos slots receberam container elástico com rolagem horizontal suave (`overflow-x-auto no-scrollbar`) e botões compactos (`Iniciar`, `Parar`, `60`, `30`, `10`, `4x`, `1x`).
+   - Os botões `[Foco]`, `[Tela Cheia]` e `[Recolher Barra]` tornaram-se 100% visíveis e táteis em smartphones de qualquer resolução (360px a 412px+).
+3. **Re-build & Publicação de Assinatura Oficial**:
+   - Compilado instalador Windows assinado com Minisign (`IdleStream_3.0.1_x64-setup.exe.sig`).
+   - Compilado APK Android release (`IdleStream_3.0.1_arm64.apk` — 9.62 MB).
+   - Atualizado manifesto `latest.json` com a nova assinatura e feito upload dos 5 artefatos na tag `v3.0.1` do GitHub.
