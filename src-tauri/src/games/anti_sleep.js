@@ -167,11 +167,18 @@
     // Ativado via flag --js-flags="--expose-gc"
     setInterval(() => {
       if (typeof window.gc === 'function') {
-        try {
-          window.gc();
-        } catch (_) {}
+        const runGc = () => {
+          try {
+            window.gc();
+          } catch (_) {}
+        };
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(runGc, { timeout: 2000 });
+        } else {
+          runGc();
+        }
       }
-    }, 90000); // A cada 90 segundos
+    }, 120000); // A cada 2 minutos em período ocioso
 
     // ============================================================
     // 6. INJEÇÃO DE CSS DE ECO-MODE (OTIMIZAÇÃO DE GPU) & BADGE VISUAL

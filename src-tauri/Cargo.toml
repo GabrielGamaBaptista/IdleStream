@@ -1,6 +1,6 @@
 [package]
 name = "idlestream"
-version = "3.0.5"
+version = "3.0.6"
 description = "IdleStream - Multi-Platform Stream Presence & XP Manager"
 authors = ["ggb"]
 edition = "2021"

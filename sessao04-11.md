@@ -227,6 +227,31 @@ Solucionada a quebra de layout no cabeçalho dos cards dos jogos e o travamento 
    - `IdleStream_3.0.5_arm64.apk` (10.0 MB)
    - `latest.json` (Manifesto atualizado para v3.0.5)
 
+---
+
+## 🚀 12. Release v3.0.6 (Estabilidade Total de GPU no Desktop contra Blackout)
+
+Solucionado o congelamento com tela preta nas 4 abas de jogos no Windows Desktop após uso prolongado ou lock/sleep de tela:
+
+1. **Diagnóstico da Causa Raiz Real**:
+   - A flag `--in-process-gpu` no Edge WebView2 desativava o processo dedicado de GPU do Chromium e impedia a recuperação de contexto em caso de *DirectX Device Loss* ou *DirectComposition surface failure*.
+   - A flag `--renderer-process-limit=4` forçava os 4 jogos e as 32 streams ativas a compartilharem processos renderizadores idênticos, derrubando todas as abas juntas.
+   - A flag `--max-old-space-size=256` asfixiava o heap do V8 ao longo do tempo, estourando texturas WebGL do PokeIdle.
+
+2. **Soluções Técnicas Implementadas**:
+   - Substituído `--in-process-gpu` por processo dedicado com auto-recuperação (`--disable-gpu-process-crash-limit`).
+   - Aumentado o heap de V8 para 512 MB (`--max-old-space-size=512`), garantindo fôlego de texturas com mínimo impacto em RAM.
+   - Ajustado `--renderer-process-limit=6` para desacoplar as abas ativas.
+   - Chamada periódica de `window.gc()` adaptada para `requestIdleCallback`.
+
+3. **Artefatos Oficiais Gerados para a Tag v3.0.6**:
+   - `IdleStream_3.0.6_arm64.apk` (10.0 MB)
+   - `IdleStream_3.0.6_x64-setup.exe` (2.74 MB)
+   - `IdleStream_3.0.6_x64-setup.exe.sig` (Assinatura digital Minisign)
+   - `idlestream.exe` (Executável portátil Windows)
+   - `latest.json` (Manifesto assinado)
+
+
 
 
 

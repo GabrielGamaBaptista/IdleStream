@@ -1,11 +1,11 @@
 {
-  "version": "3.0.5",
-  "notes": "IdleStream v3.0.5 — Correção e Otimização do /hunt no Celular (Injeção em DocumentStart com WebSocketObservado), Despoluição do Cabeçalho dos Cards de Jogos (Apenas Ultra Economia PokeIdle visível) e Proteção Total de Safe-Area contra sobreposição do Relógio/Notch Mobile",
-  "pub_date": "2026-11-05T13:56:00Z",
+  "version": "3.0.6",
+  "notes": "IdleStream v3.0.6 — Estabilidade Total de GPU no Desktop contra Blackout (Processo Gráfico Out-of-Process com Recuperação Contínua, Heap V8 de 512MB e Desacoplamento de Renderers)",
+  "pub_date": "2026-11-05T18:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjN5VW4vQjBCS2JLbzZaM0VJWmdubnoyMWZCbHdPckUrcFlLMEp1UXU3S29jWXFxVjhObEMrRCtOM2tNakMxQTZETy9SYkpkTnp5T3dZdUZkaExLM1EwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODg2OTgzCWZpbGU6SWRsZVN0cmVhbV8zLjAuNV94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjUKbFdRYkN5VTBvMmhPeVBZQ1VBN21HYmVMQnM3S2psaFNWODVYVVJJNXNKbjFsdVFmL280d2t5T0hlQ0pVWk10WmFLby9oT2N0TUtXNTZ3dXdpRmFDQXc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.5/IdleStream_3.0.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9aaVdPV2pqTmNZeDJ3VDFjVFlFYUlORnBiS0x0aHYxSnowRHA4a0pBaVZydWFkZWRwbWhtalFHV3FJTDhXZkd1TGpDNXBzQzhjVmhoZHFzYzBVWGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTAxNjQxCWZpbGU6SWRsZVN0cmVhbV8zLjAuNl94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjYKV0FHM0QvcHZsYm1jZUFFSG9FN2l1Y3plbS9uOWMrYjhuUUhqTyt0aFJFYjY5VWVXL3pTemFYNkxqR01PY2t1Sm1PdlpySENPbkdoR2JjcXFmZjE5QkE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.6/IdleStream_3.0.6_x64-setup.exe"
     }
   }
 }

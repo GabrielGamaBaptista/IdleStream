@@ -24,24 +24,24 @@ use tauri::WindowEvent;
 pub fn run() {
     #[cfg(target_os = "windows")]
     {
-        // === BANCO DE FLAGS DE HIPER-PERFORMANCE & ECONOMIA DE MEMÓRIA (WEBVIEW2) ===
+        // === BANCO DE FLAGS DE HIPER-PERFORMANCE, ESTABILIDADE & ANTI-BLACKOUT (WEBVIEW2) ===
         // 1. Anti-Sleep: Garante que timers e farm continuem 24/7 sem suspensão de background
-        // 2. RAM Reduction: Limita heap do V8 para 256MB, in-process GPU, merge de processos
-        // 3. Garbage Collection: Habilita window.gc() para purga periódica de texturas
+        // 2. Resiliência de GPU: Processo out-of-process com auto-recuperação sem blackout em Device Loss
+        // 3. RAM Balanceada: Heap do V8 de 512MB prevenindo WebGL Context Lost com mínimo overhead
         // 4. Bloat Disabler: Desativa spare renderers, media router, autofill e tradução
         std::env::set_var(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
             "--disable-background-timer-throttling \
              --disable-renderer-backgrounding \
              --disable-backgrounding-occluded-windows \
+             --disable-gpu-process-crash-limit \
              --disable-features=CalculateNativeWinOcclusion,SpareRendererForSitePerProcess,TranslateUI,MediaRouter,AutofillServerCommunication \
              --enable-features=SharedArrayBuffer \
-             --renderer-process-limit=4 \
-             --in-process-gpu \
+             --renderer-process-limit=6 \
              --disable-extensions \
              --disable-default-apps \
              --no-default-browser-check \
-             --js-flags=\"--max-old-space-size=256 --optimize-for-size --expose-gc\""
+             --js-flags=\"--max-old-space-size=512 --optimize-for-size --expose-gc\""
         );
     }
 
