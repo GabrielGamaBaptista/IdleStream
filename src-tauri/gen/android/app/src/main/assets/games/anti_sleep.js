@@ -77,9 +77,33 @@
     }, 8);
 
     // ============================================================
-    // 4. BYPASS DE THROTTLING CHROMIUM VIA WEB AUDIO API SILENCIOSO
+    // 4. BYPASS DE THROTTLING CHROMIUM VIA WEB AUDIO & HTML5 AUDIO
     // ============================================================
-    // Chromium isenta abas com AudioContext ativo de throttling e congelamento em segundo plano
+    // Chromium isenta abas com mídia ativa (IsAudible) de throttling e congelamento em segundo plano.
+    const initSilentAudioTag = () => {
+      try {
+        if (document.getElementById('__idlestream_silent_audio__')) return;
+        // 1 segundo de silêncio codificado em WAV base64
+        const silentWav = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        const audio = document.createElement('audio');
+        audio.id = '__idlestream_silent_audio__';
+        audio.src = silentWav;
+        audio.loop = true;
+        audio.autoplay = true;
+        audio.volume = 0.001; // Quase inaudível, mas NÃO-mutado para marcar IsAudible no Chromium
+        audio.muted = false;
+        (document.body || document.documentElement).appendChild(audio);
+        const p = audio.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (_) {}
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initSilentAudioTag);
+    } else {
+      initSilentAudioTag();
+    }
+
     let audioCtx = null;
     const initSilentAudio = () => {
       try {
@@ -97,7 +121,7 @@
           source.buffer = buffer;
           source.loop = true;
           const gain = audioCtx.createGain();
-          gain.gain.value = 0.00001; // Quase zero, mas marca a aba como "Audible" no Chromium
+          gain.gain.value = 0.00001;
           source.connect(gain);
           gain.connect(audioCtx.destination);
           source.start(0);
@@ -112,6 +136,7 @@
     initSilentAudio();
     ['click', 'touchstart', 'keydown'].forEach((ev) => {
       window.addEventListener(ev, () => {
+        initSilentAudioTag();
         if (audioCtx && audioCtx.state === 'suspended') {
           audioCtx.resume().catch(() => {});
         } else if (!audioCtx) {
@@ -126,6 +151,9 @@
     try {
       const originalAudioPlay = HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play = function () {
+        if (this.id === '__idlestream_silent_audio__') {
+          return originalAudioPlay.apply(this, arguments);
+        }
         if (isMutedByEco) {
           this.muted = true;
         }
@@ -279,7 +307,13 @@
     // ============================================================
     window.__idlestreamHeartbeat = function () {
       try {
-        // 1. Manter AudioContext ativo (se Chromium tiver suspendido em background)
+        // 1. Manter mídia silenciosa ativa (IsAudible para isenção Chromium)
+        const silentAudio = document.getElementById('__idlestream_silent_audio__');
+        if (!silentAudio) {
+          initSilentAudioTag();
+        } else if (silentAudio.paused) {
+          silentAudio.play().catch(() => {});
+        }
         if (audioCtx && audioCtx.state === 'suspended') {
           audioCtx.resume().catch(() => {});
         } else if (!audioCtx) {

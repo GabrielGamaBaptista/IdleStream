@@ -20,10 +20,63 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Layout especial que repassa eventos de toque para a WebView principal subjacente
  * caso o toque ocorra fora das WebViews filhas dos slots de jogos.
+ * Blindado para forçar View.VISIBLE nas mudanças de visibilidade de janela.
  */
 class PassThroughFrameLayout(context: Context) : FrameLayout(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         return false
+    }
+
+    override fun dispatchWindowVisibilityChanged(visibility: Int) {
+        super.dispatchWindowVisibilityChanged(View.VISIBLE)
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(View.VISIBLE)
+    }
+}
+
+/**
+ * WebView blindada para execução ininterrupta 24/7 de slots de jogos em segundo plano
+ * e com tela desligada.
+ *
+ * Fundamentos:
+ * 1. AwContents.onWindowVisibilityChanged: Forçar View.VISIBLE impede que o Chromium
+ *    entre no estado PageVisibilityState::kHidden, mantendo requestAnimationFrame,
+ *    WebWorkers (HackTimer.js do PokeIdle) e timers de combate ativos.
+ * 2. setRendererPriorityPolicy: No Android 8+, impede que o Low Memory Killer
+ *    rebaixe a prioridade do renderizador para WAIVED quando fora da tela.
+ * 3. onPause / pauseTimers: Neutraliza a pausa nativa que o sistema operacional tenta impor.
+ */
+class PersistentWebView(context: Context) : WebView(context) {
+    init {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            try {
+                setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)
+            } catch (e: Throwable) {
+                Log.w("PersistentWebView", "Falha ao definir política de renderizador: ${e.message}")
+            }
+        }
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(View.VISIBLE)
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, View.VISIBLE)
+    }
+
+    override fun dispatchWindowVisibilityChanged(visibility: Int) {
+        super.dispatchWindowVisibilityChanged(View.VISIBLE)
+    }
+
+    override fun onPause() {
+        // Intencionalmente vazio: não permite que o ciclo de vida da Activity congele o slot
+    }
+
+    override fun pauseTimers() {
+        // Intencionalmente vazio: impede o congelamento global de timers
     }
 }
 
@@ -105,13 +158,14 @@ class GameSlotManager(private val activity: MainActivity) {
             activity.runOnUiThread {
                 for (wv in slotWebViews.values) {
                     try {
+                        wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                         wv.resumeTimers()
                         wv.evaluateJavascript("if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }", null)
                     } catch (_: Throwable) {}
                 }
             }
-        }, 2500, 2500, java.util.concurrent.TimeUnit.MILLISECONDS)
-        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 2500ms)")
+        }, 1500, 1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 1500ms com blindagem de visibilidade)")
     }
 
     fun stopWatchdog() {
@@ -152,7 +206,7 @@ class GameSlotManager(private val activity: MainActivity) {
 
             var webView = slotWebViews[slotId]
             if (webView == null) {
-                webView = WebView(activity).apply {
+                webView = PersistentWebView(activity).apply {
                     layoutParams = FrameLayout.LayoutParams(0, 0)
                     visibility = View.GONE
                     setBackgroundColor(Color.parseColor("#0a0a0a"))
@@ -207,14 +261,16 @@ class GameSlotManager(private val activity: MainActivity) {
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
                     val isolationScript = getStorageIsolationScript(slotId)
+                    val antiSleepScript = loadAssetScript("games/anti_sleep.js")
+                    val combinedStartScript = "$isolationScript\n$antiSleepScript"
                     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
                         try {
                             WebViewCompat.addDocumentStartJavaScript(
                                 this,
-                                isolationScript,
+                                combinedStartScript,
                                 Collections.singleton("*")
                             )
-                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso para $slotId")
+                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso (isolamento + anti_sleep) para $slotId")
                         } catch (e: Throwable) {
                             Log.w(TAG, "Falha ao registrar addDocumentStartJavaScript: ${e.message}")
                         }
@@ -234,6 +290,10 @@ class GameSlotManager(private val activity: MainActivity) {
                                 }
                             }
                             view?.evaluateJavascript(getStorageIsolationScript(slotId), null)
+                            val antiSleep = loadAssetScript("games/anti_sleep.js")
+                            if (antiSleep.isNotEmpty()) {
+                                view?.evaluateJavascript(antiSleep, null)
+                            }
                         }
 
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -534,6 +594,7 @@ class GameSlotManager(private val activity: MainActivity) {
         activity.runOnUiThread {
             slotWebViews.values.forEach { wv ->
                 try {
+                    wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                     wv.resumeTimers()
                     wv.evaluateJavascript("if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }", null)
                 } catch (_: Throwable) {}

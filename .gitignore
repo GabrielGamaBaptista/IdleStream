@@ -29,4 +29,6 @@ src-tauri/gen/schemas
 
 # Built executables (distribute via GitHub Releases)
 *.exe
+*.apk
+*.sig
 bugreport*.zip

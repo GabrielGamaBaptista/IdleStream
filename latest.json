@@ -1,11 +1,11 @@
 {
-  "version": "3.0.3",
-  "notes": "IdleStream v3.0.3 — Persistência 24/7 de 4 Abas em Segundo Plano e com Tela Bloqueada no Android (Web Audio Bypass & Native Watchdog Heartbeat) e Correção Funcional do Modo Ultra Economia do PokeIdle",
-  "pub_date": "2026-11-05T03:30:00Z",
+  "version": "3.0.4",
+  "notes": "IdleStream v3.0.4 — Execução Ininterrupta 24/7 com Tela Desligada/Segundo Plano no Android (PersistentWebView com Blindagem de Visibilidade, Process Priority Waived Bypass, Chromium IsAudible Audio Loop, DOCUMENT_START_SCRIPT e Watchdog Heartbeat 1.5s)",
+  "pub_date": "2026-11-05T05:10:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi91WC82RFBNMDFCVnJ3dFd0UVhtZXJBUGRBWElwT1ptbEhJY1JlLzFJZjZTK2xKSDlDMG1qL3orRlFadjBuMjBaaUxQaVZwdDVvQXBFZWI0L3pmK3c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODQ4OTkzCWZpbGU6SWRsZVN0cmVhbV8zLjAuM194NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjMKUVlVSy9ZeVkzQXNmaXdhWk15dFdoYTFnc1p4T0lSOW5XSk8wcFBhVW1IZnFXRFdyODJXNE5JNzUrNjNwRUV4bW55aEwvNUVJZURTKzZWWUtiTFNFQ3c9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.3/IdleStream_3.0.3_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjQ2aXYyVkNGTkxQU2loQjgzQnRsbGFPcTJHanp5SmlHSmJuRWZ0RnhkcVZMNFV4cUNxSmx4L1kzb0hLaVBHN24rWC9kTlNJaXpGbWZjM1ZzSWROV2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODU1MzkzCWZpbGU6SWRsZVN0cmVhbV8zLjAuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjQKUGg2cHNVR1BwUkJRR3dMMDFodkVmcHV6N0lLTm56MlM0dWJjTzBwQ2UyazlsQm5NNWlyY3JYWTMzNlN6TmV1dHVRT3R5cHpKdSs5b2hJQWp2aGZQQ3c9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.4/IdleStream_3.0.4_x64-setup.exe"
     }
   }
 }

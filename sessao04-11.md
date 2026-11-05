@@ -180,4 +180,32 @@ Identificada e solucionada a inatividade das abas quando o aplicativo era minimi
    - `idlestream.exe` (Executável portátil)
    - `latest.json` (Manifesto atualizado e assinado)
 
+---
+
+## 🚀 10. Release v3.0.4 (Execução Ininterrupta 24/7 com Tela Bloqueada/Segundo Plano — Baseada em Evidências)
+
+Solucionada em definitivo a inatividade das abas quando outro app é colocado em primeiro plano ou o celular tem a tela bloqueada, aplicando as técnicas comprovadas da indústria (Chromium `AwContents` C++, Android WebKit e `cordova-plugin-background-mode`):
+
+1. **Diagnóstico da Causa Raiz Real**:
+   - O Android despachava `dispatchWindowVisibilityChanged(View.GONE)` ao pausar a Activity. O `AwContents` do Chromium alternava para `PageVisibilityState::kHidden`, paralisando o `requestAnimationFrame` (0 FPS), travando WebWorkers (`HackTimer.js` do PokeIdle) e limitando timers a 1x/min.
+   - O renderizador multiprocesso do Android 8+ baixava sua prioridade para `WAIVED` por ter `waivedWhenNotVisible = true` por padrão.
+   - O Tauri (`WryActivity.kt`) chamava nativamente `mWebView.onPause()` no `onPause()` da Activity, congelando a WebView principal.
+   - O script `anti_sleep.js` só era injetado no `onPageFinished`, tarde demais para hooks do loop inicial de combate do PokeIdle.
+
+2. **Soluções Técnicas Implementadas**:
+   - **`PersistentWebView` com Blindagem de Visibilidade**: Subclasse nativa no Kotlin sobrescrevendo `onWindowVisibilityChanged`, `onVisibilityChanged` e `dispatchWindowVisibilityChanged` para repassar estritamente `View.VISIBLE` ao Chromium. Neutralizados também `onPause()` e `pauseTimers()`.
+   - **`setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)`**: Impede que o sistema operacional rebaixe ou congele o processo de renderização das WebViews fora de tela.
+   - **Isenção de Throttling Chromium via Áudio Ativo (`IsAudible`)**: Injeção de elemento HTML5 `<audio loop autoplay src="data:audio/wav;base64,...">` com volume imperceptível e desmutado, ativando `RenderFrameHostImpl::IsAudible()` no Chromium e isentando timers de background throttling.
+   - **Injeção em `DOCUMENT_START_SCRIPT`**: `anti_sleep.js` passa a ser injetado via `WebViewCompat.addDocumentStartJavaScript`, garantindo spoofing de visibilidade e proxy de renderização antes de qualquer script do jogo carregar.
+   - **Neutralização de Pausa no `MainActivity.kt`**: Chamada imediata a `mainWebView?.onResume()` após `super.onPause()` e `super.onStop()`, mantendo o frontend do Tauri acordado.
+   - **Watchdog Heartbeat Acelerado (1500ms)**: Pulso periódico que reforça `dispatchWindowVisibilityChanged(View.VISIBLE)`, `resumeTimers()` e `__idlestreamHeartbeat()`.
+
+3. **Artefatos Oficiais Gerados para a Tag v3.0.4**:
+   - `IdleStream_3.0.4_arm64.apk` (9.81 MB)
+   - `IdleStream_3.0.4_x64-setup.exe` (2.74 MB)
+   - `IdleStream_3.0.4_x64-setup.exe.sig` (Assinatura digital Minisign)
+   - `idlestream.exe` (Executável portátil Windows)
+   - `latest.json` (Manifesto assinado)
+
+
 

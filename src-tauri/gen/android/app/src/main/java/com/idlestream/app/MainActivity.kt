@@ -275,6 +275,7 @@ class MainActivity : TauriActivity() {
     override fun onResume() {
         super.onResume()
         try {
+            mainWebView?.onResume()
             mainWebView?.resumeTimers()
             gameSlotManager.resumeAllTimers()
         } catch (_: Throwable) {}
@@ -283,6 +284,10 @@ class MainActivity : TauriActivity() {
     override fun onPause() {
         super.onPause()
         try {
+            // WryActivity.onPause() chama mWebView.onPause().
+            // Chamamos onResume() imediatamente para manter o pipeline de JavaScript do Tauri ativo
+            // e evitar congelamento dos slots e do frontend em segundo plano.
+            mainWebView?.onResume()
             mainWebView?.resumeTimers()
             gameSlotManager.resumeAllTimers()
         } catch (_: Throwable) {}
@@ -291,6 +296,7 @@ class MainActivity : TauriActivity() {
     override fun onStop() {
         super.onStop()
         try {
+            mainWebView?.onResume()
             mainWebView?.resumeTimers()
             gameSlotManager.resumeAllTimers()
         } catch (_: Throwable) {}
@@ -311,6 +317,13 @@ class MainActivity : TauriActivity() {
         this.mainWebView = webView
         webView.setBackgroundColor(android.graphics.Color.parseColor("#0a0a0a"))
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+            } catch (e: Throwable) {
+                android.util.Log.w("IdleStream", "Falha ao definir prioridade de renderizador na mainWebView: ${e.message}")
+            }
+        }
         android.util.Log.d("IdleStream", "onWebViewCreate initialized with $webView")
     }
 
