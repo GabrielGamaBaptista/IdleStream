@@ -262,7 +262,28 @@ class GameSlotManager(private val activity: MainActivity) {
 
                     val isolationScript = getStorageIsolationScript(slotId)
                     val antiSleepScript = loadAssetScript("games/anti_sleep.js")
-                    val combinedStartScript = "$isolationScript\n$antiSleepScript"
+                    val huntScript = getHuntScript()
+
+                    val combinedStartScript = buildString {
+                        append(isolationScript)
+                        append("\n")
+                        append(antiSleepScript)
+                        if (huntScript.isNotEmpty()) {
+                            append("\n\n// === /hunt for PokeIdle Extension (Early WebSocket Hook) ===\n")
+                            append("""
+                                (function() {
+                                    try {
+                                        if (window.location && window.location.hostname && window.location.hostname.includes('pokeidle.io')) {
+                                            $huntScript
+                                        }
+                                    } catch (e) {
+                                        console.error('[IdleStream Hunt] Erro na injeção document_start:', e);
+                                    }
+                                })();
+                            """.trimIndent())
+                        }
+                    }
+
                     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
                         try {
                             WebViewCompat.addDocumentStartJavaScript(
@@ -270,7 +291,7 @@ class GameSlotManager(private val activity: MainActivity) {
                                 combinedStartScript,
                                 Collections.singleton("*")
                             )
-                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso (isolamento + anti_sleep) para $slotId")
+                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso (isolamento + anti_sleep + hunt_extension) para $slotId")
                         } catch (e: Throwable) {
                             Log.w(TAG, "Falha ao registrar addDocumentStartJavaScript: ${e.message}")
                         }
@@ -293,6 +314,12 @@ class GameSlotManager(private val activity: MainActivity) {
                             val antiSleep = loadAssetScript("games/anti_sleep.js")
                             if (antiSleep.isNotEmpty()) {
                                 view?.evaluateJavascript(antiSleep, null)
+                            }
+                            if (pageUrl != null && pageUrl.contains("pokeidle.io")) {
+                                val hunt = getHuntScript()
+                                if (hunt.isNotEmpty()) {
+                                    view?.evaluateJavascript(hunt, null)
+                                }
                             }
                         }
 
@@ -457,9 +484,22 @@ class GameSlotManager(private val activity: MainActivity) {
 
         // 3. Extensão oficial /hunt para PokeIdle
         if (url != null && url.contains("pokeidle.io")) {
-            val huntScript = loadAssetScript("games/hunt_extension.js")
+            val huntScript = getHuntScript()
             if (huntScript.isNotEmpty()) {
                 view.evaluateJavascript(huntScript, null)
+            }
+        }
+    }
+
+    @Volatile
+    private var cachedHuntScript: String? = null
+
+    private fun getHuntScript(): String {
+        return cachedHuntScript ?: synchronized(this) {
+            cachedHuntScript ?: run {
+                val s = loadAssetScript("games/hunt_extension.js")
+                cachedHuntScript = s
+                s
             }
         }
     }

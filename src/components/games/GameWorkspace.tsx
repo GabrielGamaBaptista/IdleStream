@@ -314,7 +314,7 @@ export const GameWorkspace: React.FC = () => {
     <div className="flex flex-col h-full w-full bg-neutral-950 overflow-hidden select-none relative">
       {/* Botão/Pílula Flutuante no Canto para Restaurar Menus ou Barra Superior */}
       {(!isToolbarVisible || isImmersiveMode) && (
-        <div className="fixed top-2.5 right-3 z-50 flex items-center gap-1.5 bg-neutral-900/90 hover:bg-neutral-900 text-neutral-200 border border-neutral-700/80 shadow-2xl backdrop-blur-md px-2.5 py-1 rounded-full transition-all animate-in fade-in duration-200">
+        <div className="fixed top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] right-3 z-50 flex items-center gap-1.5 bg-neutral-900/90 hover:bg-neutral-900 text-neutral-200 border border-neutral-700/80 shadow-2xl backdrop-blur-md px-2.5 py-1 rounded-full transition-all animate-in fade-in duration-200">
           {!isToolbarVisible && (
             <button
               onClick={() => {
@@ -675,8 +675,8 @@ export const GameWorkspace: React.FC = () => {
         }`}
       >
         {/* Cabeçalho do Card (Estilo IdleDeck) */}
-        <div className="flex items-center justify-between gap-1.5 px-2.5 sm:px-3 py-1.5 bg-neutral-900 border-b border-neutral-800/80 shrink-0">
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink">
+        <div className="flex items-center justify-between gap-1 px-2 py-1.5 sm:px-3 bg-neutral-900 border-b border-neutral-800/80 shrink-0 min-h-[32px]">
+          <div className="flex items-center gap-1.5 min-w-0 shrink">
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${
                 isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-600'
@@ -685,27 +685,13 @@ export const GameWorkspace: React.FC = () => {
             <span className="text-xs font-semibold text-neutral-200 truncate">
               {slot.label || slot.id}
             </span>
-
-            {isRunning && (
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded font-mono shrink-0 transition-colors ${
-                  fpsTier === '10'
-                    ? 'bg-amber-950 text-amber-300 border border-amber-800/50'
-                    : fpsTier === '30'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
-                    : 'bg-neutral-800 text-neutral-400 border border-neutral-700/50'
-                }`}
-              >
-                {fpsTier === '10' ? '🔋 10' : fpsTier === '30' ? '🍃 30' : '⚡ 60'}
-              </span>
-            )}
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {isRunning && (
               <button
                 onClick={() => handleToggleSlotUltra(slot.id)}
-                className="p-1 rounded text-neutral-400 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer"
+                className="p-1 rounded text-purple-400 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer shrink-0"
                 title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de Estatísticas)"
               >
                 <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
@@ -724,7 +710,7 @@ export const GameWorkspace: React.FC = () => {
               <select
                 value={Math.round((slotZooms[slot.id] ?? slot.zoom ?? 1.0) * 100)}
                 onChange={(e) => setZoomForSlot(slot.id, Number(e.target.value) / 100)}
-                className="bg-transparent text-[10px] font-mono font-medium text-neutral-200 px-1 py-0.5 outline-hidden cursor-pointer hover:text-indigo-400 text-center"
+                className="bg-transparent text-[10px] font-mono font-medium text-neutral-200 px-0.5 sm:px-1 py-0.5 outline-hidden cursor-pointer hover:text-indigo-400 text-center"
                 title="Nível de Zoom da Aba"
               >
                 <option value={50} className="bg-neutral-900 text-white">50%</option>

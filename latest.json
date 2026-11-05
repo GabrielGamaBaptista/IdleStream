@@ -1,11 +1,11 @@
 {
-  "version": "3.0.4",
-  "notes": "IdleStream v3.0.4 — Execução Ininterrupta 24/7 com Tela Desligada/Segundo Plano no Android (PersistentWebView com Blindagem de Visibilidade, Process Priority Waived Bypass, Chromium IsAudible Audio Loop, DOCUMENT_START_SCRIPT e Watchdog Heartbeat 1.5s)",
-  "pub_date": "2026-11-05T05:10:00Z",
+  "version": "3.0.5",
+  "notes": "IdleStream v3.0.5 — Correção e Otimização do /hunt no Celular (Injeção em DocumentStart com WebSocketObservado), Despoluição do Cabeçalho dos Cards de Jogos (Apenas Ultra Economia PokeIdle visível) e Proteção Total de Safe-Area contra sobreposição do Relógio/Notch Mobile",
+  "pub_date": "2026-11-05T13:35:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjQ2aXYyVkNGTkxQU2loQjgzQnRsbGFPcTJHanp5SmlHSmJuRWZ0RnhkcVZMNFV4cUNxSmx4L1kzb0hLaVBHN24rWC9kTlNJaXpGbWZjM1ZzSWROV2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODU1MzkzCWZpbGU6SWRsZVN0cmVhbV8zLjAuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjQKUGg2cHNVR1BwUkJRR3dMMDFodkVmcHV6N0lLTm56MlM0dWJjTzBwQ2UyazlsQm5NNWlyY3JYWTMzNlN6TmV1dHVRT3R5cHpKdSs5b2hJQWp2aGZQQ3c9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.4/IdleStream_3.0.4_x64-setup.exe"
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.5/IdleStream_3.0.5_x64-setup.exe"
     }
   }
 }

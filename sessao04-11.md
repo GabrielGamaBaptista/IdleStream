@@ -207,5 +207,26 @@ Solucionada em definitivo a inatividade das abas quando outro app é colocado em
    - `idlestream.exe` (Executável portátil Windows)
    - `latest.json` (Manifesto assinado)
 
+---
+
+## 🚀 11. Release v3.0.5 (Correção do /hunt no Celular, Despoluição dos Cards e Safe Area Dinâmica)
+
+Solucionada a quebra de layout no cabeçalho dos cards dos jogos e o travamento da extensão oficial `/hunt for PokeIdle` no Android:
+
+1. **Diagnóstico da Causa Raiz Real**:
+   - **Sobreposição dos Cards**: O badge de FPS (`10 / 30 / 60`) duplicado dentro dos cards individuais ocupava espaço excessivo na largura reduzida do grid 4x mobile (~170px), fazendo os botões colidirem e quebrarem por baixo dos controles de zoom (`- 67% +`).
+   - **Sobreposição com Relógio do Celular**: O `p-0 m-0` forçado no modo tela cheia e o botão flutuante posicionado em `top-2.5` faziam os elementos colidirem com o relógio ("08:42") e o entalhe da câmera do smartphone devido ao `enableEdgeToEdge()`.
+   - **/hunt Travado no Celular**: O PokeIdle abre seu WebSocket nos primeiros milissegundos do carregamento. Como a extensão oficial só era injetada no `onPageFinished`, o proxy `WebSocketObservado` era instalado tarde demais, nunca capturando os pacotes `"welcome"` e `"estado"`, travando a tela em *"Esperando o jogo conectar..."*.
+
+2. **Soluções Técnicas Implementadas**:
+   - **Despoluição dos Cards**: Removido o badge redundante de 10/30/60 de cada card, mantendo o controle global na barra superior e destacando o botão roxo de Ultra Economia (`BarChart3`).
+   - **Safe Area Dinâmica**: Preservado `pt-[env(safe-area-inset-top,0px)]` mesmo em tela cheia e botão de restaurar posicionado com `top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))]`.
+   - **Injeção de /hunt em `DOCUMENT_START_SCRIPT`**: `hunt_extension.js` agora é injetado via `WebViewCompat.addDocumentStartJavaScript`, capturando o handshake do WebSocket antes da execução do cliente do jogo, com cache em memória e leitura zero-overhead.
+
+3. **Artefatos Oficiais Gerados para a Tag v3.0.5**:
+   - `IdleStream_3.0.5_arm64.apk` (10.0 MB)
+   - `latest.json` (Manifesto atualizado para v3.0.5)
+
+
 
 

@@ -41,9 +41,7 @@ export default function App() {
 
   return (
     <div
-      className={`flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans ${
-        isFullscreenGames ? 'p-0 m-0' : 'pt-[env(safe-area-inset-top)]'
-      }`}
+      className="flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans pt-[env(safe-area-inset-top,0px)]"
     >
       {/* Top Header */}
       {!isFullscreenGames && <Header />}
