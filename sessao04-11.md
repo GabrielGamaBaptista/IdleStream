@@ -155,3 +155,29 @@ Identificado e corrigido o compartilhamento de sessão entre as contas no mobile
    - `idlestream.exe` (Binário portátil Windows)
    - `latest.json` (Manifesto assinado)
 
+---
+
+## ⚡ 9. Release v3.0.3 (Persistência 24/7 de 4 Abas em Segundo Plano, Tela Bloqueada & Ultra PokeIdle)
+
+Identificada e solucionada a inatividade das abas quando o aplicativo era minimizado ou o celular ficava com tela bloqueada, além da correção definitiva do botão do Modo Ultra Economia:
+
+1. **Diagnóstico da Inatividade em Segundo Plano e Tela Apagada**:
+   - Abas secundárias no layout Foco (1x) recebiam `View.GONE`, fazendo o Chromium pausar o motor JavaScript.
+   - Throttling severo do Chromium após poucos minutos em segundo plano limitava `setInterval` para 1 vez por minuto, fazendo o keepalive do WebSocket falhar (>25s) e o vigia do PokeIdle derrubar o socket.
+   - O botão do Modo Ultra Economia tentava clicar em `#cfg-ultra` antes do modal de configurações estar aberto e aplicava apenas CSS, sem montar `#ultra` ou acionar `#ultra-sair`.
+
+2. **Soluções Arquiteturais Aplicadas**:
+   - **Fim do `View.GONE`**: Slots inativos permanecem como `View.VISIBLE`, `alpha = 0f` e 1x1 px em `(-100, -100)`, mantendo a pipeline Chromium 100% ativa para as 4 contas simultaneamente.
+   - **Web Audio Silent Loop**: Injeção de buffer silencioso via `AudioContext` contínuo no `anti_sleep.js`, isentando o Chromium de congelamento de segundo plano.
+   - **Watchdog Nativo Heartbeat**: Executor em background rodando a cada 2500ms no Android com `PARTIAL_WAKE_LOCK`, disparando `resumeTimers()`, guardião de keepalive no WebSocket (`{ t: 'ping' }`) e reconexão automática.
+   - **Modo Ultra PokeIdle Funcional**: Acionamento síncrono via `#btn-config` -> `#cfg-ultra` para ativar e `#ultra-sair` para desativar, testado e validado em 5/5 cenários.
+   - **Sobrescrita do Ciclo de Vida da Activity**: `onStop()` e `onPause()` garantem `resumeAllTimers()` em todas as transições de tela.
+
+3. **Artefatos Oficiais Gerados para a Tag v3.0.3**:
+   - `IdleStream_3.0.3_arm64.apk` (9.81 MB)
+   - `IdleStream_3.0.3_x64-setup.exe` (2.74 MB)
+   - `IdleStream_3.0.3_x64-setup.exe.sig` (Assinatura digital Minisign)
+   - `idlestream.exe` (Executável portátil)
+   - `latest.json` (Manifesto atualizado e assinado)
+
+

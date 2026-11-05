@@ -272,14 +272,28 @@ class MainActivity : TauriActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        try {
+            mainWebView?.resumeTimers()
+            gameSlotManager.resumeAllTimers()
+        } catch (_: Throwable) {}
+    }
+
     override fun onPause() {
         super.onPause()
         try {
             mainWebView?.resumeTimers()
             gameSlotManager.resumeAllTimers()
-        } catch (e: Throwable) {
-            // Ignore
-        }
+        } catch (_: Throwable) {}
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try {
+            mainWebView?.resumeTimers()
+            gameSlotManager.resumeAllTimers()
+        } catch (_: Throwable) {}
     }
 
     override fun onDestroy() {

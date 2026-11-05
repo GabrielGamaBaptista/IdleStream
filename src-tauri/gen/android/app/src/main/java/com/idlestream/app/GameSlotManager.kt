@@ -95,6 +95,31 @@ class GameSlotManager(private val activity: MainActivity) {
     private val activeSlots = ConcurrentHashMap<String, String>() // slotId -> url
     private var currentFps = 30
     private var isEcoMode = true
+    private var watchdogExecutor: java.util.concurrent.ScheduledExecutorService? = null
+
+    fun startWatchdog() {
+        if (watchdogExecutor != null && !watchdogExecutor!!.isShutdown) return
+        watchdogExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+        watchdogExecutor?.scheduleWithFixedDelay({
+            if (activeSlots.isEmpty()) return@scheduleWithFixedDelay
+            activity.runOnUiThread {
+                for (wv in slotWebViews.values) {
+                    try {
+                        wv.resumeTimers()
+                        wv.evaluateJavascript("if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }", null)
+                    } catch (_: Throwable) {}
+                }
+            }
+        }, 2500, 2500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 2500ms)")
+    }
+
+    fun stopWatchdog() {
+        try {
+            watchdogExecutor?.shutdownNow()
+            watchdogExecutor = null
+        } catch (_: Throwable) {}
+    }
 
     fun ensureContainer() {
         if (container != null) return
@@ -237,6 +262,7 @@ class GameSlotManager(private val activity: MainActivity) {
             }
 
             activeSlots[slotId] = url
+            startWatchdog()
             if (zoom != 1.0) {
                 setSlotZoom(slotId, zoom)
             }
@@ -459,7 +485,15 @@ class GameSlotManager(private val activity: MainActivity) {
                     val wv = slotWebViews[slotId] ?: continue
 
                     if (!visible || width <= 5 || height <= 5) {
-                        wv.visibility = View.GONE
+                        // Não usamos View.GONE pois ele faz o Chromium congelar o pipeline de execução e timers da aba.
+                        // Em vez disso, posicionamos a WebView com 1x1 px fora da viewport e alpha 0f
+                        val lp = FrameLayout.LayoutParams(1, 1).apply {
+                            leftMargin = -100
+                            topMargin = -100
+                        }
+                        wv.layoutParams = lp
+                        wv.visibility = View.VISIBLE
+                        wv.alpha = 0f
                     } else {
                         val pxX = (x * density).toInt()
                         val pxY = (y * density).toInt()
@@ -472,6 +506,7 @@ class GameSlotManager(private val activity: MainActivity) {
                         }
                         wv.layoutParams = lp
                         wv.visibility = View.VISIBLE
+                        wv.alpha = 1f
                     }
                 }
             } catch (e: Throwable) {
@@ -482,15 +517,25 @@ class GameSlotManager(private val activity: MainActivity) {
 
     fun hideAll() {
         activity.runOnUiThread {
-            slotWebViews.values.forEach { it.visibility = View.GONE }
+            slotWebViews.values.forEach { wv ->
+                val lp = FrameLayout.LayoutParams(1, 1).apply {
+                    leftMargin = -100
+                    topMargin = -100
+                }
+                wv.layoutParams = lp
+                wv.visibility = View.VISIBLE
+                wv.alpha = 0f
+            }
         }
     }
 
     fun resumeAllTimers() {
+        startWatchdog()
         activity.runOnUiThread {
             slotWebViews.values.forEach { wv ->
                 try {
                     wv.resumeTimers()
+                    wv.evaluateJavascript("if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }", null)
                 } catch (_: Throwable) {}
             }
         }
@@ -501,6 +546,7 @@ class GameSlotManager(private val activity: MainActivity) {
     }
 
     fun destroy() {
+        stopWatchdog()
         activity.runOnUiThread {
             slotWebViews.values.forEach { wv ->
                 wv.stopLoading()

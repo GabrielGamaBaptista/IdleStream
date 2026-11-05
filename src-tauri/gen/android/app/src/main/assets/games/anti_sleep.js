@@ -63,6 +63,7 @@
         }
       }
     };
+    window.__flushIdleStreamCallbacks = flushCallbacks;
 
     // Loop imune a throttling do navegador com suporte a 60 FPS, 30 FPS e Super Economia (10 FPS)
     let lastFlush = 0;
@@ -76,7 +77,51 @@
     }, 8);
 
     // ============================================================
-    // 4. ECONOMIA DE CPU: CONTROLE INTELIGENTE DE ÁUDIO
+    // 4. BYPASS DE THROTTLING CHROMIUM VIA WEB AUDIO API SILENCIOSO
+    // ============================================================
+    // Chromium isenta abas com AudioContext ativo de throttling e congelamento em segundo plano
+    let audioCtx = null;
+    const initSilentAudio = () => {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        if (!audioCtx) {
+          audioCtx = new AudioContextClass();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        if (!window.__idlestreamAudioSource && audioCtx) {
+          const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+          const source = audioCtx.createBufferSource();
+          source.buffer = buffer;
+          source.loop = true;
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0.00001; // Quase zero, mas marca a aba como "Audible" no Chromium
+          source.connect(gain);
+          gain.connect(audioCtx.destination);
+          source.start(0);
+          window.__idlestreamAudioSource = source;
+          window.__idlestreamAudioCtx = audioCtx;
+        }
+      } catch (e) {
+        // Ignorar se política de áudio restringir temporariamente
+      }
+    };
+
+    initSilentAudio();
+    ['click', 'touchstart', 'keydown'].forEach((ev) => {
+      window.addEventListener(ev, () => {
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        } else if (!audioCtx) {
+          initSilentAudio();
+        }
+      }, { once: true, passive: true });
+    });
+
+    // ============================================================
+    // 4.1. ECONOMIA DE CPU: CONTROLE INTELIGENTE DE ÁUDIO DO JOGO
     // ============================================================
     try {
       const originalAudioPlay = HTMLMediaElement.prototype.play;
@@ -230,29 +275,114 @@
     };
 
     // ============================================================
-    // 8. CONTROLE DO MODO ULTRA ECONOMIA NATIVO DO POKEIDLE (Stats Card)
+    // 8. WATCHDOG HEARTBEAT DE SEGUNDO PLANO (Chamado pelo Nativo)
     // ============================================================
+    window.__idlestreamHeartbeat = function () {
+      try {
+        // 1. Manter AudioContext ativo (se Chromium tiver suspendido em background)
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        } else if (!audioCtx) {
+          initSilentAudio();
+        }
+
+        // 2. Despachar callbacks de renderização/jogo pendentes
+        flushCallbacks();
+
+        // 3. Guardião de WebSocket (PokeIdle / Jogos Web)
+        const estadoObj = window.estado;
+        if (estadoObj && estadoObj.ws) {
+          const ws = estadoObj.ws;
+          if (ws.readyState === 1) { // OPEN
+            const now = Date.now();
+            const lastMsg = estadoObj.ultimaMsgEm || 0;
+            // Se passar mais de 15 segundos sem mensagem/keepalive, envia ping preventivo
+            if (now - lastMsg >= 15000) {
+              try {
+                ws.send(JSON.stringify({ t: 'ping' }));
+                estadoObj.ultimaMsgEm = now;
+              } catch (_) {}
+            }
+          } else if (ws.readyState >= 2) { // CLOSING ou CLOSED
+            // Reconexão automática proativa se caiu em segundo plano
+            if (typeof window.verificarConexao === 'function') {
+              window.verificarConexao();
+            } else if (typeof window.conectar === 'function') {
+              window.conectar();
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[IdleStream Heartbeat] Erro no ciclo de pulso:', err);
+      }
+    };
+
+    // ============================================================
+    // 9. CONTROLE DO MODO ULTRA ECONOMIA NATIVO DO POKEIDLE (Stats Card)
+    // ============================================================
+    window.__isPokeIdleUltraActive = function () {
+      try {
+        const rootHasClass = document.documentElement.classList.contains('modo-ultra');
+        const btnSairExists = !!document.getElementById('ultra-sair');
+        const ultraDiv = document.getElementById('ultra');
+        const ultraVisible = ultraDiv && ultraDiv.getAttribute('aria-hidden') === 'false';
+        return rootHasClass || btnSairExists || !!ultraVisible;
+      } catch (_) {
+        return false;
+      }
+    };
+
     window.__togglePokeIdleUltra = function (forceState) {
       try {
-        const isCurrent = localStorage.getItem('cfg-ultra') === '1';
+        const isCurrent = window.__isPokeIdleUltraActive();
         const targetState = forceState !== undefined ? !!forceState : !isCurrent;
-        localStorage.setItem('cfg-ultra', targetState ? '1' : '0');
 
-        // Tentar acionar o interruptor nativo do jogo se estiver na tela
-        const btn = document.getElementById('cfg-ultra');
-        if (btn) {
-          const isOn = btn.classList.contains('on');
-          if (isOn !== targetState) {
-            btn.click();
-          }
-        } else {
-          // Se o botão não estiver no DOM aberto, disparar evento de storage e recarregar
-          window.dispatchEvent(new Event('storage'));
-          document.documentElement.classList.toggle('modo-ultra', targetState);
+        // Se o estado desejado já é o atual, nada a fazer
+        if (isCurrent === targetState) {
+          return true;
         }
-        console.log('[IdleStream] PokeIdle Ultra Economia alternado para:', targetState);
+
+        if (isCurrent && !targetState) {
+          // Desativar: Clica no botão oficial de saída (#ultra-sair)
+          const btnSair = document.getElementById('ultra-sair');
+          if (btnSair) {
+            btnSair.click();
+            console.log('[IdleStream] PokeIdle Ultra: Saiu com sucesso via #ultra-sair');
+            return true;
+          }
+        } else if (!isCurrent && targetState) {
+          // Ativar:
+          // Caso 1: O modal de configurações já está aberto no DOM
+          let cfgUltra = document.getElementById('cfg-ultra');
+          if (cfgUltra) {
+            cfgUltra.click();
+            console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #cfg-ultra');
+            return true;
+          }
+
+          // Caso 2: Clicar no botão oficial #btn-config para abrir o modal de configurações
+          // No PokeIdle, a abertura do modal e a montagem de #cfg-ultra é 100% síncrona
+          const btnConfig = document.getElementById('btn-config');
+          if (btnConfig) {
+            btnConfig.click();
+            cfgUltra = document.getElementById('cfg-ultra');
+            if (cfgUltra) {
+              cfgUltra.click(); // Ao clicar, o PokeIdle liga o Ultra e fecha o modal automaticamente
+              console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #btn-config -> #cfg-ultra');
+              return true;
+            }
+          }
+        }
+
+        // Fallback de contingência (persiste preferência no storage do slot)
+        localStorage.setItem('cfg-ultra', targetState ? '1' : '0');
+        window.dispatchEvent(new Event('storage'));
+        document.documentElement.classList.toggle('modo-ultra', targetState);
+        console.log('[IdleStream] PokeIdle Ultra alternado via fallback:', targetState);
+        return true;
       } catch (err) {
         console.error('[IdleStream] Erro ao alternar PokeIdle Ultra:', err);
+        return false;
       }
     };
 
