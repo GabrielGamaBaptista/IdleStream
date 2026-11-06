@@ -1,11 +1,11 @@
 {
-  "version": "3.0.6",
-  "notes": "IdleStream v3.0.6 — Estabilidade Total de GPU no Desktop contra Blackout (Processo Gráfico Out-of-Process com Recuperação Contínua, Heap V8 de 512MB e Desacoplamento de Renderers)",
-  "pub_date": "2026-11-05T18:00:00Z",
+  "version": "3.1.0",
+  "notes": "IdleStream v3.1.0 — Mineração Ultra-leve de Pontos de Canal na Twitch com Fila de Prioridade por Uptime Médio, Rotação Inteligente e Zero Vídeo Webview",
+  "pub_date": "2026-11-05T23:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9aaVdPV2pqTmNZeDJ3VDFjVFlFYUlORnBiS0x0aHYxSnowRHA4a0pBaVZydWFkZWRwbWhtalFHV3FJTDhXZkd1TGpDNXBzQzhjVmhoZHFzYzBVWGd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTAxNjQxCWZpbGU6SWRsZVN0cmVhbV8zLjAuNl94NjQtc2V0dXAuZXhlCXZlcnNpb246My4wLjYKV0FHM0QvcHZsYm1jZUFFSG9FN2l1Y3plbS9uOWMrYjhuUUhqTyt0aFJFYjY5VWVXL3pTemFYNkxqR01PY2t1Sm1PdlpySENPbkdoR2JjcXFmZjE5QkE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.0.6/IdleStream_3.0.6_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjBZTGk4OGF5akhQd0JzNTJ4cWtpUCsvZVprUjdqK0g2WjRORVhFcm5URFVVd3paYUJlWEpiVkxNSTlCc2VlTld2STdqMHA3TGx6ZkdKQzNGQmduQ1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTMwNzY3CWZpbGU6SWRsZVN0cmVhbV8zLjEuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4xLjAKSVhKeUt6Q1NVTTM5WDJGTnhsdGZkM2hoL3JIWmlzUFBSWVhEYTlQeDYyZUNCa2lxK2d1SE5tMGp5M25XVGk0RGZBV1pLMktqSWxuWTdRQkpNVGhRQlE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.1.0/IdleStream_3.1.0_x64-setup.exe"
     }
   }
 }

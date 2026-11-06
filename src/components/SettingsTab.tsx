@@ -313,7 +313,7 @@ export const SettingsTab: React.FC = () => {
             type="button"
             onClick={async () => {
               const crashLog = window.AndroidBridge?.getCrashLog ? window.AndroidBridge.getCrashLog() : 'Nenhum log nativo do Android.';
-              const diag = `=== IDLESTREAM DIAGNOSTIC REPORT ===\nApp Version: 3.0.6\nPlatform: ${window.AndroidBridge?.isAndroid() ? 'Android' : 'Desktop'}\nBattery Optimization Ignored: ${window.AndroidBridge?.isBatteryOptimizationIgnored?.() ?? 'N/A'}\nActive Streams: ${JSON.stringify(config.streams.map(s => ({ id: s.id, channel: s.channel_slug, platform: s.platform, auto: s.auto_start })))}\n\n=== NATIVE CRASH/ERROR LOG ===\n${crashLog}`;
+              const diag = `=== IDLESTREAM DIAGNOSTIC REPORT ===\nApp Version: 3.1.0\nPlatform: ${window.AndroidBridge?.isAndroid() ? 'Android' : 'Desktop'}\nBattery Optimization Ignored: ${window.AndroidBridge?.isBatteryOptimizationIgnored?.() ?? 'N/A'}\nActive Streams: ${JSON.stringify(config.streams.map(s => ({ id: s.id, channel: s.channel_slug, platform: s.platform, auto: s.auto_start })))}\n\n=== NATIVE CRASH/ERROR LOG ===\n${crashLog}`;
               await navigator.clipboard.writeText(diag);
               alert('Relatório de diagnóstico copiado para a área de transferência!');
             }}

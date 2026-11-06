@@ -351,6 +351,55 @@ pub async fn save_twitch_token(
 }
 
 #[tauri::command]
+pub async fn open_twitch_login(
+    app: AppHandle,
+    state: StateHandle<'_>,
+    account_id: String,
+) -> Result<(), String> {
+    let label = {
+        let cfg = state.config.lock().await;
+        cfg.accounts
+            .iter()
+            .find(|a| a.id == account_id)
+            .map(|a| a.label.clone())
+            .unwrap_or_else(|| "Twitch Account".to_string())
+    };
+
+    crate::twitch::webview::TwitchWebManager::open_login_window(&app, &account_id, &label)
+}
+
+#[tauri::command]
+pub async fn save_twitch_session(
+    app: AppHandle,
+    state: StateHandle<'_>,
+    account_id: String,
+) -> Result<AppConfig, String> {
+    let creds = crate::twitch::webview::TwitchWebManager::extract_cookies_native(&app, &account_id)?;
+
+    let mut cfg = state.config.lock().await;
+    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.oauth_token = Some(creds.auth_token);
+        state.config_store.save(&cfg)?;
+    }
+
+    let label = format!("twitch_login_{}", account_id);
+    if let Some(win) = app.get_webview_window(&label) {
+        let _ = win.destroy();
+    }
+
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn get_twitch_account_streamers_ranking(
+    state: StateHandle<'_>,
+    account_id: String,
+) -> Result<Vec<crate::twitch::models::TwitchStreamerStats>, String> {
+    let stats = state.twitch_coordinator.get_account_streamers(&account_id).await;
+    Ok(stats)
+}
+
+#[tauri::command]
 pub async fn save_kick_credentials_direct(
     state: StateHandle<'_>,
     account_id: String,

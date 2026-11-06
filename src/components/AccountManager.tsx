@@ -3,7 +3,16 @@ import { useAppStore } from '../stores/appStore';
 import { Users, Plus, Radio, Globe, Trash2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 
 export const AccountManager: React.FC = () => {
-  const { config, removeAccount, openKickLogin, saveKickSession, startTwitchOAuth, setAddAccountOpen } = useAppStore();
+  const {
+    config,
+    removeAccount,
+    openKickLogin,
+    saveKickSession,
+    openTwitchLogin,
+    saveTwitchSession,
+    startTwitchOAuth,
+    setAddAccountOpen,
+  } = useAppStore();
 
   const isAndroid = typeof window !== 'undefined' && Boolean(window.AndroidBridge);
 
@@ -17,6 +26,15 @@ export const AccountManager: React.FC = () => {
       alert('Autenticação Twitch concluída e salva!');
     } catch (e: any) {
       alert(`Falha no login Twitch: ${e}`);
+    }
+  };
+
+  const handleSaveTwitch = async (accountId: string) => {
+    try {
+      await saveTwitchSession(accountId);
+      alert('Sessão da Twitch capturada e salva com sucesso! Os cookies foram armazenados.');
+    } catch (e: any) {
+      alert(`Erro ao salvar sessão da Twitch: ${e}`);
     }
   };
 
@@ -141,17 +159,43 @@ export const AccountManager: React.FC = () => {
                 {/* Account Action Buttons */}
                 <div className="mt-4 pt-3 border-t border-neutral-800 space-y-2">
                   {isTwitch ? (
-                    <button
-                      onClick={() => handleTwitchAuth(account.id)}
-                      className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition cursor-pointer shadow-sm ${
-                        hasToken
-                          ? 'bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 border border-purple-800/60'
-                          : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30'
-                      }`}
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>{hasToken ? 'Reautenticar Twitch' : 'Autenticar com Twitch'}</span>
-                    </button>
+                    isAndroid ? (
+                      <button
+                        onClick={() => handleTwitchAuth(account.id)}
+                        className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition cursor-pointer shadow-sm ${
+                          hasToken
+                            ? 'bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 border border-purple-800/60'
+                            : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30'
+                        }`}
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                        <span>{hasToken ? 'Reautenticar Twitch' : 'Autenticar com Twitch'}</span>
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          onClick={() => openTwitchLogin(account.id)}
+                          className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-purple-950/60 hover:bg-purple-900/60 text-purple-200 border border-purple-800/60 text-xs font-medium transition cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>{hasToken ? '1. Reabrir Janela Twitch' : '1. Abrir Login Twitch'}</span>
+                        </button>
+                        <button
+                          onClick={() => handleSaveTwitch(account.id)}
+                          className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm shadow-purple-600/30"
+                          title="Após logar na janela aberta, clique aqui para capturar os cookies e fechar a janela"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>2. Capturar & Salvar Sessão</span>
+                        </button>
+                        <button
+                          onClick={() => handleTwitchAuth(account.id)}
+                          className="text-[10px] text-neutral-500 hover:text-neutral-400 py-0.5 text-center transition cursor-pointer"
+                        >
+                          Ou autenticar via navegador externo (OAuth)
+                        </button>
+                      </div>
+                    )
                   ) : isAndroid ? (
                     <button
                       onClick={() => window.AndroidBridge?.openKickLogin(account.id, account.label)}

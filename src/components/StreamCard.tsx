@@ -89,7 +89,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
               }`}
             >
               <Radio className="w-3 h-3" />
-              {isTwitch ? 'Twitch (IRC)' : 'Kick (WebSocket)'}
+              {isTwitch ? 'Twitch' : 'Kick'}
             </span>
 
             {stream.auto_start && (
@@ -181,8 +181,8 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
                   >
                     <span className="font-medium truncate max-w-[90px]">{acc.label}</span>
                     <span className="text-neutral-500 text-[10px]">@{acc.username}</span>
-                    {isKick && accPoints && (
-                      <span className="text-[10px] font-mono text-emerald-400/90 ml-0.5">
+                    {accPoints && (
+                      <span className={`text-[10px] font-mono ml-0.5 ${isTwitch ? 'text-purple-400/90' : 'text-emerald-400/90'}`}>
                         • {formatPoints(accPoints)}
                       </span>
                     )}
@@ -192,6 +192,14 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             </div>
           )}
         </div>
+
+        {/* Message banner (Minerando / Prioridade / Fila de Espera) */}
+        {isConnected && status.message && (
+          <div className="mt-2.5 p-1.5 rounded bg-neutral-950 border border-neutral-800 flex items-center gap-1.5 text-neutral-300 text-[11px] font-mono leading-tight">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+            <span className="truncate">{status.message}</span>
+          </div>
+        )}
 
         {/* Error message banner */}
         {isError && status.message && (
@@ -205,7 +213,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
         {isStandby && (
           <div className="mt-2.5 p-2 rounded bg-indigo-950/30 border border-indigo-900/40 flex items-start gap-1.5 text-indigo-300 text-[11px] leading-tight">
             <Moon className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-indigo-400" />
-            <span>Aguardando streamer iniciar a live (0 MB consumidos).</span>
+            <span className="truncate">{status.message || 'Aguardando streamer iniciar a live (0 MB consumidos).'}</span>
           </div>
         )}
 

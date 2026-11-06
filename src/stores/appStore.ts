@@ -43,6 +43,8 @@ interface AppState {
   addAccount: (account: Account) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
   startTwitchOAuth: (accountId: string) => Promise<string>;
+  openTwitchLogin: (accountId: string) => Promise<void>;
+  saveTwitchSession: (accountId: string) => Promise<void>;
   openKickLogin: (accountId: string) => Promise<void>;
   saveKickSession: (accountId: string) => Promise<void>;
 
@@ -60,7 +62,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '3.0.6',
+  appVersion: '3.1.0',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -337,6 +339,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const token = await invoke<string>('start_twitch_oauth', { accountId, clientId: null });
     await get().fetchConfig();
     return token;
+  },
+
+  openTwitchLogin: async (accountId) => {
+    await invoke('open_twitch_login', { accountId });
+  },
+
+  saveTwitchSession: async (accountId) => {
+    const updated = await invoke<AppConfig>('save_twitch_session', { accountId });
+    set({ config: updated });
   },
 
   openKickLogin: async (accountId) => {

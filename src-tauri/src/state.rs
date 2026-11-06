@@ -14,6 +14,8 @@ pub struct AppState {
     pub config: Mutex<AppConfig>,
     pub config_store: ConfigStore,
     pub twitch_sessions: Mutex<HashMap<String, TwitchSession>>,
+    pub twitch_watchers: Mutex<HashMap<String, crate::twitch::watcher::TwitchWatcherHandle>>,
+    pub twitch_coordinator: crate::twitch::coordinator::AccountPriorityCoordinator,
     pub kick_watchers: Mutex<HashMap<String, crate::kick::watcher::KickWatcherHandle>>,
     pub statuses: Mutex<HashMap<String, StreamRuntimeStatus>>,
     pub http_client: reqwest::Client,
@@ -52,6 +54,8 @@ impl AppState {
             config: Mutex::new(config),
             config_store,
             twitch_sessions: Mutex::new(HashMap::new()),
+            twitch_watchers: Mutex::new(HashMap::new()),
+            twitch_coordinator: crate::twitch::coordinator::AccountPriorityCoordinator::new(),
             kick_watchers: Mutex::new(HashMap::new()),
             statuses: Mutex::new(statuses),
             http_client,
@@ -116,6 +120,12 @@ impl AppState {
             sess.stop();
         }
         drop(sessions);
+
+        let mut twitch_watchers = self.twitch_watchers.lock().await;
+        if let Some(mut tw) = twitch_watchers.remove(&session_key) {
+            tw.stop();
+        }
+        drop(twitch_watchers);
 
         let mut kick_watchers = self.kick_watchers.lock().await;
         if let Some(mut watcher) = kick_watchers.remove(&session_key) {
@@ -293,7 +303,73 @@ impl AppState {
                         });
                     });
 
-                    self.twitch_sessions.lock().await.insert(session_key, session);
+                    self.twitch_sessions.lock().await.insert(session_key.clone(), session);
+
+                    // Inicia o watcher nativo de pontos de canal da Twitch com rotação de prioridade
+                    {
+                        let mut watchers = self.twitch_watchers.lock().await;
+                        if let Some(mut existing) = watchers.remove(&session_key) {
+                            existing.stop();
+                        }
+                    }
+
+                    let this_tw = Arc::clone(self);
+                    let s_id = stream_id.to_string();
+                    let a_id = account.id.clone();
+
+                    let on_status: crate::twitch::watcher::StatusCallback = Arc::new(
+                        move |status_kind, msg, points| {
+                            let this_cb = Arc::clone(&this_tw);
+                            let s_id_cb = s_id.clone();
+                            let a_id_cb = a_id.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let now = Utc::now().timestamp();
+                                let selected_id = {
+                                    let cfg = this_cb.config.lock().await;
+                                    cfg.streams
+                                        .iter()
+                                        .find(|s| s.id == s_id_cb)
+                                        .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
+                                };
+                                let mut map = this_cb.statuses.lock().await;
+                                if let Some(current) = map.get_mut(&s_id_cb) {
+                                    let is_conn = status_kind == StatusKind::Connected;
+                                    current.status = status_kind;
+                                    current.message = msg;
+                                    current.estimated_ram_mb = 1;
+                                    if is_conn {
+                                        current.is_live = true;
+                                        if current.connected_at.is_none() {
+                                            current.connected_at = Some(now);
+                                        }
+                                    }
+                                    if let Some(pts) = points {
+                                        let pts_str = pts.to_string();
+                                        current.account_points.insert(a_id_cb.clone(), pts_str.clone());
+                                        if selected_id.as_deref() == Some(&a_id_cb) || current.channel_points.is_none() {
+                                            current.channel_points = Some(pts_str);
+                                        }
+                                    }
+                                    let cloned = current.clone();
+                                    drop(map);
+                                    this_cb.emit_status(&cloned).await;
+                                }
+                            });
+                        },
+                    );
+
+                    let watcher = crate::twitch::watcher::start_twitch_watcher(
+                        stream_id.to_string(),
+                        account.id.clone(),
+                        account.oauth_token.clone().unwrap_or_default(),
+                        channel_slug.to_string(),
+                        None,
+                        None,
+                        self.twitch_coordinator.clone(),
+                        on_status,
+                    );
+
+                    self.twitch_watchers.lock().await.insert(session_key, watcher);
                 }
 
                 let now = Utc::now().timestamp();
@@ -448,6 +524,21 @@ impl AppState {
             for k in keys {
                 if let Some(mut sess) = sessions.remove(&k) {
                     sess.stop();
+                }
+            }
+        }
+
+        {
+            let prefix = format!("{}:", stream_id);
+            let mut watchers = self.twitch_watchers.lock().await;
+            let keys: Vec<String> = watchers
+                .keys()
+                .filter(|k| k.starts_with(&prefix) || *k == stream_id)
+                .cloned()
+                .collect();
+            for k in keys {
+                if let Some(mut w) = watchers.remove(&k) {
+                    w.stop();
                 }
             }
         }
