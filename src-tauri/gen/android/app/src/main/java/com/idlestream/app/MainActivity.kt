@@ -83,6 +83,34 @@ class MainActivity : TauriActivity() {
         }
 
         @JavascriptInterface
+        fun openStreamRedeem(
+            platform: String,
+            channelSlug: String,
+            accountId: String,
+            accountLabel: String,
+            accountUsername: String,
+            authToken: String,
+            kickSession: String,
+            sessionToken: String,
+            xsrfToken: String
+        ) {
+            activity.runOnUiThread {
+                val intent = Intent(activity, StreamRedeemActivity::class.java).apply {
+                    putExtra("platform", platform)
+                    putExtra("channel_slug", channelSlug)
+                    putExtra("account_id", accountId)
+                    putExtra("account_label", accountLabel)
+                    putExtra("account_username", accountUsername)
+                    putExtra("auth_token", authToken)
+                    putExtra("kick_session", kickSession)
+                    putExtra("session_token", sessionToken)
+                    putExtra("xsrf_token", xsrfToken)
+                }
+                activity.startActivity(intent)
+            }
+        }
+
+        @JavascriptInterface
         fun getCrashLog(): String {
             return try {
                 val f = java.io.File(activity.filesDir, "crash.log")

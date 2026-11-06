@@ -13,6 +13,7 @@ import {
   Moon,
   Pencil,
   Users,
+  ExternalLink,
 } from 'lucide-react';
 
 interface StreamCardProps {
@@ -27,6 +28,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
     startStream,
     stopStream,
     removeStream,
+    openStreamRedeem,
   } = useAppStore();
 
   const status = statuses[stream.id] || {
@@ -170,6 +172,9 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
                 {streamAccounts.length} conta{streamAccounts.length !== 1 ? 's' : ''} vinculada{streamAccounts.length !== 1 ? 's' : ''}
               </span>
             </span>
+            <span className="text-[10px] text-neutral-500 italic">
+              Clique para resgatar
+            </span>
           </div>
 
           {streamAccounts.length === 0 ? (
@@ -180,25 +185,28 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
                 const accPoints = status.account_points?.[acc.id];
 
                 return (
-                  <div
+                  <button
                     key={acc.id}
-                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs border transition ${
+                    type="button"
+                    onClick={() => openStreamRedeem(stream.id, acc.id)}
+                    className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition cursor-pointer text-left shadow-sm ${
                       isKick
-                        ? 'bg-neutral-900 border-neutral-800 text-neutral-300'
+                        ? 'bg-neutral-900/90 border-neutral-800 hover:border-emerald-600/70 hover:bg-emerald-950/30 text-neutral-300 hover:text-white'
                         : isTwitch
-                        ? 'bg-purple-950/30 border-purple-900/40 text-purple-200'
-                        : 'bg-neutral-900 border-neutral-800 text-neutral-300'
+                        ? 'bg-purple-950/20 border-purple-900/40 hover:border-purple-600/70 hover:bg-purple-950/40 text-purple-200 hover:text-white'
+                        : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 text-neutral-300'
                     }`}
-                    title={`${acc.label} (@${acc.username})`}
+                    title={`Abrir live de ${stream.channel_slug} como ${acc.label} (@${acc.username}) para resgatar pontos`}
                   >
-                    <span className="font-medium truncate max-w-[90px]">{acc.label}</span>
+                    <ExternalLink className={`w-3 h-3 shrink-0 opacity-60 group-hover:opacity-100 transition ${isTwitch ? 'text-purple-400' : 'text-emerald-400'}`} />
+                    <span className="font-semibold truncate max-w-[85px]">{acc.label}</span>
                     <span className="text-neutral-500 text-[10px]">@{acc.username}</span>
                     {accPoints && (
-                      <span className={`text-[10px] font-mono ml-0.5 ${isTwitch ? 'text-purple-400/90' : 'text-emerald-400/90'}`}>
-                        • {formatPoints(accPoints)}
+                      <span className={`text-[10px] font-mono ml-0.5 font-bold ${isTwitch ? 'text-purple-400' : 'text-emerald-400'}`}>
+                        • 🪙 {formatPoints(accPoints)}
                       </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>

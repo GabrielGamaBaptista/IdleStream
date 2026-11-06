@@ -364,11 +364,14 @@ impl AppState {
                                         .find(|s| s.id == s_id_cb)
                                         .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
                                 };
+                                let is_selected_or_first = selected_id.as_deref() == Some(&a_id_cb);
                                 let mut map = this_cb.statuses.lock().await;
                                 if let Some(current) = map.get_mut(&s_id_cb) {
                                     let is_conn = status_kind == StatusKind::Connected;
-                                    current.status = status_kind;
-                                    current.message = msg;
+                                    if is_selected_or_first || current.message.is_none() {
+                                        current.status = status_kind;
+                                        current.message = msg;
+                                    }
                                     current.estimated_ram_mb = 1;
                                     if is_conn {
                                         current.is_live = true;
@@ -379,7 +382,7 @@ impl AppState {
                                     if let Some(pts) = points {
                                         let pts_str = pts.to_string();
                                         current.account_points.insert(a_id_cb.clone(), pts_str.clone());
-                                        if selected_id.as_deref() == Some(&a_id_cb) || current.channel_points.is_none() {
+                                        if is_selected_or_first || current.channel_points.is_none() {
                                             current.channel_points = Some(pts_str);
                                         }
                                     }
@@ -467,11 +470,14 @@ impl AppState {
                                         .find(|s| s.id == s_id_cb)
                                         .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
                                 };
+                                let is_selected_or_first = selected_id.as_deref() == Some(&a_id_cb);
                                 let mut map = this_cb.statuses.lock().await;
                                 if let Some(current) = map.get_mut(&s_id_cb) {
                                     let is_conn = status_kind == StatusKind::Connected;
-                                    current.status = status_kind;
-                                    current.message = msg;
+                                    if is_selected_or_first || current.message.is_none() {
+                                        current.status = status_kind;
+                                        current.message = msg;
+                                    }
                                     current.estimated_ram_mb = 1;
                                     if is_conn {
                                         current.is_live = true;
@@ -482,7 +488,7 @@ impl AppState {
                                     if let Some(pts) = points {
                                         let pts_str = pts.to_string();
                                         current.account_points.insert(a_id_cb.clone(), pts_str.clone());
-                                        if selected_id.as_deref() == Some(&a_id_cb) || current.channel_points.is_none() {
+                                        if is_selected_or_first || current.channel_points.is_none() {
                                             current.channel_points = Some(pts_str);
                                         }
                                     }
@@ -688,6 +694,20 @@ impl AppState {
                                     sess.stop();
                                 }
                             }
+                            drop(sessions);
+
+                            let mut watchers = this.twitch_watchers.lock().await;
+                            let w_keys: Vec<String> = watchers
+                                .keys()
+                                .filter(|k| k.starts_with(&prefix) || k.as_str() == stream.id)
+                                .cloned()
+                                .collect();
+                            for k in w_keys {
+                                if let Some(mut w) = watchers.remove(&k) {
+                                    w.stop();
+                                }
+                            }
+                            drop(watchers);
                         }
 
                         let (prev_points, prev_account_points) = {

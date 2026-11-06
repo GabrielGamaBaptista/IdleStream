@@ -56,13 +56,14 @@ interface AppState {
   stopStream: (streamId: string) => Promise<void>;
   startAll: () => Promise<void>;
   stopAll: () => Promise<void>;
+  openStreamRedeem: (streamId: string, accountId: string) => Promise<void>;
 
   updateSettings: (settings: AppSettings) => Promise<void>;
   updateGameSlot: (slot: GameSlotConfig) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '3.1.1',
+  appVersion: '3.2.0',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -401,6 +402,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   stopAll: async () => {
     await invoke('stop_all_streams');
     await get().fetchStatuses();
+  },
+
+  openStreamRedeem: async (streamId: string, accountId: string) => {
+    const { config } = get();
+    const stream = config.streams.find((s) => s.id === streamId);
+    const account = config.accounts.find((a) => a.id === accountId);
+    if (!stream || !account) {
+      console.warn(`[openStreamRedeem] Stream (${streamId}) ou Conta (${accountId}) não encontrada.`);
+      return;
+    }
+
+    if (window.AndroidBridge && typeof window.AndroidBridge.openStreamRedeem === 'function') {
+      window.AndroidBridge.openStreamRedeem(
+        stream.platform,
+        stream.channel_slug,
+        account.id,
+        account.label,
+        account.username,
+        account.oauth_token || '',
+        account.kick_session || '',
+        account.session_token || '',
+        account.xsrf_token || ''
+      );
+    } else {
+      await invoke('open_stream_redeem', { streamId, accountId });
+    }
   },
 
   updateSettings: async (settings) => {

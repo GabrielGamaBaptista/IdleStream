@@ -426,6 +426,64 @@ pub async fn save_kick_credentials_direct(
 }
 
 #[tauri::command]
+pub async fn open_stream_redeem(
+    app: AppHandle,
+    state: StateHandle<'_>,
+    stream_id: String,
+    account_id: String,
+) -> Result<(), String> {
+    let (platform, channel_slug, account) = {
+        let cfg = state.config.lock().await;
+        let stream = cfg
+            .streams
+            .iter()
+            .find(|s| s.id == stream_id)
+            .ok_or_else(|| format!("Stream '{}' não encontrada", stream_id))?;
+        let account = cfg
+            .accounts
+            .iter()
+            .find(|a| a.id == account_id)
+            .ok_or_else(|| format!("Conta '{}' não encontrada", account_id))?;
+        (stream.platform.clone(), stream.channel_slug.clone(), account.clone())
+    };
+
+    #[cfg(desktop)]
+    {
+        match platform {
+            crate::config::Platform::Twitch => {
+                crate::twitch::webview::TwitchWebManager::open_redeem_window(
+                    &app,
+                    &account.id,
+                    &account.label,
+                    &account.username,
+                    &channel_slug,
+                    account.oauth_token.as_deref(),
+                )?;
+            }
+            crate::config::Platform::Kick => {
+                crate::kick::webview::KickManager::open_redeem_window(
+                    &app,
+                    &account.id,
+                    &account.label,
+                    &account.username,
+                    &channel_slug,
+                    account.session_token.as_deref(),
+                    account.kick_session.as_deref(),
+                    account.xsrf_token.as_deref(),
+                )?;
+            }
+        }
+    }
+
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, stream_id, account_id, platform, channel_slug, account);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }

@@ -196,6 +196,66 @@ mod tests {
         assert_eq!(all[3].channel_slug, "streamer_w");
     }
 
+    #[tokio::test]
+    async fn test_account_priority_coordinator_reactive_notification() {
+        let coordinator = AccountPriorityCoordinator::new();
+
+        let (tx_x, mut rx_x) = tokio::sync::mpsc::unbounded_channel();
+        let (tx_z, mut rx_z) = tokio::sync::mpsc::unbounded_channel();
+
+        coordinator.register_listener("acc_1", "streamer_x", tx_x).await;
+        coordinator.register_listener("acc_1", "streamer_z", tx_z).await;
+
+        // 1. Cadastra streamer_x com 5h
+        let (state_x, rank_x) = coordinator
+            .update_streamer_status("acc_1", "streamer_x", Some("101".into()), 5.0, true, Some(100))
+            .await;
+        assert_eq!(state_x, MiningSlotState::ActiveMining);
+        assert_eq!(rank_x, 1);
+        let notif_x = rx_x.recv().await.expect("Notificação esperada para streamer_x");
+        assert_eq!(notif_x.slot_state, MiningSlotState::ActiveMining);
+        assert_eq!(notif_x.priority_rank, 1);
+
+        // 2. Cadastra streamer_y com 10h (ultrapassa streamer_x)
+        let (state_y, rank_y) = coordinator
+            .update_streamer_status("acc_1", "streamer_y", Some("102".into()), 10.0, true, Some(200))
+            .await;
+        assert_eq!(state_y, MiningSlotState::ActiveMining);
+        assert_eq!(rank_y, 1);
+        // streamer_x deve ser notificado que agora é rank 2 reativamente!
+        let notif_x2 = rx_x.recv().await.expect("Notificação esperada para streamer_x");
+        assert_eq!(notif_x2.slot_state, MiningSlotState::ActiveMining);
+        assert_eq!(notif_x2.priority_rank, 2);
+
+        // 3. Cadastra streamer_z com 8h (fica entre y e x: y=1, z=2, x=3)
+        // streamer_x deve ser demovido para StandbyVigil instantaneamente!
+        let (state_z, rank_z) = coordinator
+            .update_streamer_status("acc_1", "streamer_z", Some("103".into()), 8.0, true, Some(300))
+            .await;
+        assert_eq!(state_z, MiningSlotState::ActiveMining);
+        assert_eq!(rank_z, 2);
+
+        let notif_z = rx_z.recv().await.expect("Notificação esperada para streamer_z");
+        assert_eq!(notif_z.slot_state, MiningSlotState::ActiveMining);
+        assert_eq!(notif_z.priority_rank, 2);
+
+        let notif_x3 = rx_x.recv().await.expect("Notificação de democao esperada para streamer_x");
+        assert_eq!(notif_x3.slot_state, MiningSlotState::StandbyVigil, "streamer_x deve ir para StandbyVigil sem atraso");
+        assert_eq!(notif_x3.priority_rank, 3);
+
+        // 4. streamer_y encerra a transmissão e é removido da fila ativa
+        coordinator.remove_streamer("acc_1", "streamer_y").await;
+
+        // streamer_z deve subir para #1 e streamer_x deve ser promovido de volta para #2 (ActiveMining)!
+        let notif_z2 = rx_z.recv().await.expect("Notificação esperada para streamer_z");
+        assert_eq!(notif_z2.slot_state, MiningSlotState::ActiveMining);
+        assert_eq!(notif_z2.priority_rank, 1);
+
+        let notif_x4 = rx_x.recv().await.expect("Notificação de promoção esperada para streamer_x");
+        assert_eq!(notif_x4.slot_state, MiningSlotState::ActiveMining, "streamer_x deve ser promovido a ActiveMining");
+        assert_eq!(notif_x4.priority_rank, 2);
+    }
+
     #[test]
     fn test_spade_payload_generation_and_base64() {
         let payload = build_spade_payload("123456", "987654321", "111222");
@@ -361,5 +421,50 @@ mod tests {
         let ctx = res.unwrap();
         println!("Contexto gaules: channel_id={}, is_live={}, broadcast_id={:?}", ctx.channel_id, ctx.is_live, ctx.broadcast_id);
         assert_eq!(ctx.channel_id, "181077473", "ID oficial do canal gaules na Twitch");
+    }
+
+    #[test]
+    fn test_redeem_label_and_url_formatting() {
+        let account_id = "acc_twitch-123!@#$";
+        let clean_id: String = account_id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        assert_eq!(clean_id, "acc_twitch-123");
+
+        let label_twitch = format!("twitch_redeem_{}", clean_id);
+        assert_eq!(label_twitch, "twitch_redeem_acc_twitch-123");
+
+        let label_kick = format!("kick_redeem_{}", clean_id);
+        assert_eq!(label_kick, "kick_redeem_acc_twitch-123");
+
+        let twitch_url = format!("https://www.twitch.tv/{}", "  gaules  ".trim());
+        assert_eq!(twitch_url, "https://www.twitch.tv/gaules");
+
+        let kick_url = format!("https://kick.com/{}", "  alanzoka  ".trim());
+        assert_eq!(kick_url, "https://kick.com/alanzoka");
+    }
+
+    #[test]
+    fn test_redeem_script_generation() {
+        let token = "oauth_token_secret_999";
+        let tok_json = serde_json::to_string(token).unwrap();
+        let script = format!(
+            r#"(function() {{ try {{ const tok = {}; if (tok) {{ document.cookie = "auth-token=" + tok + "; domain=.twitch.tv; path=/; SameSite=Lax; Secure"; }} }} catch(e) {{}} }})();"#,
+            tok_json
+        );
+        assert!(script.contains("oauth_token_secret_999"));
+        assert!(script.contains("auth-token="));
+        assert!(script.contains("domain=.twitch.tv"));
+
+        let st_json = serde_json::to_string("session_token_xyz").unwrap();
+        let ks_json = serde_json::to_string("kick_sess_abc").unwrap();
+        let kick_script = format!(
+            r#"(function() {{ try {{ const st = {}; const ks = {}; if (st) document.cookie = "session_token=" + st + "; domain=.kick.com; path=/; Secure"; if (ks) document.cookie = "kick_session=" + ks + "; domain=.kick.com; path=/; Secure"; }} catch(e) {{}} }})();"#,
+            st_json, ks_json
+        );
+        assert!(kick_script.contains("session_token_xyz"));
+        assert!(kick_script.contains("kick_sess_abc"));
+        assert!(kick_script.contains("domain=.kick.com"));
     }
 }

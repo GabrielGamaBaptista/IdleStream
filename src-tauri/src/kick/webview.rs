@@ -104,4 +104,88 @@ impl KickManager {
             (_, None) => Err("Login da Kick ainda não concluído. Conclua o login com seu usuário e senha na janela aberta e aguarde a página carregar.".into()),
         }
     }
+
+    /// Abre a WebView da live da Kick para resgatar pontos/recompensas com a conta especificada
+    pub fn open_redeem_window(
+        app: &AppHandle,
+        account_id: &str,
+        account_label: &str,
+        account_username: &str,
+        channel_slug: &str,
+        session_token: Option<&str>,
+        kick_session: Option<&str>,
+        xsrf_token: Option<&str>,
+    ) -> Result<(), String> {
+        let clean_id: String = account_id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        let label = format!("kick_redeem_{}", clean_id);
+        let target_url = format!("https://kick.com/{}", channel_slug.trim());
+        let url_parsed = target_url
+            .parse::<url::Url>()
+            .map_err(|e| format!("URL error: {}", e))?;
+
+        if let Some(existing) = app.get_webview_window(&label) {
+            let _ = existing.navigate(url_parsed);
+            let _ = existing.show();
+            let _ = existing.set_focus();
+            return Ok(());
+        }
+
+        #[cfg(desktop)]
+        {
+            let profile_dir = Self::get_profile_dir(app, account_id);
+            let st_json = session_token
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| serde_json::to_string(s.trim()).unwrap_or_default())
+                .unwrap_or_else(|| "null".into());
+            let ks_json = kick_session
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| serde_json::to_string(s.trim()).unwrap_or_default())
+                .unwrap_or_else(|| "null".into());
+            let xt_json = xsrf_token
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| serde_json::to_string(s.trim()).unwrap_or_default())
+                .unwrap_or_else(|| "null".into());
+
+            let init_script = format!(
+                r#"
+                (function() {{
+                    try {{
+                        const st = {st_json};
+                        const ks = {ks_json};
+                        const xt = {xt_json};
+                        if (st) document.cookie = "session_token=" + st + "; domain=.kick.com; path=/; Secure";
+                        if (ks) document.cookie = "kick_session=" + ks + "; domain=.kick.com; path=/; Secure";
+                        if (xt) document.cookie = "XSRF-TOKEN=" + xt + "; domain=.kick.com; path=/; Secure";
+                    }} catch(e) {{}}
+                }})();
+                "#
+            );
+
+            let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
+                .title(format!(
+                    "IdleStream - Resgatar Pontos: {} (@{}) em Kick/{}",
+                    account_label, account_username, channel_slug
+                ))
+                .data_directory(profile_dir)
+                .inner_size(1050.0, 720.0)
+                .center()
+                .visible(true);
+
+            builder = builder.initialization_script(&init_script);
+
+            builder
+                .build()
+                .map_err(|e| format!("Falha ao abrir janela de resgate Kick: {}", e))?;
+        }
+
+        #[cfg(not(desktop))]
+        {
+            let _ = (app, account_id, account_label, account_username, channel_slug, session_token, kick_session, xsrf_token);
+        }
+
+        Ok(())
+    }
 }

@@ -228,6 +228,7 @@ pub fn run() {
             save_kick_session,
             save_twitch_token,
             save_kick_credentials_direct,
+            open_stream_redeem,
             get_app_version,
             update_game_slot,
             games::commands::game_start_slot,

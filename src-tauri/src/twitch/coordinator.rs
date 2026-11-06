@@ -1,9 +1,22 @@
 use crate::twitch::models::{MiningSlotState, TwitchStreamerStats};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 pub const MAX_CONCURRENT_ACTIVE_SLOTS_PER_ACCOUNT: usize = 2;
+
+/// Notificação reativa enviada para os watchers quando a prioridade ou estado do slot muda
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StreamerSlotNotification {
+    pub slot_state: MiningSlotState,
+    pub priority_rank: usize,
+}
+
+#[derive(Default)]
+struct AccountState {
+    streamers: Vec<TwitchStreamerStats>,
+    listeners: HashMap<String, mpsc::UnboundedSender<StreamerSlotNotification>>,
+}
 
 /// Calcula a ordem de prioridade (do 1º ao último) com base na média de tempo online
 pub fn compute_priority_ranks(streamers: &mut [TwitchStreamerStats]) {
@@ -64,7 +77,7 @@ pub fn reconcile_account_slots(
 /// Coordenador thread-safe compartilhado para gerenciar as prioridades por conta
 #[derive(Clone, Default)]
 pub struct AccountPriorityCoordinator {
-    inner: Arc<Mutex<HashMap<String, Vec<TwitchStreamerStats>>>>,
+    inner: Arc<Mutex<HashMap<String, AccountState>>>,
 }
 
 impl AccountPriorityCoordinator {
@@ -74,8 +87,23 @@ impl AccountPriorityCoordinator {
         }
     }
 
+    /// Registra um canal de escuta para um streamer de determinada conta
+    pub async fn register_listener(
+        &self,
+        account_id: &str,
+        channel_slug: &str,
+        sender: mpsc::UnboundedSender<StreamerSlotNotification>,
+    ) {
+        let mut map = self.inner.lock().await;
+        let acc_state = map.entry(account_id.to_string()).or_default();
+        acc_state
+            .listeners
+            .insert(channel_slug.to_lowercase(), sender);
+    }
+
     /// Atualiza ou insere o status de um streamer para determinada conta e retorna:
     /// (Estado do slot: ActiveMining/StandbyVigil/Offline, Rank atual do streamer)
+    /// Notifica imediatamente todos os listeners da conta caso haja alteração de rank ou vaga
     pub async fn update_streamer_status(
         &self,
         account_id: &str,
@@ -86,7 +114,8 @@ impl AccountPriorityCoordinator {
         points: Option<i64>,
     ) -> (MiningSlotState, usize) {
         let mut map = self.inner.lock().await;
-        let list = map.entry(account_id.to_string()).or_default();
+        let acc_state = map.entry(account_id.to_string()).or_default();
+        let list = &mut acc_state.streamers;
 
         let clean_slug = channel_slug.to_lowercase();
         if let Some(existing) = list.iter_mut().find(|s| s.channel_slug == clean_slug) {
@@ -115,6 +144,20 @@ impl AccountPriorityCoordinator {
         // Reconcilia quem fica com vaga ativa (Top 2 online)
         let slot_states = reconcile_account_slots(list);
 
+        // Notifica reativamente todos os watchers da conta
+        for streamer in list.iter() {
+            if let Some(tx) = acc_state.listeners.get(&streamer.channel_slug) {
+                let state = slot_states
+                    .get(&streamer.channel_slug)
+                    .copied()
+                    .unwrap_or(MiningSlotState::Offline);
+                let _ = tx.send(StreamerSlotNotification {
+                    slot_state: state,
+                    priority_rank: streamer.priority_rank,
+                });
+            }
+        }
+
         let my_state = slot_states
             .get(&clean_slug)
             .copied()
@@ -129,19 +172,37 @@ impl AccountPriorityCoordinator {
         (my_state, my_rank)
     }
 
-    /// Remove um streamer da lista de monitoramento da conta
+    /// Remove um streamer da lista de monitoramento da conta e reprioriza os restantes instantaneamente
     pub async fn remove_streamer(&self, account_id: &str, channel_slug: &str) {
         let mut map = self.inner.lock().await;
-        if let Some(list) = map.get_mut(account_id) {
+        if let Some(acc_state) = map.get_mut(account_id) {
             let clean = channel_slug.to_lowercase();
-            list.retain(|s| s.channel_slug != clean);
-            compute_priority_ranks(list);
+            acc_state.streamers.retain(|s| s.channel_slug != clean);
+            acc_state.listeners.remove(&clean);
+            compute_priority_ranks(&mut acc_state.streamers);
+            let slot_states = reconcile_account_slots(&acc_state.streamers);
+
+            // Notifica os streamers restantes (ex: o 3º que subiu para 2º ganha a vaga no mesmo milissegundo)
+            for streamer in acc_state.streamers.iter() {
+                if let Some(tx) = acc_state.listeners.get(&streamer.channel_slug) {
+                    let state = slot_states
+                        .get(&streamer.channel_slug)
+                        .copied()
+                        .unwrap_or(MiningSlotState::Offline);
+                    let _ = tx.send(StreamerSlotNotification {
+                        slot_state: state,
+                        priority_rank: streamer.priority_rank,
+                    });
+                }
+            }
         }
     }
 
     /// Retorna as estatísticas e rankings atuais de todos os streamers de uma conta
     pub async fn get_account_streamers(&self, account_id: &str) -> Vec<TwitchStreamerStats> {
         let map = self.inner.lock().await;
-        map.get(account_id).cloned().unwrap_or_default()
+        map.get(account_id)
+            .map(|a| a.streamers.clone())
+            .unwrap_or_default()
     }
 }

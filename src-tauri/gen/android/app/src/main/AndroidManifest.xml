@@ -48,6 +48,13 @@
             android:windowSoftInputMode="adjustResize"
             android:exported="false" />
 
+        <activity
+            android:name=".StreamRedeemActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize"
+            android:theme="@style/Theme.idlestream"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false" />
+
         <service
             android:name=".IdleStreamForegroundService"
             android:foregroundServiceType="specialUse"

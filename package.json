@@ -1,7 +1,7 @@
 {
   "name": "idlestream",
   "private": true,
-  "version": "3.1.1",
+  "version": "3.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test:version": "jiti ./scripts/test-version.ts",
     "test:twitch": "jiti ./scripts/test-twitch-android-points.ts",
+    "test:redeem": "jiti ./scripts/test-stream-redeem.ts",
     "test:games": "jiti ./scripts/test-games.ts",
     "test:perf": "jiti ./scripts/benchmark-performance.ts",
     "tauri": "tauri"

@@ -9,6 +9,17 @@ interface AndroidBridge {
   isAndroid(): boolean;
   openTwitchLogin(accountId: string, accountLabel?: string): void;
   openKickLogin(accountId: string, accountLabel: string): void;
+  openStreamRedeem?(
+    platform: string,
+    channelSlug: string,
+    accountId: string,
+    accountLabel: string,
+    accountUsername: string,
+    authToken: string,
+    kickSession: string,
+    sessionToken: string,
+    xsrfToken: string
+  ): void;
   getCrashLog?(): string;
   clearCrashLog?(): boolean;
   canInstallPackages?(): boolean;

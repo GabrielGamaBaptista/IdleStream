@@ -1,5 +1,5 @@
 use crate::config::StatusKind;
-use crate::twitch::coordinator::AccountPriorityCoordinator;
+use crate::twitch::coordinator::{AccountPriorityCoordinator, StreamerSlotNotification};
 use crate::twitch::models::MiningSlotState;
 use crate::twitch::gql::{
     claim_community_points, fetch_channel_points_context, fetch_client_integrity,
@@ -23,7 +23,30 @@ impl TwitchWatcherHandle {
 
 pub type StatusCallback = Arc<dyn Fn(StatusKind, Option<String>, Option<i64>) + Send + Sync + 'static>;
 
-/// Inicia o watcher nativo ultraleve de transmissão Twitch via GQL + Spade com prioridade
+fn apply_status(
+    on_status: &StatusCallback,
+    slot_state: MiningSlotState,
+    rank: usize,
+    avg_hours: f64,
+    current_points: Option<i64>,
+) {
+    match slot_state {
+        MiningSlotState::Offline => {
+            let msg = format!("Streamer offline na Twitch (Rank #{} • Média: {:.1}h)", rank, avg_hours);
+            on_status(StatusKind::Standby, Some(msg), current_points);
+        }
+        MiningSlotState::StandbyVigil => {
+            let msg = format!("Fila de espera (Prioridade #{} • Média: {:.1}h)", rank, avg_hours);
+            on_status(StatusKind::Standby, Some(msg), current_points);
+        }
+        MiningSlotState::ActiveMining => {
+            let msg = format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours);
+            on_status(StatusKind::Connected, Some(msg), current_points);
+        }
+    }
+}
+
+/// Inicia o watcher nativo ultraleve de transmissão Twitch via GQL + Spade com prioridade reativa
 pub fn start_twitch_watcher(
     _stream_id: String,
     account_id: String,
@@ -45,6 +68,10 @@ pub fn start_twitch_watcher(
         let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
         let clean_token = oauth_token.trim_start_matches("oauth:").trim().to_string();
 
+        // Canal de escuta reativa para repriorização instantânea disparada pelo coordenador
+        let (notify_tx, mut notify_rx) = mpsc::unbounded_channel::<StreamerSlotNotification>();
+        coordinator.register_listener(&account_id, &clean_slug, notify_tx).await;
+
         // Obtém ou resolve o user_id do visualizador
         let mut resolved_user_id = user_id_override.unwrap_or_default();
         if resolved_user_id.is_empty() && !clean_token.is_empty() {
@@ -54,7 +81,6 @@ pub fn start_twitch_watcher(
         }
 
         let device_id = device_id_override.unwrap_or_else(|| {
-            // Gera um identificador de dispositivo padrão
             uuid::Uuid::new_v4().to_string().replace('-', "")[..32].to_string()
         });
 
@@ -67,6 +93,9 @@ pub fn start_twitch_watcher(
         let mut last_integrity_fetch = std::time::Instant::now();
         let mut current_points: Option<i64> = None;
         let mut last_vod_check = std::time::Instant::now();
+
+        let mut slot_state;
+        let mut rank;
 
         loop {
             // Verifica sinal de parada
@@ -103,7 +132,7 @@ pub fn start_twitch_watcher(
             }
 
             // 3. Atualiza o coordenador de prioridade (Ranqueia pelo tempo online da maior para menor)
-            let (slot_state, rank) = coordinator
+            let (new_slot_state, new_rank) = coordinator
                 .update_streamer_status(
                     &account_id,
                     &clean_slug,
@@ -114,51 +143,86 @@ pub fn start_twitch_watcher(
                 )
                 .await;
 
+            slot_state = new_slot_state;
+            rank = new_rank;
+
             // 4. Executa de acordo com o estado do slot
             match slot_state {
                 MiningSlotState::Offline => {
-                    let msg = format!("Streamer offline na Twitch (Rank #{} • Média: {:.1}h)", rank, avg_hours);
-                    on_status(StatusKind::Standby, Some(msg), current_points);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
 
                     tokio::select! {
                         _ = stop_rx.recv() => {
                             coordinator.remove_streamer(&account_id, &clean_slug).await;
                             break;
                         }
+                        Some(notif) = notify_rx.recv() => {
+                            let mut latest = notif;
+                            while let Ok(n) = notify_rx.try_recv() {
+                                latest = n;
+                            }
+                            if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                slot_state = latest.slot_state;
+                                rank = latest.priority_rank;
+                                apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                continue;
+                            }
+                        }
                         _ = tokio::time::sleep(tokio::time::Duration::from_secs(120)) => continue,
                     }
                 }
                 MiningSlotState::StandbyVigil => {
-                    let msg = format!("Fila de espera (Prioridade #{} • Média: {:.1}h)", rank, avg_hours);
-                    on_status(StatusKind::Standby, Some(msg), current_points);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
 
                     // Canal está online, mas é 3º ou inferior na lista de prioridade.
-                    // Aguarda 45s para reavaliar se uma das 2 vagas ativas abriu.
+                    // Aguarda notificação reativa instantânea ou timer de 45s para reavaliação.
                     tokio::select! {
                         _ = stop_rx.recv() => {
                             coordinator.remove_streamer(&account_id, &clean_slug).await;
                             break;
+                        }
+                        Some(notif) = notify_rx.recv() => {
+                            let mut latest = notif;
+                            while let Ok(n) = notify_rx.try_recv() {
+                                latest = n;
+                            }
+                            if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                slot_state = latest.slot_state;
+                                rank = latest.priority_rank;
+                                apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                continue;
+                            }
                         }
                         _ = tokio::time::sleep(tokio::time::Duration::from_secs(45)) => continue,
                     }
                 }
                 MiningSlotState::ActiveMining => {
                     // É UMA DAS 2 LIVES PRIORITÁRIAS ATIVAS DESTA CONTA!
-                    // 4.1. Envia heartbeat de Spade minute-watched
-                    if let Some(ref broadcast_id) = context.broadcast_id {
-                        let uid = if resolved_user_id.is_empty() { "0" } else { &resolved_user_id };
-                        let _ = send_spade_minute_watched(&http, &clean_slug, &context.channel_id, broadcast_id, uid, None).await;
-                    }
-
-                    // 4.2. Se houver baú de bônus (+50 pontos) disponível para resgate
+                    // 4.1. Se houver baú de bônus (+50 pontos) disponível para resgate
                     if let Some(ref claim_id) = context.available_claim_id {
-                        // Delay humano simulado de 6 a 16 segundos antes de resgatar
+                        let mut demoted = false;
                         tokio::select! {
                             _ = stop_rx.recv() => {
                                 coordinator.remove_streamer(&account_id, &clean_slug).await;
                                 return;
                             }
+                            Some(notif) = notify_rx.recv() => {
+                                let mut latest = notif;
+                                while let Ok(n) = notify_rx.try_recv() {
+                                    latest = n;
+                                }
+                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                    slot_state = latest.slot_state;
+                                    rank = latest.priority_rank;
+                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                    demoted = true;
+                                }
+                            }
                             _ = tokio::time::sleep(tokio::time::Duration::from_secs(8)) => {}
+                        }
+
+                        if demoted {
+                            continue;
                         }
 
                         // Garante token de integridade válido (renova a cada 3 horas)
@@ -183,17 +247,40 @@ pub fn start_twitch_watcher(
                         }
                     }
 
-                    let msg = format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours);
-                    on_status(StatusKind::Connected, Some(msg), current_points);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
 
-                    // Intervalo de ~60 segundos para o próximo pulso minute-watched (com jitter de 57s a 63s)
+                    // 4.2. Aguarda ~60 segundos de tempo assistido antes do envio de Spade minute-watched
                     let jitter_secs = 58u64 + (chrono::Utc::now().timestamp_subsec_millis() as u64 % 6);
+                    let mut demoted = false;
+
                     tokio::select! {
                         _ = stop_rx.recv() => {
                             coordinator.remove_streamer(&account_id, &clean_slug).await;
                             break;
                         }
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(jitter_secs)) => continue,
+                        Some(notif) = notify_rx.recv() => {
+                            let mut latest = notif;
+                            while let Ok(n) = notify_rx.try_recv() {
+                                latest = n;
+                            }
+                            if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                slot_state = latest.slot_state;
+                                rank = latest.priority_rank;
+                                apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                demoted = true;
+                            }
+                        }
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(jitter_secs)) => {
+                            // Concluiu os ~60s ativos: envia o heartbeat minute-watched oficial
+                            if let Some(ref broadcast_id) = context.broadcast_id {
+                                let uid = if resolved_user_id.is_empty() { "0" } else { &resolved_user_id };
+                                let _ = send_spade_minute_watched(&http, &clean_slug, &context.channel_id, broadcast_id, uid, None).await;
+                            }
+                        }
+                    }
+
+                    if demoted {
+                        continue;
                     }
                 }
             }

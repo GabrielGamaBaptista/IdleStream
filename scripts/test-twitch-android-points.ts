@@ -105,4 +105,64 @@ assert.strictEqual(parseStreamStatus({ data: { user: { stream: { id: 'live_1', t
 assert.strictEqual(parseStreamStatus({ data: { user: { stream: null } } }), false);
 console.log('  ✓ [Twitch Live Check] Detecção nativa GQL validada com sucesso');
 
+// 5. Teste de Simulação de Prioridade e Teto Rigoroso de 2 Slots Ativos
+interface StreamerSimulation {
+  slug: string;
+  avgHours: number;
+  isLive: boolean;
+  priorityRank?: number;
+  slotState?: 'ActiveMining' | 'StandbyVigil' | 'Offline';
+}
+
+function reconcileSimulation(streamers: StreamerSimulation[]) {
+  // Ordena por média de horas decrescente
+  streamers.sort((a, b) => b.avgHours - a.avgHours || a.slug.localeCompare(b.slug));
+  streamers.forEach((s, idx) => {
+    s.priorityRank = idx + 1;
+  });
+
+  const online = streamers.filter(s => s.isLive);
+  const activeSlugs = new Set(online.slice(0, 2).map(s => s.slug));
+
+  for (const s of streamers) {
+    if (!s.isLive) {
+      s.slotState = 'Offline';
+    } else if (activeSlugs.has(s.slug)) {
+      s.slotState = 'ActiveMining';
+    } else {
+      s.slotState = 'StandbyVigil';
+    }
+  }
+}
+
+const mockPool: StreamerSimulation[] = [
+  { slug: 'mecmeno', avgHours: 7.7, isLive: true },
+  { slug: 'dersin2k', avgHours: 8.3, isLive: true },
+  { slug: 'rodil', avgHours: 10.5, isLive: true },
+  { slug: 'offline_channel', avgHours: 12.0, isLive: false },
+  { slug: 'streamer_low', avgHours: 3.2, isLive: true },
+];
+
+reconcileSimulation(mockPool);
+
+// Verifica ranks
+assert.strictEqual(mockPool.find(s => s.slug === 'offline_channel')?.priorityRank, 1);
+assert.strictEqual(mockPool.find(s => s.slug === 'offline_channel')?.slotState, 'Offline');
+
+assert.strictEqual(mockPool.find(s => s.slug === 'rodil')?.priorityRank, 2);
+assert.strictEqual(mockPool.find(s => s.slug === 'rodil')?.slotState, 'ActiveMining');
+
+assert.strictEqual(mockPool.find(s => s.slug === 'dersin2k')?.priorityRank, 3);
+assert.strictEqual(mockPool.find(s => s.slug === 'dersin2k')?.slotState, 'ActiveMining');
+
+assert.strictEqual(mockPool.find(s => s.slug === 'mecmeno')?.priorityRank, 4);
+assert.strictEqual(mockPool.find(s => s.slug === 'mecmeno')?.slotState, 'StandbyVigil');
+
+assert.strictEqual(mockPool.find(s => s.slug === 'streamer_low')?.priorityRank, 5);
+assert.strictEqual(mockPool.find(s => s.slug === 'streamer_low')?.slotState, 'StandbyVigil');
+
+const activeCount = mockPool.filter(s => s.slotState === 'ActiveMining').length;
+assert.strictEqual(activeCount, 2, 'Devem existir ESTRITAMENTE 2 streamers com ActiveMining');
+console.log('  ✓ [Priority Coordinator] Limite estrito de 2 slots ativos e repriorização validados com sucesso');
+
 console.log('\n🎉 TODOS OS TESTES DE VALIDAÇÃO PASSARAM COM 100% DE SUCESSO!\n');

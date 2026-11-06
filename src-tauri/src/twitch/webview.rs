@@ -99,4 +99,81 @@ impl TwitchWebManager {
             _ => Err("Cookie 'auth-token' não encontrado ou vazio. Conclua o login na janela primeiro.".into()),
         }
     }
+
+    /// Abre a WebView da live da Twitch para resgatar pontos do canal com a conta especificada
+    pub fn open_redeem_window(
+        app: &AppHandle,
+        account_id: &str,
+        account_label: &str,
+        account_username: &str,
+        channel_slug: &str,
+        auth_token: Option<&str>,
+    ) -> Result<(), String> {
+        let clean_id: String = account_id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        let label = format!("twitch_redeem_{}", clean_id);
+        let target_url = format!("https://www.twitch.tv/{}", channel_slug.trim());
+        let url_parsed = target_url
+            .parse::<url::Url>()
+            .map_err(|e| format!("URL error: {}", e))?;
+
+        if let Some(existing) = app.get_webview_window(&label) {
+            let _ = existing.navigate(url_parsed);
+            let _ = existing.show();
+            let _ = existing.set_focus();
+            return Ok(());
+        }
+
+        #[cfg(desktop)]
+        {
+            let profile_dir = Self::get_profile_dir(app, account_id);
+            let mut init_script = String::new();
+            if let Some(tok) = auth_token {
+                let trimmed = tok.trim();
+                if !trimmed.is_empty() {
+                    let tok_json = serde_json::to_string(trimmed).unwrap_or_default();
+                    init_script = format!(
+                        r#"
+                        (function() {{
+                            try {{
+                                const tok = {tok_json};
+                                if (tok) {{
+                                    document.cookie = "auth-token=" + tok + "; domain=.twitch.tv; path=/; SameSite=Lax; Secure";
+                                    document.cookie = "auth-token=" + tok + "; domain=www.twitch.tv; path=/; SameSite=Lax; Secure";
+                                }}
+                            }} catch(e) {{}}
+                        }})();
+                        "#
+                    );
+                }
+            }
+
+            let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
+                .title(format!(
+                    "IdleStream - Resgatar Pontos: {} (@{}) em Twitch/{}",
+                    account_label, account_username, channel_slug
+                ))
+                .data_directory(profile_dir)
+                .inner_size(1050.0, 720.0)
+                .center()
+                .visible(true);
+
+            if !init_script.is_empty() {
+                builder = builder.initialization_script(&init_script);
+            }
+
+            builder
+                .build()
+                .map_err(|e| format!("Falha ao abrir janela de resgate Twitch: {}", e))?;
+        }
+
+        #[cfg(not(desktop))]
+        {
+            let _ = (app, account_id, account_label, account_username, channel_slug, auth_token);
+        }
+
+        Ok(())
+    }
 }

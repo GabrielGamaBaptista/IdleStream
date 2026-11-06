@@ -10,19 +10,16 @@ import org.junit.Test
 class TwitchLoginActivityTest {
 
     @Test
-    fun testAuthUrlContainsForceVerifyAndRequiredOAuthParameters() {
-        val authUrl = TwitchLoginActivity.getAuthUrl()
-        
-        assertTrue("OAuth URL deve conter force_verify=true para garantir isolamento de sessão",
-            authUrl.contains("force_verify=true"))
-        assertTrue("OAuth URL deve conter response_type=token",
-            authUrl.contains("response_type=token"))
-        assertTrue("OAuth URL deve conter client_id",
-            authUrl.contains("client_id=gp762nuuoqcoxypju8c569th9wz7q5"))
-        assertTrue("OAuth URL deve conter redirect_uri=http://localhost",
-            authUrl.contains("redirect_uri=http://localhost"))
-        assertTrue("OAuth URL deve conter os escopos necessários",
-            authUrl.contains("scope=chat:read+chat:edit"))
+    fun testTwitchLoginUrl() {
+        val loginUrl = TwitchLoginActivity.TWITCH_LOGIN_URL
+        assertEquals("https://www.twitch.tv/login", loginUrl)
+    }
+
+    @Test
+    fun testParseCookiesExtractsAuthToken() {
+        val raw = "some_cookie=123; auth-token=secret_token_abc; other=456"
+        val token = TwitchLoginActivity.parseCookies(raw)
+        assertEquals("secret_token_abc", token)
     }
 
     @Test

@@ -78,7 +78,7 @@ $apkPath = Get-ChildItem -Path "src-tauri/gen/android/app/build/outputs/apk" -Re
 
 if ($apkPath) {
     $sizeMb = [math]::Round($apkPath.Length / 1MB, 2)
-    $destRootApk = "IdleStream_3.1.1_arm64.apk"
+    $destRootApk = "IdleStream_3.2.0_arm64.apk"
     Copy-Item -Path $apkPath.FullName -Destination $destRootApk -Force
     Write-Host "`n========================================================" -ForegroundColor Green
     Write-Host " APK GERADO COM SUCESSO!" -ForegroundColor Green
