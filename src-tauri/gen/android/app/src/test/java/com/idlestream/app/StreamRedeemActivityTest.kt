@@ -9,11 +9,25 @@ class StreamRedeemActivityTest {
 
     @Test
     fun testBuildTargetUrlForTwitch() {
-        val url1 = StreamRedeemActivity.buildTargetUrl("twitch", "gaules")
-        assertEquals("https://www.twitch.tv/gaules", url1)
+        // Popout Chat padrão para resgate vertical com pontos e baú visíveis
+        val urlPopout = StreamRedeemActivity.buildTargetUrl("twitch", "gaules")
+        assertEquals("https://www.twitch.tv/popout/gaules/chat?popout=", urlPopout)
 
-        val url2 = StreamRedeemActivity.buildTargetUrl("twitch", "  alanzoka  ")
-        assertEquals("https://www.twitch.tv/alanzoka", url2)
+        val urlPopoutTrim = StreamRedeemActivity.buildTargetUrl("twitch", "  alanzoka  ")
+        assertEquals("https://www.twitch.tv/popout/alanzoka/chat?popout=", urlPopoutTrim)
+
+        // Live completa
+        val urlFull = StreamRedeemActivity.buildTargetUrl("twitch", "gaules", popoutChat = false)
+        assertEquals("https://www.twitch.tv/gaules", urlFull)
+    }
+
+    @Test
+    fun testTwitchDesktopUaAndAutoClaimScript() {
+        assertTrue(StreamRedeemActivity.TWITCH_DESKTOP_UA.contains("Windows NT 10.0"))
+        assertTrue(StreamRedeemActivity.TWITCH_DESKTOP_UA.contains("Chrome/"))
+        assertTrue(StreamRedeemActivity.AUTO_CLAIM_TWITCH_JS.contains("Claim Bonus"))
+        assertTrue(StreamRedeemActivity.AUTO_CLAIM_TWITCH_JS.contains("Resgatar bônus"))
+        assertTrue(StreamRedeemActivity.AUTO_CLAIM_TWITCH_JS.contains("MutationObserver"))
     }
 
     @Test

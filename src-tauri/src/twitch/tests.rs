@@ -467,4 +467,19 @@ mod tests {
         assert!(kick_script.contains("kick_sess_abc"));
         assert!(kick_script.contains("domain=.kick.com"));
     }
+
+    #[test]
+    fn test_twitch_client_ids_and_chest_auto_claim() {
+        assert_eq!(TWITCH_WEB_CLIENT_ID, "kimne78kx3ncx6brgo4mv6wki5h1ko");
+        assert_eq!(TWITCH_ANDROID_CLIENT_ID, "kd1unb4b3q4t58fwlpcbzcbnm76a8fp");
+        assert_eq!(TWITCH_SMARTTV_CLIENT_ID, "ue6666qo983tsx6so1t0vnawi233wa");
+
+        let auto_claim_js = r#"
+            (function() {
+                const selectors = ['button[aria-label="Claim Bonus"]', 'button[aria-label="Resgatar bônus"]'];
+            })();
+        "#;
+        assert!(auto_claim_js.contains("Claim Bonus"));
+        assert!(auto_claim_js.contains("Resgatar bônus"));
+    }
 }

@@ -29,6 +29,7 @@ fn apply_status(
     rank: usize,
     avg_hours: f64,
     current_points: Option<i64>,
+    chest_available: bool,
 ) {
     match slot_state {
         MiningSlotState::Offline => {
@@ -40,7 +41,11 @@ fn apply_status(
             on_status(StatusKind::Standby, Some(msg), current_points);
         }
         MiningSlotState::ActiveMining => {
-            let msg = format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours);
+            let msg = if chest_available {
+                format!("🪙 Baú de +50 disponível! (Rank #{} • Média: {:.1}h)", rank, avg_hours)
+            } else {
+                format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours)
+            };
             on_status(StatusKind::Connected, Some(msg), current_points);
         }
     }
@@ -149,7 +154,7 @@ pub fn start_twitch_watcher(
             // 4. Executa de acordo com o estado do slot
             match slot_state {
                 MiningSlotState::Offline => {
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
 
                     tokio::select! {
                         _ = stop_rx.recv() => {
@@ -164,7 +169,7 @@ pub fn start_twitch_watcher(
                             if latest.slot_state != slot_state || latest.priority_rank != rank {
                                 slot_state = latest.slot_state;
                                 rank = latest.priority_rank;
-                                apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
                                 continue;
                             }
                         }
@@ -172,7 +177,7 @@ pub fn start_twitch_watcher(
                     }
                 }
                 MiningSlotState::StandbyVigil => {
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
 
                     // Canal está online, mas é 3º ou inferior na lista de prioridade.
                     // Aguarda notificação reativa instantânea ou timer de 45s para reavaliação.
@@ -189,7 +194,7 @@ pub fn start_twitch_watcher(
                             if latest.slot_state != slot_state || latest.priority_rank != rank {
                                 slot_state = latest.slot_state;
                                 rank = latest.priority_rank;
-                                apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
                                 continue;
                             }
                         }
@@ -199,6 +204,7 @@ pub fn start_twitch_watcher(
                 MiningSlotState::ActiveMining => {
                     // É UMA DAS 2 LIVES PRIORITÁRIAS ATIVAS DESTA CONTA!
                     // 4.1. Se houver baú de bônus (+50 pontos) disponível para resgate
+                    let mut chest_available = context.available_claim_id.is_some();
                     if let Some(ref claim_id) = context.available_claim_id {
                         let mut demoted = false;
                         tokio::select! {
@@ -214,11 +220,11 @@ pub fn start_twitch_watcher(
                                 if latest.slot_state != slot_state || latest.priority_rank != rank {
                                     slot_state = latest.slot_state;
                                     rank = latest.priority_rank;
-                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
                                     demoted = true;
                                 }
                             }
-                            _ = tokio::time::sleep(tokio::time::Duration::from_secs(8)) => {}
+                            _ = tokio::time::sleep(tokio::time::Duration::from_secs(3)) => {}
                         }
 
                         if demoted {
@@ -233,7 +239,7 @@ pub fn start_twitch_watcher(
                             }
                         }
 
-                        if let Ok(claim_res) = claim_community_points(
+                        match claim_community_points(
                             &http,
                             &context.channel_id,
                             claim_id,
@@ -241,13 +247,20 @@ pub fn start_twitch_watcher(
                             integrity_token.as_deref(),
                             Some(&device_id),
                         ).await {
-                            if let Some(cur) = current_points {
-                                current_points = Some(cur + claim_res.points);
+                            Ok(claim_res) => {
+                                println!("[Twitch] Sucesso ao resgatar baú de +{} pontos em {}", claim_res.points, clean_slug);
+                                if let Some(cur) = current_points {
+                                    current_points = Some(cur + claim_res.points);
+                                }
+                                chest_available = false;
+                            }
+                            Err(e) => {
+                                eprintln!("[Twitch] Resgate de baú GQL em {} ({}) retornou: {}. Abra o Resgate da conta para auto-coletar.", clean_slug, claim_id, e);
                             }
                         }
                     }
 
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available);
 
                     // 4.2. Aguarda ~60 segundos de tempo assistido antes do envio de Spade minute-watched
                     let jitter_secs = 58u64 + (chrono::Utc::now().timestamp_subsec_millis() as u64 % 6);
@@ -266,7 +279,7 @@ pub fn start_twitch_watcher(
                             if latest.slot_state != slot_state || latest.priority_rank != rank {
                                 slot_state = latest.slot_state;
                                 rank = latest.priority_rank;
-                                apply_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
                                 demoted = true;
                             }
                         }

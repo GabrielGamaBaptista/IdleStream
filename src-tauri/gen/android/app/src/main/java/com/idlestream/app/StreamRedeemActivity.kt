@@ -38,10 +38,58 @@ class StreamRedeemActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "StreamRedeemActivity"
 
-        fun buildTargetUrl(platform: String, channelSlug: String): String {
+        const val TWITCH_DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+
+        const val AUTO_CLAIM_TWITCH_JS = """
+            (function() {
+                if (window._idlestreamClaimerInjected) return;
+                window._idlestreamClaimerInjected = true;
+
+                function clickChest() {
+                    try {
+                        const selectors = [
+                            'button[aria-label="Claim Bonus"]',
+                            'button[aria-label="Resgatar bônus"]',
+                            'button[aria-label*="bônus" i]',
+                            'button[aria-label*="bonus" i]',
+                            '.community-points-summary button',
+                            '[data-test-selector="community-points-claim-summary"] button',
+                            '[data-test-selector="community-points-claim-summary"]',
+                            '.claimable-bonus__icon'
+                        ];
+                        for (let i = 0; i < selectors.length; i++) {
+                            const el = document.querySelector(selectors[i]);
+                            if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
+                                console.log('[IdleStream] Baú de pontos Twitch detectado! Clicando...');
+                                el.click();
+                                return true;
+                            }
+                        }
+                    } catch(e) {
+                        console.error('[IdleStream] Erro no auto-claim:', e);
+                    }
+                    return false;
+                }
+
+                clickChest();
+                setInterval(clickChest, 1500);
+
+                const observer = new MutationObserver(function() {
+                    clickChest();
+                });
+                if (document.body) {
+                    observer.observe(document.body, { childList: true, subtree: true });
+                }
+            })();
+        """
+
+        fun buildTargetUrl(platform: String, channelSlug: String, popoutChat: Boolean = true): String {
             val cleanSlug = channelSlug.trim()
             return if (platform.equals("kick", ignoreCase = true)) {
                 "https://kick.com/$cleanSlug"
+            } else if (popoutChat) {
+                "https://www.twitch.tv/popout/$cleanSlug/chat?popout="
             } else {
                 "https://www.twitch.tv/$cleanSlug"
             }
@@ -96,6 +144,33 @@ class StreamRedeemActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.redeem_progress_bar)
         webView = findViewById(R.id.redeem_webview)
 
+        val isTwitch = platform.equals("twitch", ignoreCase = true)
+        val layoutModeSwitch = findViewById<View>(R.id.layout_mode_switch)
+        val btnModeChat = findViewById<Button>(R.id.btn_mode_chat)
+        val btnModeLive = findViewById<Button>(R.id.btn_mode_live)
+
+        if (isTwitch) {
+            layoutModeSwitch.visibility = View.VISIBLE
+            btnModeChat.setOnClickListener {
+                btnModeChat.setTextColor(android.graphics.Color.parseColor("#38bdf8"))
+                btnModeChat.setBackgroundColor(android.graphics.Color.parseColor("#1e293b"))
+                btnModeLive.setTextColor(android.graphics.Color.parseColor("#94a3b8"))
+                btnModeLive.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                val url = buildTargetUrl(platform, channelSlug, popoutChat = true)
+                webView.loadUrl(url)
+            }
+            btnModeLive.setOnClickListener {
+                btnModeLive.setTextColor(android.graphics.Color.parseColor("#38bdf8"))
+                btnModeLive.setBackgroundColor(android.graphics.Color.parseColor("#1e293b"))
+                btnModeChat.setTextColor(android.graphics.Color.parseColor("#94a3b8"))
+                btnModeChat.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                val url = buildTargetUrl(platform, channelSlug, popoutChat = false)
+                webView.loadUrl(url)
+            }
+        } else {
+            layoutModeSwitch.visibility = View.GONE
+        }
+
         val platDisplay = if (platform.equals("kick", ignoreCase = true)) "Kick" else "Twitch"
         txtTitle.text = if (channelSlug.isNotBlank()) "Live: $channelSlug" else "Resgatar Pontos"
         txtSubtitle.text = "${accountLabel.ifBlank { "Conta" }} (@${accountUsername.ifBlank { "user" }}) • $platDisplay"
@@ -123,12 +198,19 @@ class StreamRedeemActivity : AppCompatActivity() {
         settings.javaScriptCanOpenWindowsAutomatically = true
         settings.setSupportMultipleWindows(false)
 
-        // Higieniza o User-Agent omitindo '; wv' e 'Version/X.X' para que Twitch e Kick
-        // reconheçam o navegador como Chrome Mobile padrão, permitindo chat e resgate de pontos
-        val originalUa = settings.userAgentString
-        settings.userAgentString = originalUa
-            .replace("; wv", "")
-            .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
+        val isTwitch = platform.equals("twitch", ignoreCase = true)
+        if (isTwitch) {
+            // Para Twitch no Android: O layout m.twitch.tv oculta saldo de pontos, baú e loja de resgate.
+            // O User-Agent Desktop garante o carregamento da interface desktop com chat e pontos completos.
+            settings.userAgentString = TWITCH_DESKTOP_UA
+        } else {
+            // Para Kick: Higieniza o User-Agent omitindo '; wv' e 'Version/X.X' para que Kick
+            // reconheça como Chrome Mobile padrão, permitindo chat e resgate de pontos nativo.
+            val originalUa = settings.userAgentString
+            settings.userAgentString = originalUa
+                .replace("; wv", "")
+                .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
+        }
 
         // Configuração de cookies e isolamento multi-profile
         setupCookiesAndProfile()
@@ -151,11 +233,19 @@ class StreamRedeemActivity : AppCompatActivity() {
 
                 // Injeção de reforço de cookies via JS no início do ciclo de renderização
                 injectCookiesViaJs(view)
+
+                if (isTwitch) {
+                    view?.evaluateJavascript(AUTO_CLAIM_TWITCH_JS, null)
+                }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
+
+                if (isTwitch) {
+                    view?.evaluateJavascript(AUTO_CLAIM_TWITCH_JS, null)
+                }
             }
 
             override fun onReceivedError(

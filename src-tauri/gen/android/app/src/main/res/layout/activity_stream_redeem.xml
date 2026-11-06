@@ -67,6 +67,42 @@
             android:paddingEnd="8dp" />
     </LinearLayout>
 
+    <!-- Mode Switch Bar (Twitch: Chat & Pontos vs Live Completa) -->
+    <LinearLayout
+        android:id="@+id/layout_mode_switch"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="#121215"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btn_mode_chat"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:text="💬 Chat &amp; Pontos"
+            android:textColor="#38bdf8"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:background="#1e293b"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_mode_live"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:text="📺 Live Completa"
+            android:textColor="#94a3b8"
+            android:textSize="11sp"
+            android:background="?android:attr/selectableItemBackground"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
     <ProgressBar
         android:id="@+id/redeem_progress_bar"
         style="?android:attr/progressBarStyleHorizontal"

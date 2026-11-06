@@ -9,6 +9,49 @@ pub struct TwitchCredentials {
 
 pub struct TwitchWebManager;
 
+const AUTO_CLAIM_TWITCH_SCRIPT: &str = r#"
+(function() {
+    if (window._idlestreamClaimerInjected) return;
+    window._idlestreamClaimerInjected = true;
+
+    function clickChest() {
+        try {
+            const selectors = [
+                'button[aria-label="Claim Bonus"]',
+                'button[aria-label="Resgatar bônus"]',
+                'button[aria-label*="bônus" i]',
+                'button[aria-label*="bonus" i]',
+                '.community-points-summary button',
+                '[data-test-selector="community-points-claim-summary"] button',
+                '[data-test-selector="community-points-claim-summary"]',
+                '.claimable-bonus__icon'
+            ];
+            for (let i = 0; i < selectors.length; i++) {
+                const el = document.querySelector(selectors[i]);
+                if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
+                    console.log('[IdleStream] Baú de pontos Twitch detectado! Clicando...');
+                    el.click();
+                    return true;
+                }
+            }
+        } catch(e) {
+            console.error('[IdleStream] Erro no auto-claim:', e);
+        }
+        return false;
+    }
+
+    clickChest();
+    setInterval(clickChest, 1500);
+
+    const observer = new MutationObserver(function() {
+        clickChest();
+    });
+    if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+})();
+"#;
+
 impl TwitchWebManager {
     pub fn get_profile_dir(app: &AppHandle, account_id: &str) -> PathBuf {
         let base = app
@@ -149,6 +192,7 @@ impl TwitchWebManager {
                     );
                 }
             }
+            init_script.push_str(AUTO_CLAIM_TWITCH_SCRIPT);
 
             let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
                 .title(format!(

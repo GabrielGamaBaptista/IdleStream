@@ -2,6 +2,8 @@ use crate::twitch::models::{ChannelPointsContext, ClaimResult};
 use serde_json::json;
 
 pub const TWITCH_WEB_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+pub const TWITCH_ANDROID_CLIENT_ID: &str = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp";
+pub const TWITCH_SMARTTV_CLIENT_ID: &str = "ue6666qo983tsx6so1t0vnawi233wa";
 pub const TWITCH_GQL_URL: &str = "https://gql.twitch.tv/gql";
 pub const TWITCH_INTEGRITY_URL: &str = "https://gql.twitch.tv/integrity";
 
@@ -228,7 +230,7 @@ pub async fn fetch_channel_points_context(
     Ok(ctx)
 }
 
-/// Executa a mutação para resgatar o baú de +50 pontos
+/// Executa a mutação para resgatar o baú de +50 pontos testando estratégias multi-client
 pub async fn claim_community_points(
     http: &reqwest::Client,
     channel_id: &str,
@@ -254,7 +256,42 @@ pub async fn claim_community_points(
         }
     });
 
-    let mut req = http
+    // Estratégia 1: Cliente Android Oficial (não impõe o desafio Kasada anti-bot)
+    let android_resp = http
+        .post(TWITCH_GQL_URL)
+        .header("Client-Id", TWITCH_ANDROID_CLIENT_ID)
+        .header("Authorization", format!("OAuth {}", clean_token))
+        .header("User-Agent", "okhttp/4.12.0")
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await;
+
+    if let Ok(resp) = android_resp {
+        if resp.status().is_success() {
+            if let Ok(body_text) = resp.text().await {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_text) {
+                    let has_errors = json
+                        .get("errors")
+                        .and_then(|e| e.as_array())
+                        .map(|a| !a.is_empty())
+                        .unwrap_or(false);
+                    if !has_errors {
+                        let pts = json["data"]["claimCommunityPoints"]["points"]
+                            .as_i64()
+                            .unwrap_or(50);
+                        return Ok(ClaimResult {
+                            claim_id: claim_id.to_string(),
+                            points: pts,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Estratégia 2: Cliente Web padrão com integridade
+    let mut req_web = http
         .post(TWITCH_GQL_URL)
         .header("Client-Id", TWITCH_WEB_CLIENT_ID)
         .header("Authorization", format!("OAuth {}", clean_token))
@@ -263,31 +300,39 @@ pub async fn claim_community_points(
         .json(&payload);
 
     if let Some(ci) = client_integrity {
-        req = req.header("Client-Integrity", ci);
+        req_web = req_web.header("Client-Integrity", ci);
     }
     if let Some(dev) = device_id {
-        req = req.header("X-Device-Id", dev);
+        req_web = req_web.header("X-Device-Id", dev);
     }
 
-    let resp = req.send().await.map_err(|e| format!("Falha ao enviar claim GQL: {}", e))?;
-    let status = resp.status();
-    let body_text = resp.text().await.map_err(|e| format!("Erro ao ler corpo do claim: {}", e))?;
+    let resp_web = req_web
+        .send()
+        .await
+        .map_err(|e| format!("Falha ao enviar claim Web GQL: {}", e))?;
+    let status_web = resp_web.status();
+    let body_web = resp_web
+        .text()
+        .await
+        .map_err(|e| format!("Erro ao ler corpo do claim: {}", e))?;
 
-    if !status.is_success() {
-        return Err(format!("Claim GQL retornou HTTP {}: {}", status, body_text));
+    if !status_web.is_success() {
+        return Err(format!("Claim Web GQL retornou HTTP {}: {}", status_web, body_web));
     }
 
-    let json: serde_json::Value = serde_json::from_str(&body_text)
-        .map_err(|e| format!("JSON de claim inválido: {} (resp: {})", e, body_text))?;
+    let json_web: serde_json::Value = serde_json::from_str(&body_web)
+        .map_err(|e| format!("JSON de claim inválido: {} (resp: {})", e, body_web))?;
 
-    if let Some(errors) = json.get("errors").and_then(|e| e.as_array()) {
+    if let Some(errors) = json_web.get("errors").and_then(|e| e.as_array()) {
         if !errors.is_empty() {
             let msg = errors[0]["message"].as_str().unwrap_or("Erro desconhecido");
             return Err(format!("Erro da Twitch no claim: {}", msg));
         }
     }
 
-    let points = json["data"]["claimCommunityPoints"]["points"].as_i64().unwrap_or(50);
+    let points = json_web["data"]["claimCommunityPoints"]["points"]
+        .as_i64()
+        .unwrap_or(50);
     Ok(ClaimResult {
         claim_id: claim_id.to_string(),
         points,

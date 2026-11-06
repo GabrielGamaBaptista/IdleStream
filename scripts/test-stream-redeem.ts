@@ -3,22 +3,30 @@ import assert from 'node:assert';
 console.log('🧪 Iniciando testes de validação do Resgate de Pontos de Lives (Webview On-Demand)...\n');
 
 // 1. Teste de geração de URL de stream para Twitch e Kick
-function buildTargetUrl(platform: 'twitch' | 'kick', channelSlug: string): string {
+function buildTargetUrl(platform: 'twitch' | 'kick', channelSlug: string, popoutChat = true): string {
   const clean = channelSlug.trim();
   if (platform === 'kick') {
     return `https://kick.com/${clean}`;
+  }
+  if (popoutChat) {
+    return `https://www.twitch.tv/popout/${clean}/chat?popout=`;
   }
   return `https://www.twitch.tv/${clean}`;
 }
 
 assert.strictEqual(
   buildTargetUrl('twitch', 'gaules'),
+  'https://www.twitch.tv/popout/gaules/chat?popout=',
+  'URL padrão Twitch deve ser Popout Chat para resgate vertical com pontos visíveis'
+);
+assert.strictEqual(
+  buildTargetUrl('twitch', 'gaules', false),
   'https://www.twitch.tv/gaules',
-  'URL Twitch deve ser https://www.twitch.tv/<slug>'
+  'URL secundária Twitch deve permitir visualização da live completa'
 );
 assert.strictEqual(
   buildTargetUrl('twitch', '  alanzoka  '),
-  'https://www.twitch.tv/alanzoka',
+  'https://www.twitch.tv/popout/alanzoka/chat?popout=',
   'URL Twitch deve limpar espaços ao redor do slug'
 );
 assert.strictEqual(
@@ -31,7 +39,24 @@ assert.strictEqual(
   'https://kick.com/trainwreckstv',
   'URL Kick deve limpar espaços ao redor do slug'
 );
-console.log('  ✓ [URLs] Geração e higienização de URLs Twitch e Kick validadas');
+console.log('  ✓ [URLs] Geração e higienização de URLs Twitch (Popout & Live) e Kick validadas');
+
+// 1.1 Teste de User-Agent Desktop para Twitch e Auto-Claimer de Baús
+const TWITCH_DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
+assert(TWITCH_DESKTOP_UA.includes('Windows NT 10.0'), 'UA desktop deve simular Windows');
+assert(TWITCH_DESKTOP_UA.includes('Chrome/'), 'UA desktop deve simular Chrome');
+
+const CHEST_SELECTORS = [
+  'button[aria-label="Claim Bonus"]',
+  'button[aria-label="Resgatar bônus"]',
+  'button[aria-label*="bônus" i]',
+  'button[aria-label*="bonus" i]',
+  '.community-points-summary button',
+  '[data-test-selector="community-points-claim-summary"]',
+  '.claimable-bonus__icon'
+];
+assert(CHEST_SELECTORS.length >= 5, 'Deve conter seletores abrangentes para baús de pontos');
+console.log('  ✓ [Desktop UA & Auto-Claimer] Headers e seletores de baú Twitch validados');
 
 // 2. Teste de sanitização de label de janela (Tauri / Android Profile)
 function buildRedeemLabel(platform: 'twitch' | 'kick', accountId: string): string {

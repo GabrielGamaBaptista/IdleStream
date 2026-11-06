@@ -1,11 +1,11 @@
 {
-  "version": "3.2.0",
-  "notes": "IdleStream v3.2.0 — Resgate de pontos do canal e recompensas de live sob demanda (Webview On-Demand isolada por conta) para Twitch e Kick, compatível com Windows Desktop e Android Mobile.",
-  "pub_date": "2026-11-06T14:30:00Z",
+  "version": "3.2.1",
+  "notes": "IdleStream v3.2.1 — Correção da interface de resgate de pontos Twitch no Android (User-Agent Desktop Chrome com visualizações alternáveis 'Chat & Pontos' e 'Live Completa'), injeção de Auto-Claimer para detecção e resgate automático de baús de +50 pontos no WebView, e aprimoramento multi-client GQL no minerador de background.",
+  "pub_date": "2026-11-06T16:10:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjRuSnQ1eDNack00TGV0TllNcU4xOEl0MmI2SXJpUEtLd21sNlViajlGU3NFMU1mRkMxNDE1a1B4aXBOU3A4ci9ZNGdEQ2JROWRIdEVOMmFlU1gzM0FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTc1MjI1CWZpbGU6SWRsZVN0cmVhbV8zLjIuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjAKMHh6NzhUR1pKcFJvdWpjUnl2QzVVeDY0V1I5QlNibzFGSFZpaSs1c0NldEhVZmFxOHVTQXIrOVRQYUEvT2dyclV3N3dPRkphb1RRd1JORmlJOU94Q1E9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.0/IdleStream_3.2.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9uWW4va1FDeVFMcG44ZmtBZTl1cWJtK2dQdVNLMUFYTVV2TFpHWmJoR2puMGhGVE13WjNrenJCZVEwRmgxYjYyTDF2Vi9mM0M3L2k4Umo2azhURVFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTgxMjcxCWZpbGU6SWRsZVN0cmVhbV8zLjIuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjEKMGdoYXlBSUh5dXJPZHhGVFQzWThWTkpNOTN0dVhleFVNeDVxdGtxMkRWaUs1dDNmanA3YmcvbEtBMGhWbXhEZG9DV1h4SE1QYUYwR3REL2lFVUFjQXc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.1/IdleStream_3.2.1_x64-setup.exe"
     }
   }
 }
