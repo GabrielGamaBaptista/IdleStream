@@ -62,11 +62,14 @@ pub fn parse_channel_points_context(json: &serde_json::Value) -> Result<ChannelP
         _ => (false, None),
     };
 
-    // Twitch pode aninhar communityPoints em user.channel.communityPoints ou user.communityPoints
+    // Twitch pode aninhar communityPoints em user.channel.self.communityPoints,
+    // community.channel.self.communityPoints, user.channel.communityPoints ou user.communityPoints
     let comm_points = user
-        .get("channel")
-        .and_then(|c| c.get("communityPoints"))
-        .or_else(|| user.get("communityPoints"));
+        .pointer("/channel/self/communityPoints")
+        .or_else(|| user.pointer("/channel/communityPoints"))
+        .or_else(|| user.get("communityPoints"))
+        .or_else(|| json.pointer("/data/community/channel/self/communityPoints"))
+        .or_else(|| json.pointer("/data/channel/self/communityPoints"));
 
     let balance = comm_points
         .and_then(|cp| cp.get("balance"))
@@ -188,8 +191,12 @@ pub async fn fetch_channel_points_context(
                 if cp_resp.status().is_success() {
                     if let Ok(cp_json) = cp_resp.json::<serde_json::Value>().await {
                         let comm_points = cp_json
-                            .get("data")
-                            .and_then(|d| d.get("communityPoints"))
+                            .pointer("/data/community/channel/self/communityPoints")
+                            .or_else(|| cp_json.pointer("/data/community/self/communityPoints"))
+                            .or_else(|| cp_json.pointer("/data/channel/self/communityPoints"))
+                            .or_else(|| cp_json.pointer("/data/user/channel/self/communityPoints"))
+                            .or_else(|| cp_json.pointer("/data/user/channel/communityPoints"))
+                            .or_else(|| cp_json.pointer("/data/communityPoints"))
                             .or_else(|| {
                                 cp_json
                                     .get("data")
@@ -206,6 +213,13 @@ pub async fn fetch_channel_points_context(
                             }
                         }
                     }
+                }
+            }
+
+            // 3. Fallback: Se o persisted query não retornou saldo, tenta a query direta de ChannelPointsBalance
+            if ctx.balance.is_none() {
+                if let Ok(direct_bal) = fetch_channel_points_only(http, &clean_slug, clean).await {
+                    ctx.balance = Some(direct_bal);
                 }
             }
         }
@@ -344,4 +358,45 @@ pub async fn fetch_current_user_id(
         .ok_or_else(|| "currentUser.id não encontrado".to_string())?;
 
     Ok(id.to_string())
+}
+
+/// Consulta diretamente apenas o saldo de pontos de canal na Twitch
+pub async fn fetch_channel_points_only(
+    http: &reqwest::Client,
+    channel_slug: &str,
+    auth_token: &str,
+) -> Result<i64, String> {
+    let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
+    let clean_token = auth_token.trim_start_matches("oauth:").trim();
+    if clean_token.is_empty() {
+        return Err("Token vazio".to_string());
+    }
+
+    let query = json!({
+        "query": "query ChannelPointsBalance($channelLogin: String!) { channel(name: $channelLogin) { id self { communityPoints { balance } } } }",
+        "variables": { "channelLogin": clean_slug }
+    });
+
+    let resp = http
+        .post(TWITCH_GQL_URL)
+        .header("Client-Id", TWITCH_WEB_CLIENT_ID)
+        .header("Authorization", format!("OAuth {}", clean_token))
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .json(&query)
+        .send()
+        .await
+        .map_err(|e| format!("Falha ao consultar pontos Twitch: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("GQL retornou status HTTP {}", resp.status()));
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| format!("JSON inválido: {}", e))?;
+    let balance = json
+        .pointer("/data/channel/self/communityPoints/balance")
+        .or_else(|| json.pointer("/data/community/channel/self/communityPoints/balance"))
+        .and_then(|b| b.as_i64())
+        .ok_or_else(|| "Saldo de pontos não encontrado na resposta".to_string())?;
+
+    Ok(balance)
 }

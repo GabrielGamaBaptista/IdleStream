@@ -206,8 +206,12 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
 
                       <div className="flex items-center gap-2">
                         {/* Points badge if present */}
-                        {isKick && isChecked && accPoints && (
-                          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-emerald-300">
+                        {isChecked && accPoints && (
+                          <span
+                            className={`text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 ${
+                              isKick ? 'text-emerald-300' : 'text-purple-300'
+                            }`}
+                          >
                             🪙 {formatPoints(accPoints)} pts
                           </span>
                         )}
@@ -225,7 +229,7 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
                 </span>
               ) : (
                 <span>
-                  💡 <strong>Twitch Multi-Contas:</strong> Cada conta marcada se conecta ao chat IRC do canal de forma independente (~1MB de RAM cada).
+                  💡 <strong>Twitch Multi-Contas:</strong> Todas as contas marcadas acumulam pontos de transmissão (Top 2 lives prioritárias por uptime com resgate de baús automático).
                 </span>
               )}
             </div>

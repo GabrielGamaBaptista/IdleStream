@@ -208,7 +208,7 @@ export const AddStreamModal: React.FC = () => {
                 })}
               </div>
             )}
-            {platform === 'kick' && selectedAccountIds.length > 1 && (
+            {selectedAccountIds.length > 1 && (
               <p className="text-[11px] text-neutral-500 mt-1">
                 Todas as contas selecionadas acumularão pontos de transmissão simultaneamente em segundo plano.
               </p>

@@ -46,7 +46,18 @@
             android:textSize="12sp"
             android:background="?android:attr/selectableItemBackground"
             android:paddingStart="8dp"
-            android:paddingEnd="8dp" />
+            android:paddingEnd="8dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_save_twitch"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:text="✓ Concluir"
+            android:textColor="#ffffff"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:backgroundTint="#9333ea" />
     </LinearLayout>
 
     <ProgressBar

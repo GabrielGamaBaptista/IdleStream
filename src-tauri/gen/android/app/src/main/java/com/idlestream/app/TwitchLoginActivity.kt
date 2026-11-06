@@ -1,9 +1,9 @@
 package com.idlestream.app
 
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -22,15 +22,26 @@ class TwitchLoginActivity : AppCompatActivity() {
     private var isCompleted = false
 
     companion object {
-        const val DEFAULT_CLIENT_ID = "gp762nuuoqcoxypju8c569th9wz7q5"
+        const val TWITCH_LOGIN_URL = "https://www.twitch.tv/login"
 
-        fun getAuthUrl(clientId: String = DEFAULT_CLIENT_ID): String {
-            return "https://id.twitch.tv/oauth2/authorize" +
-                    "?client_id=$clientId" +
-                    "&redirect_uri=http://localhost" +
-                    "&response_type=token" +
-                    "&scope=chat:read+chat:edit" +
-                    "&force_verify=true"
+        fun parseCookies(rawCookies: String?): String? {
+            if (rawCookies.isNullOrBlank()) return null
+            val pairs = rawCookies.split(";").map { it.trim() }
+            for (pair in pairs) {
+                val idx = pair.indexOf('=')
+                if (idx > 0) {
+                    val name = pair.substring(0, idx).trim()
+                    val value = pair.substring(idx + 1).trim()
+                    if (name.equals("auth-token", ignoreCase = true)) {
+                        return try {
+                            java.net.URLDecoder.decode(value, "UTF-8")
+                        } catch (_: Exception) {
+                            value
+                        }
+                    }
+                }
+            }
+            return null
         }
 
         fun isLocalhostRedirect(url: String): Boolean {
@@ -38,7 +49,6 @@ class TwitchLoginActivity : AppCompatActivity() {
         }
 
         fun extractParam(url: String, paramName: String): String? {
-            // Check fragment first (#key=value&...), commonly used by OAuth implicit grant
             val queryOrFragment = when {
                 url.contains('#') -> url.substringAfter('#')
                 url.contains('?') -> url.substringAfter('?')
@@ -59,28 +69,6 @@ class TwitchLoginActivity : AppCompatActivity() {
                     }
                 }
             }
-
-            // Fallback raw string inspection for edge-cases
-            val marker = "$paramName="
-            val idx = url.indexOf(marker)
-            if (idx != -1) {
-                val start = idx + marker.length
-                val endAmp = url.indexOf('&', start)
-                val endHash = url.indexOf('#', start)
-                val end = when {
-                    endAmp != -1 && endHash != -1 -> minOf(endAmp, endHash)
-                    endAmp != -1 -> endAmp
-                    endHash != -1 -> endHash
-                    else -> url.length
-                }
-                val rawVal = url.substring(start, end)
-                return try {
-                    java.net.URLDecoder.decode(rawVal, "UTF-8")
-                } catch (_: Exception) {
-                    rawVal
-                }
-            }
-
             return null
         }
     }
@@ -90,9 +78,10 @@ class TwitchLoginActivity : AppCompatActivity() {
         setContentView(R.layout.activity_twitch_login)
 
         accountId = intent.getStringExtra("account_id") ?: ""
+        val accountLabel = intent.getStringExtra("account_label") ?: ""
 
         val titleView = findViewById<TextView>(R.id.txt_twitch_title)
-        titleView.text = "Conectar Twitch"
+        titleView.text = if (accountLabel.isNotBlank()) "Login Twitch ($accountLabel)" else "Login Twitch"
 
         progressBar = findViewById(R.id.twitch_progress_bar)
         webView = findViewById(R.id.twitch_webview)
@@ -112,17 +101,18 @@ class TwitchLoginActivity : AppCompatActivity() {
             }
         }
 
+        val btnSave = findViewById<Button>(R.id.btn_save_twitch)
+        btnSave.setOnClickListener {
+            tryExtractAndSaveCookies(manual = true)
+        }
+
         setupWebView()
     }
 
     private fun loadAuthUrl() {
-        val testUrl = intent.getStringExtra("test_redirect_url")
-        if (!testUrl.isNullOrEmpty()) {
-            android.util.Log.d("IdleStream", "TwitchLoginActivity testing redirect directly: $testUrl")
-            checkInterceptUrl(testUrl)
-        } else {
-            webView.loadUrl(getAuthUrl())
-        }
+        val testUrl = intent.getStringExtra("test_login_url")
+        val url = if (!testUrl.isNullOrEmpty()) testUrl else TWITCH_LOGIN_URL
+        webView.loadUrl(url)
     }
 
     private fun setupWebView() {
@@ -135,12 +125,13 @@ class TwitchLoginActivity : AppCompatActivity() {
         settings.javaScriptCanOpenWindowsAutomatically = true
         settings.setSupportMultipleWindows(false)
 
+        // Higieniza o User-Agent omitindo '; wv' e 'Version/X.X' para que a Twitch reconheça como Chrome Mobile padrão
         val originalUa = settings.userAgentString
         settings.userAgentString = originalUa
             .replace("; wv", "")
             .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
 
-        val cookieManager = android.webkit.CookieManager.getInstance()
+        val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
@@ -148,27 +139,30 @@ class TwitchLoginActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 progressBar.visibility = View.VISIBLE
-                if (url != null && checkInterceptUrl(url)) {
-                    view?.stopLoading()
-                }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
-                if (url != null && checkInterceptUrl(url)) {
-                    view?.stopLoading()
+
+                // Auto-detecta login se o usuário navegou para fora da página de login e tem o cookie de autenticação
+                if (!isCompleted && url != null &&
+                    url.contains("twitch.tv", ignoreCase = true) &&
+                    !url.contains("/login", ignoreCase = true) &&
+                    !url.contains("/passport", ignoreCase = true)
+                ) {
+                    tryExtractAndSaveCookies(manual = false)
                 }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: ""
-                return checkInterceptUrl(url)
+                return handleRedirects(url)
             }
 
             @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                if (url != null && checkInterceptUrl(url)) {
+                if (url != null && handleRedirects(url)) {
                     return true
                 }
                 return false
@@ -180,69 +174,59 @@ class TwitchLoginActivity : AppCompatActivity() {
                 error: WebResourceError?
             ) {
                 super.onReceivedError(view, request, error)
-                val failingUrl = request?.url?.toString() ?: ""
-                if (checkInterceptUrl(failingUrl)) {
-                    view?.stopLoading()
-                }
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun onReceivedError(
-                view: WebView?,
-                errorCode: Int,
-                description: String?,
-                failingUrl: String?
-            ) {
-                super.onReceivedError(view, errorCode, description, failingUrl)
-                if (failingUrl != null && checkInterceptUrl(failingUrl)) {
-                    view?.stopLoading()
-                }
             }
         }
 
-        // Fase 1: Pre-Flight Purge - Limpeza total antes de carregar authUrl
+        // Fase 1: Pre-Flight Purge - Limpeza completa de Cookies e Cache antes de abrir
         SessionResetHelper.clearSession(this, webView) {
             loadAuthUrl()
         }
     }
 
-    private fun checkInterceptUrl(url: String): Boolean {
-        if (isCompleted) return true
-
+    private fun handleRedirects(url: String): Boolean {
         if (isLocalhostRedirect(url)) {
-            android.util.Log.d("IdleStream", "checkInterceptUrl intercepted localhost: $url")
-            // Check for OAuth error response
-            val error = extractParam(url, "error")
-            if (!error.isNullOrEmpty()) {
-                val errorDesc = extractParam(url, "error_description") ?: error
-                isCompleted = true
-                android.util.Log.w("IdleStream", "checkInterceptUrl OAuth error: $errorDesc")
-                Toast.makeText(this, "Autorização Twitch: $errorDesc", Toast.LENGTH_LONG).show()
-                // Post-Auth Purge
-                SessionResetHelper.clearSession(this, webView) {
-                    finish()
-                }
-                return true
-            }
-
-            // Check for access_token
             val token = extractParam(url, "access_token")
             if (!token.isNullOrEmpty()) {
                 isCompleted = true
-                android.util.Log.i("IdleStream", "checkInterceptUrl successfully captured token for accountId: $accountId")
                 MainActivity.instance?.notifyTwitchAuthSuccess(accountId, token)
                 Toast.makeText(this, "Conta Twitch autenticada com sucesso!", Toast.LENGTH_SHORT).show()
-                // Post-Auth Purge
                 SessionResetHelper.clearSession(this, webView) {
                     finish()
                 }
                 return true
             }
-
-            // If it reached localhost without token yet, prevent ERR_CONNECTION_REFUSED
-            return true
         }
         return false
+    }
+
+    private fun tryExtractAndSaveCookies(manual: Boolean) {
+        if (isCompleted) return
+
+        val cookieManager = CookieManager.getInstance()
+        val c1 = cookieManager.getCookie("https://www.twitch.tv") ?: ""
+        val c2 = cookieManager.getCookie("https://twitch.tv") ?: ""
+        val c3 = cookieManager.getCookie("https://id.twitch.tv") ?: ""
+        val allCookies = "$c1; $c2; $c3"
+
+        val token = parseCookies(allCookies)
+
+        if (!token.isNullOrEmpty()) {
+            isCompleted = true
+            android.util.Log.i("IdleStream", "Twitch auth-token cookie capturado com sucesso para accountId: $accountId")
+            MainActivity.instance?.notifyTwitchAuthSuccess(accountId, token)
+            Toast.makeText(this, "Sessão da Twitch salva com sucesso!", Toast.LENGTH_SHORT).show()
+
+            // Fase 2: Post-Auth Purge - Limpeza para garantir isolamento multi-contas
+            SessionResetHelper.clearSession(this, webView) {
+                finish()
+            }
+        } else if (manual) {
+            Toast.makeText(
+                this,
+                "Login ainda não detectado. Complete o login no site da Twitch antes de concluir.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     @Deprecated("Deprecated in Java")

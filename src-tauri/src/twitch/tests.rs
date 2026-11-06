@@ -265,6 +265,73 @@ mod tests {
         assert_eq!(ctx.available_claim_id, Some("claim_uuid_abc_123".into()));
     }
 
+    #[test]
+    fn test_parse_channel_points_context_community_channel_self() {
+        // Estrutura real retornada pelo persisted query ChannelPointsContext da Twitch
+        let mock_json = json!({
+            "data": {
+                "user": {
+                    "id": "181077473",
+                    "stream": {
+                        "id": "broadcast_gaules_1",
+                        "type": "live"
+                    }
+                },
+                "community": {
+                    "id": "181077473",
+                    "displayName": "Gaules",
+                    "channel": {
+                        "id": "181077473",
+                        "self": {
+                            "communityPoints": {
+                                "balance": 48500,
+                                "availableClaim": {
+                                    "id": "claim_chest_xyz"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let ctx = parse_channel_points_context(&mock_json).expect("Falha ao parsear contexto real da Twitch");
+        assert!(ctx.is_live);
+        assert_eq!(ctx.channel_id, "181077473");
+        assert_eq!(ctx.broadcast_id, Some("broadcast_gaules_1".into()));
+        assert_eq!(ctx.balance, Some(48500));
+        assert_eq!(ctx.available_claim_id, Some("claim_chest_xyz".into()));
+    }
+
+    #[test]
+    fn test_parse_channel_points_context_direct_channel_self() {
+        // Estrutura retornada pela query ChannelPointsBalance
+        let mock_json = json!({
+            "data": {
+                "user": {
+                    "id": "181077473",
+                    "stream": null
+                },
+                "channel": {
+                    "id": "181077473",
+                    "self": {
+                        "communityPoints": {
+                            "balance": 99200,
+                            "availableClaim": null
+                        }
+                    }
+                }
+            }
+        });
+
+        let ctx = parse_channel_points_context(&mock_json).expect("Falha ao parsear contexto direto");
+        assert!(!ctx.is_live);
+        assert_eq!(ctx.channel_id, "181077473");
+        assert_eq!(ctx.broadcast_id, None);
+        assert_eq!(ctx.balance, Some(99200));
+        assert_eq!(ctx.available_claim_id, None);
+    }
+
     // Testes de integração ao vivo com a API pública da Twitch (sem auth)
     #[tokio::test]
     async fn test_live_twitch_vods_uptime_fetch() {

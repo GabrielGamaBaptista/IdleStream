@@ -1,7 +1,7 @@
 {
   "name": "idlestream",
   "private": true,
-  "version": "3.1.0",
+  "version": "3.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "build:android": "powershell -ExecutionPolicy Bypass -File ./scripts/build-android.ps1",
     "preview": "vite preview",
     "test:version": "jiti ./scripts/test-version.ts",
+    "test:twitch": "jiti ./scripts/test-twitch-android-points.ts",
     "test:games": "jiti ./scripts/test-games.ts",
     "test:perf": "jiti ./scripts/benchmark-performance.ts",
     "tauri": "tauri"

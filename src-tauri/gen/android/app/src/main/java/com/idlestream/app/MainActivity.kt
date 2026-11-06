@@ -60,10 +60,12 @@ class MainActivity : TauriActivity() {
         }
 
         @JavascriptInterface
-        fun openTwitchLogin(accountId: String) {
+        @JvmOverloads
+        fun openTwitchLogin(accountId: String, accountLabel: String = "") {
             activity.runOnUiThread {
                 val intent = Intent(activity, TwitchLoginActivity::class.java).apply {
                     putExtra("account_id", accountId)
+                    putExtra("account_label", accountLabel)
                 }
                 activity.startActivity(intent)
             }

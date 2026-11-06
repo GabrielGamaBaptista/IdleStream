@@ -142,10 +142,22 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
 
         {/* Channel info */}
         <div className="mt-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h3 className="text-base font-bold text-white tracking-tight truncate">
               {stream.channel_slug}
             </h3>
+            {status.channel_points && (
+              <span
+                className={`text-xs font-mono font-semibold px-2 py-0.5 rounded-lg border shrink-0 ${
+                  isTwitch
+                    ? 'bg-purple-950/60 border-purple-800/60 text-purple-300'
+                    : 'bg-emerald-950/60 border-emerald-800/60 text-emerald-300'
+                }`}
+                title="Saldo de pontos do canal"
+              >
+                🪙 {formatPoints(status.channel_points)}
+              </span>
+            )}
           </div>
         </div>
 

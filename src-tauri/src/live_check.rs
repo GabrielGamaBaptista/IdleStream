@@ -5,38 +5,55 @@ const BROWSER_USER_AGENT: &str =
 
 pub async fn check_twitch_live(client: &reqwest::Client, channel_slug: &str) -> bool {
     let clean_channel = channel_slug.trim().trim_start_matches('#').to_lowercase();
-    let url = format!("https://decapi.me/twitch/uptime/{}", clean_channel);
 
-    #[cfg(target_os = "android")]
+    // 1. Consulta primária direta via GQL oficial da Twitch (~20ms, funciona em Desktop e Android)
+    let gql_query = serde_json::json!({
+        "query": "query($login: String!) { user(login: $login) { id stream { id type } } }",
+        "variables": { "login": clean_channel }
+    });
+
+    if let Ok(resp) = client
+        .post(crate::twitch::gql::TWITCH_GQL_URL)
+        .header("Client-Id", crate::twitch::gql::TWITCH_WEB_CLIENT_ID)
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .timeout(Duration::from_secs(4))
+        .json(&gql_query)
+        .send()
+        .await
     {
-        match crate::kick::http::kick_http_request("GET", &url, None, None, 6).await {
-            Ok((status, text)) if (200..=299).contains(&status) => {
-                let trimmed = text.trim().to_lowercase();
-                !trimmed.contains("is offline") && !trimmed.contains("not found") && !trimmed.is_empty()
-            }
-            _ => false,
-        }
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        match client
-            .get(&url)
-            .timeout(Duration::from_secs(6))
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                if let Ok(text) = resp.text().await {
-                    let trimmed = text.trim().to_lowercase();
-                    !trimmed.contains("is offline") && !trimmed.contains("not found") && !trimmed.is_empty()
-                } else {
-                    false
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(stream) = json.pointer("/data/user/stream") {
+                    if !stream.is_null() {
+                        let stream_type = stream.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        let has_id = stream.get("id").and_then(|id| id.as_str()).is_some();
+                        return stream_type == "live" || has_id;
+                    }
+                    return false;
                 }
             }
-            Err(e) => {
-                eprintln!("[LiveCheck Twitch] Error for {}: {}", clean_channel, e);
+        }
+    }
+
+    // 2. Fallback secundário decapi.me
+    let url = format!("https://decapi.me/twitch/uptime/{}", clean_channel);
+    match client
+        .get(&url)
+        .timeout(Duration::from_secs(4))
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if let Ok(text) = resp.text().await {
+                let trimmed = text.trim().to_lowercase();
+                !trimmed.contains("is offline") && !trimmed.contains("not found") && !trimmed.is_empty()
+            } else {
                 false
             }
+        }
+        Err(e) => {
+            eprintln!("[LiveCheck Twitch Fallback] Error for {}: {}", clean_channel, e);
+            false
         }
     }
 }

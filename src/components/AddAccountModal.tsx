@@ -45,7 +45,7 @@ export const AddAccountModal: React.FC = () => {
 
   const handleTwitchBrowserAuth = async () => {
     if (isAndroid && window.AndroidBridge && typeof window.AndroidBridge.openTwitchLogin === 'function') {
-      window.AndroidBridge.openTwitchLogin('temp_add_account');
+      window.AndroidBridge.openTwitchLogin('temp_add_account', label.trim() || 'Nova Conta');
       return;
     }
 

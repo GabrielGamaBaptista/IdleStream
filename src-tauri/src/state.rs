@@ -204,6 +204,39 @@ impl AppState {
             map.insert(stream_id.to_string(), standby_status.clone());
             drop(map);
             self.emit_status(&standby_status).await;
+
+            // Consulta assíncrona inicial de pontos para todas as contas em modo vigília
+            let this = Arc::clone(self);
+            let s_id = stream_id.to_string();
+            let slug = stream.channel_slug.clone();
+            let plat = stream.platform;
+            let accs = accounts.clone();
+
+            tauri::async_runtime::spawn(async move {
+                for acc in accs {
+                    match plat {
+                        Platform::Twitch => {
+                            if let Some(ref token) = acc.oauth_token {
+                                if !token.is_empty() {
+                                    if let Ok(bal) = crate::twitch::gql::fetch_channel_points_only(&this.http_client, &slug, token).await {
+                                        this.update_points(&s_id, &acc.id, &bal.to_string()).await;
+                                    }
+                                }
+                            }
+                        }
+                        Platform::Kick => {
+                            if let Some(ref st) = acc.session_token {
+                                if !st.is_empty() {
+                                    if let Ok(pts) = crate::kick::watcher::fetch_channel_points(st, &slug).await {
+                                        this.update_points(&s_id, &acc.id, &pts.to_string()).await;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
             return Ok(());
         }
 

@@ -16,9 +16,9 @@ export const AccountManager: React.FC = () => {
 
   const isAndroid = typeof window !== 'undefined' && Boolean(window.AndroidBridge);
 
-  const handleTwitchAuth = async (accountId: string) => {
+  const handleTwitchAuth = async (accountId: string, accountLabel?: string) => {
     if (window.AndroidBridge && typeof window.AndroidBridge.openTwitchLogin === 'function') {
-      window.AndroidBridge.openTwitchLogin(accountId);
+      window.AndroidBridge.openTwitchLogin(accountId, accountLabel);
       return;
     }
     try {
@@ -132,14 +132,14 @@ export const AccountManager: React.FC = () => {
                   <div className="mt-3">
                     {isTwitch ? (
                       hasToken ? (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                        <div className="flex items-center gap-1.5 text-xs text-purple-400">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Token OAuth configurado</span>
+                          <span>Sessão & Cookies autenticados</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-amber-400">
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>Pendente de autenticação</span>
+                          <span>Login pendente (abra e salve a sessão)</span>
                         </div>
                       )
                     ) : (account.kick_session || account.session_token) ? (
@@ -161,7 +161,7 @@ export const AccountManager: React.FC = () => {
                   {isTwitch ? (
                     isAndroid ? (
                       <button
-                        onClick={() => handleTwitchAuth(account.id)}
+                        onClick={() => handleTwitchAuth(account.id, account.label)}
                         className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition cursor-pointer shadow-sm ${
                           hasToken
                             ? 'bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 border border-purple-800/60'
@@ -169,7 +169,7 @@ export const AccountManager: React.FC = () => {
                         }`}
                       >
                         <Globe className="w-3.5 h-3.5" />
-                        <span>{hasToken ? 'Reautenticar Twitch' : 'Autenticar com Twitch'}</span>
+                        <span>{hasToken ? 'Reautenticar Twitch (Cookies)' : 'Fazer Login na Twitch'}</span>
                       </button>
                     ) : (
                       <div className="flex flex-col gap-1.5">

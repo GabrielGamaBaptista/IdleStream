@@ -1,11 +1,11 @@
 {
-  "version": "3.1.0",
-  "notes": "IdleStream v3.1.0 — Mineração Ultra-leve de Pontos de Canal na Twitch com Fila de Prioridade por Uptime Médio, Rotação Inteligente e Zero Vídeo Webview",
-  "pub_date": "2026-11-05T23:00:00Z",
+  "version": "3.1.1",
+  "notes": "IdleStream v3.1.1 — Port do Minerador Twitch para Android com autenticação de cookies isolada (auth-token), contador de pontos por conta em tempo real nas lives da Twitch e checagem nativa de live via Twitch GQL.",
+  "pub_date": "2026-11-06T10:30:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjBZTGk4OGF5akhQd0JzNTJ4cWtpUCsvZVprUjdqK0g2WjRORVhFcm5URFVVd3paYUJlWEpiVkxNSTlCc2VlTld2STdqMHA3TGx6ZkdKQzNGQmduQ1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTMwNzY3CWZpbGU6SWRsZVN0cmVhbV8zLjEuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4xLjAKSVhKeUt6Q1NVTTM5WDJGTnhsdGZkM2hoL3JIWmlzUFBSWVhEYTlQeDYyZUNCa2lxK2d1SE5tMGp5M25XVGk0RGZBV1pLMktqSWxuWTdRQkpNVGhRQlE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.1.0/IdleStream_3.1.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjNoSEJ2QVM3N3AzYStJN1VUck11QWhlcG83Ui9FcDcwZVhkK1NvcFVzeUh1OGM3Y2JuZXkwZzhIMUNRNGJCSGtMYTFYSDVKVWtxUkxEWnNlNTIvclFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTcxODQzCWZpbGU6SWRsZVN0cmVhbV8zLjEuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246My4xLjEKYW4ySklabG5pTWtLeHI4bUdVdUZySzRHRzlUWnp5a0h3TXJGb3p3VVlYN1cwSnM5bjl4ay83Y2FMc21HZ21pZXZ6Y2V1SGNvVkhPZE9oMUJISDNNRGc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.1.1/IdleStream_3.1.1_x64-setup.exe"
     }
   }
 }
