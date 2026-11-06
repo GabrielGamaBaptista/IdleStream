@@ -403,6 +403,7 @@ impl AppState {
                         None,
                         self.twitch_coordinator.clone(),
                         on_status,
+                        Some(self.app_handle.clone()),
                     );
 
                     self.twitch_watchers.lock().await.insert(session_key, watcher);

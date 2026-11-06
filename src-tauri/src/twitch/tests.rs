@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_spade_payload_generation_and_base64() {
-        let payload = build_spade_payload("123456", "987654321", "111222");
+        let payload = build_spade_payload("rodil", "123456", "987654321", "111222");
         assert!(!payload.is_empty());
 
         let decoded_bytes = BASE64_STANDARD.decode(&payload).expect("Base64 inválido");
@@ -268,11 +268,14 @@ mod tests {
         assert!(json_val.is_array());
         let event = &json_val[0];
         assert_eq!(event["event"], "minute-watched");
+        assert_eq!(event["properties"]["channel"], "rodil");
         assert_eq!(event["properties"]["channel_id"], "123456");
         assert_eq!(event["properties"]["broadcast_id"], "987654321");
         assert_eq!(event["properties"]["user_id"], "111222");
         assert_eq!(event["properties"]["player"], "site");
         assert_eq!(event["properties"]["live"], true);
+        assert_eq!(event["properties"]["logged_in"], true);
+        assert_eq!(event["properties"]["minutes_logged"], 1);
     }
 
     #[test]

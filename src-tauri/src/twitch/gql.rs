@@ -445,3 +445,121 @@ pub async fn fetch_channel_points_only(
 
     Ok(balance)
 }
+
+/// Obtém o streamPlaybackAccessToken (value e signature) para uma live na Twitch
+pub async fn fetch_stream_playback_token(
+    http: &reqwest::Client,
+    channel_slug: &str,
+    auth_token: Option<&str>,
+) -> Result<(String, String), String> {
+    let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
+    let query = json!({
+        "query": "query GetPlaybackAccessToken($login: String!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: \"web\", playerBackend: \"mediaplayer\", playerType: $playerType}) { value signature } }",
+        "variables": {
+            "login": clean_slug,
+            "playerType": "site"
+        }
+    });
+
+    let mut req = http
+        .post(TWITCH_GQL_URL)
+        .header("Client-Id", TWITCH_WEB_CLIENT_ID)
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .header("Origin", "https://www.twitch.tv")
+        .header("Referer", format!("https://www.twitch.tv/{}", clean_slug));
+
+    if let Some(tok) = auth_token {
+        let clean = tok.trim_start_matches("oauth:").trim();
+        if !clean.is_empty() {
+            req = req.header("Authorization", format!("OAuth {}", clean));
+        }
+    }
+
+    let resp = req
+        .json(&query)
+        .send()
+        .await
+        .map_err(|e| format!("Erro HTTP ao obter playback token: {}", e))?;
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Erro ao parsear resposta GQL de playback token: {}", e))?;
+
+    let token_val = json
+        .pointer("/data/streamPlaybackAccessToken/value")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Campo streamPlaybackAccessToken.value ausente".to_string())?
+        .to_string();
+
+    let token_sig = json
+        .pointer("/data/streamPlaybackAccessToken/signature")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Campo streamPlaybackAccessToken.signature ausente".to_string())?
+        .to_string();
+
+    Ok((token_val, token_sig))
+}
+
+/// Conecta à playlist Usher HLS da Twitch e extrai a primeira URL de sub-playlist (stream de vídeo)
+pub async fn fetch_usher_stream_url(
+    http: &reqwest::Client,
+    channel_slug: &str,
+    token_val: &str,
+    token_sig: &str,
+) -> Result<String, String> {
+    let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
+    let usher_url = format!(
+        "https://usher.ttvnw.net/api/channel/hls/{}.m3u8?sig={}&token={}&player_backend=mediaplayer&platform=web&allow_source=true",
+        clean_slug,
+        token_sig,
+        urlencoding::encode(token_val)
+    );
+
+    let resp = http
+        .get(&usher_url)
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .header("Origin", "https://www.twitch.tv")
+        .header("Referer", format!("https://www.twitch.tv/{}", clean_slug))
+        .send()
+        .await
+        .map_err(|e| format!("Erro ao requisitar Usher HLS: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Usher HLS retornou HTTP {}", resp.status()));
+    }
+
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("Erro ao ler playlist Usher: {}", e))?;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("https://") && trimmed.contains(".m3u8") {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    Err("Nenhuma sub-playlist encontrada no retorno do Usher".to_string())
+}
+
+/// Realiza ping leve com Connection: close na CDN da Twitch para simular consumo ativo de vídeo
+pub async fn ping_twitch_hls_stream(
+    http: &reqwest::Client,
+    stream_url: &str,
+    channel_slug: &str,
+) -> Result<bool, String> {
+    let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
+    let resp = http
+        .get(stream_url)
+        .header("User-Agent", BROWSER_USER_AGENT)
+        .header("Connection", "close")
+        .header("Origin", "https://www.twitch.tv")
+        .header("Referer", format!("https://www.twitch.tv/{}", clean_slug))
+        .send()
+        .await
+        .map_err(|e| format!("Erro no ping HLS CDN: {}", e))?;
+
+    Ok(resp.status().is_success())
+}

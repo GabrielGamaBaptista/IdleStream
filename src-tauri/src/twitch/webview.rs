@@ -143,7 +143,8 @@ impl TwitchWebManager {
         }
     }
 
-    /// Abre a WebView da live da Twitch para resgatar pontos do canal com a conta especificada
+    /// Abre a WebView da live da Twitch para resgatar pontos do canal com a conta especificada.
+    /// Utiliza o modo popout chat por padrão para que o saldo de pontos, baú e loja de resgate fiquem 100% visíveis.
     pub fn open_redeem_window(
         app: &AppHandle,
         account_id: &str,
@@ -152,12 +153,13 @@ impl TwitchWebManager {
         channel_slug: &str,
         auth_token: Option<&str>,
     ) -> Result<(), String> {
+        let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
         let clean_id: String = account_id
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
             .collect();
         let label = format!("twitch_redeem_{}", clean_id);
-        let target_url = format!("https://www.twitch.tv/{}", channel_slug.trim());
+        let target_url = format!("https://www.twitch.tv/popout/{}/chat?popout=", clean_slug);
         let url_parsed = target_url
             .parse::<url::Url>()
             .map_err(|e| format!("URL error: {}", e))?;
@@ -174,7 +176,7 @@ impl TwitchWebManager {
             let profile_dir = Self::get_profile_dir(app, account_id);
             let mut init_script = String::new();
             if let Some(tok) = auth_token {
-                let trimmed = tok.trim();
+                let trimmed = tok.trim_start_matches("oauth:").trim();
                 if !trimmed.is_empty() {
                     let tok_json = serde_json::to_string(trimmed).unwrap_or_default();
                     init_script = format!(
@@ -196,11 +198,11 @@ impl TwitchWebManager {
 
             let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
                 .title(format!(
-                    "IdleStream - Resgatar Pontos: {} (@{}) em Twitch/{}",
-                    account_label, account_username, channel_slug
+                    "IdleStream - Chat & Pontos: {} (@{}) em Twitch/{}",
+                    account_label, account_username, clean_slug
                 ))
                 .data_directory(profile_dir)
-                .inner_size(1050.0, 720.0)
+                .inner_size(520.0, 720.0)
                 .center()
                 .visible(true);
 
@@ -219,5 +221,90 @@ impl TwitchWebManager {
         }
 
         Ok(())
+    }
+
+    /// Dispara uma janela WebView oculta em segundo plano para auto-resgatar o baú de +50 pontos
+    /// com validação genuína de JavaScript e Kasada anti-bot.
+    pub fn trigger_background_chest_claim(
+        app: &AppHandle,
+        account_id: &str,
+        channel_slug: &str,
+        auth_token: Option<&str>,
+    ) {
+        #[cfg(desktop)]
+        {
+            let clean_slug = channel_slug.trim().trim_start_matches('#').to_lowercase();
+            let clean_id: String = account_id
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                .collect();
+            let label = format!("twitch_claim_{}_{}", clean_id, clean_slug);
+
+            // Se já existe janela ativa de resgate visível para esta conta, deixa ela cuidar do claim
+            let redeem_label = format!("twitch_redeem_{}", clean_id);
+            if app.get_webview_window(&redeem_label).is_some() {
+                return;
+            }
+
+            // Se já existe um claim headless rodando para essa conta/stream, não cria outro simultâneo
+            if app.get_webview_window(&label).is_some() {
+                return;
+            }
+
+            let target_url = format!("https://www.twitch.tv/popout/{}/chat?popout=", clean_slug);
+            let Ok(url_parsed) = target_url.parse::<url::Url>() else {
+                return;
+            };
+
+            let profile_dir = Self::get_profile_dir(app, account_id);
+            let mut init_script = String::new();
+            if let Some(tok) = auth_token {
+                let trimmed = tok.trim_start_matches("oauth:").trim();
+                if !trimmed.is_empty() {
+                    let tok_json = serde_json::to_string(trimmed).unwrap_or_default();
+                    init_script = format!(
+                        r#"
+                        (function() {{
+                            try {{
+                                const tok = {tok_json};
+                                if (tok) {{
+                                    document.cookie = "auth-token=" + tok + "; domain=.twitch.tv; path=/; SameSite=Lax; Secure";
+                                    document.cookie = "auth-token=" + tok + "; domain=www.twitch.tv; path=/; SameSite=Lax; Secure";
+                                }}
+                            }} catch(e) {{}}
+                        }})();
+                        "#
+                    );
+                }
+            }
+            init_script.push_str(AUTO_CLAIM_TWITCH_SCRIPT);
+
+            let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
+                .title(format!("IdleStream Claim Headless - {}", clean_slug))
+                .data_directory(profile_dir)
+                .inner_size(800.0, 600.0)
+                .visible(false);
+
+            let builder = if !init_script.is_empty() {
+                builder.initialization_script(&init_script)
+            } else {
+                builder
+            };
+
+            if let Ok(win) = builder.build() {
+                println!("[Twitch] Disparado auto-claim headless para conta {} em {}", account_id, clean_slug);
+                let win_clone = win.clone();
+                tauri::async_runtime::spawn(async move {
+                    // Mantém a janela oculta ativa por 25 segundos para completar Kasada e clique do baú
+                    tokio::time::sleep(tokio::time::Duration::from_secs(25)).await;
+                    let _ = win_clone.close();
+                });
+            }
+        }
+
+        #[cfg(not(desktop))]
+        {
+            let _ = (app, account_id, channel_slug, auth_token);
+        }
     }
 }

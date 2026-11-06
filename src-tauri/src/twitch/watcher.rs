@@ -51,7 +51,7 @@ fn apply_status(
     }
 }
 
-/// Inicia o watcher nativo ultraleve de transmissão Twitch via GQL + Spade com prioridade reativa
+/// Inicia o watcher nativo ultraleve de transmissão Twitch via GQL + Usher HLS + Spade com prioridade reativa
 pub fn start_twitch_watcher(
     _stream_id: String,
     account_id: String,
@@ -61,6 +61,7 @@ pub fn start_twitch_watcher(
     device_id_override: Option<String>,
     coordinator: AccountPriorityCoordinator,
     on_status: StatusCallback,
+    app_handle: Option<tauri::AppHandle>,
 ) -> TwitchWatcherHandle {
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
@@ -98,6 +99,12 @@ pub fn start_twitch_watcher(
         let mut last_integrity_fetch = std::time::Instant::now();
         let mut current_points: Option<i64> = None;
         let mut last_vod_check = std::time::Instant::now();
+
+        // Sessão ativa HLS para registro no CDN da Twitch (essencial para farm passivo contínuo)
+        let mut cached_hls_stream_url: Option<String> = None;
+        let mut last_hls_fetch = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(3600))
+            .unwrap_or_else(std::time::Instant::now);
 
         let mut slot_state;
         let mut rank;
@@ -154,6 +161,7 @@ pub fn start_twitch_watcher(
             // 4. Executa de acordo com o estado do slot
             match slot_state {
                 MiningSlotState::Offline => {
+                    cached_hls_stream_url = None;
                     apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
 
                     tokio::select! {
@@ -177,6 +185,7 @@ pub fn start_twitch_watcher(
                     }
                 }
                 MiningSlotState::StandbyVigil => {
+                    cached_hls_stream_url = None;
                     apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
 
                     // Canal está online, mas é 3º ou inferior na lista de prioridade.
@@ -203,7 +212,17 @@ pub fn start_twitch_watcher(
                 }
                 MiningSlotState::ActiveMining => {
                     // É UMA DAS 2 LIVES PRIORITÁRIAS ATIVAS DESTA CONTA!
-                    // 4.1. Se houver baú de bônus (+50 pontos) disponível para resgate
+                    // 4.1. Garante sessão de vídeo HLS ativa (renova a cada 30 minutos)
+                    if cached_hls_stream_url.is_none() || last_hls_fetch.elapsed() > std::time::Duration::from_secs(30 * 60) {
+                        if let Ok((tok_val, tok_sig)) = crate::twitch::gql::fetch_stream_playback_token(&http, &clean_slug, Some(&clean_token)).await {
+                            if let Ok(stream_url) = crate::twitch::gql::fetch_usher_stream_url(&http, &clean_slug, &tok_val, &tok_sig).await {
+                                cached_hls_stream_url = Some(stream_url);
+                                last_hls_fetch = std::time::Instant::now();
+                            }
+                        }
+                    }
+
+                    // 4.2. Se houver baú de bônus (+50 pontos) disponível para resgate
                     let mut chest_available = context.available_claim_id.is_some();
                     if let Some(ref claim_id) = context.available_claim_id {
                         let mut demoted = false;
@@ -224,14 +243,25 @@ pub fn start_twitch_watcher(
                                     demoted = true;
                                 }
                             }
-                            _ = tokio::time::sleep(tokio::time::Duration::from_secs(3)) => {}
+                            _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {}
                         }
 
                         if demoted {
                             continue;
                         }
 
-                        // Garante token de integridade válido (renova a cada 3 horas)
+                        // Dispara claim headless no Desktop com WebView2 genuíno
+                        #[cfg(desktop)]
+                        if let Some(ref app) = app_handle {
+                            crate::twitch::webview::TwitchWebManager::trigger_background_chest_claim(
+                                app,
+                                &account_id,
+                                &clean_slug,
+                                Some(&clean_token),
+                            );
+                        }
+
+                        // Garante token de integridade válido (renova a cada 3 horas) como fallback GQL
                         if integrity_token.is_none() || last_integrity_fetch.elapsed() > std::time::Duration::from_secs(3 * 3600) {
                             if let Ok(tok) = fetch_client_integrity(&http, &device_id, Some(&clean_token)).await {
                                 integrity_token = Some(tok);
@@ -254,40 +284,59 @@ pub fn start_twitch_watcher(
                                 }
                                 chest_available = false;
                             }
-                            Err(e) => {
-                                eprintln!("[Twitch] Resgate de baú GQL em {} ({}) retornou: {}. Abra o Resgate da conta para auto-coletar.", clean_slug, claim_id, e);
+                            Err(_) => {
+                                // Se o GQL falhar por integridade, o auto-claim headless (ou webview visível) cuida da coleta
                             }
                         }
                     }
 
                     apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available);
 
-                    // 4.2. Aguarda ~60 segundos de tempo assistido antes do envio de Spade minute-watched
-                    let jitter_secs = 58u64 + (chrono::Utc::now().timestamp_subsec_millis() as u64 % 6);
+                    // 4.3. Loop ativo de ~60 segundos com pings HLS periódicos (~20s) e envio final de Spade minute-watched
                     let mut demoted = false;
+                    for step in 0..3 {
+                        if let Some(ref stream_url) = cached_hls_stream_url {
+                            let _ = crate::twitch::gql::ping_twitch_hls_stream(&http, stream_url, &clean_slug).await;
+                        }
 
-                    tokio::select! {
-                        _ = stop_rx.recv() => {
-                            coordinator.remove_streamer(&account_id, &clean_slug).await;
+                        tokio::select! {
+                            _ = stop_rx.recv() => {
+                                coordinator.remove_streamer(&account_id, &clean_slug).await;
+                                return;
+                            }
+                            Some(notif) = notify_rx.recv() => {
+                                let mut latest = notif;
+                                while let Ok(n) = notify_rx.try_recv() {
+                                    latest = n;
+                                }
+                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                    slot_state = latest.slot_state;
+                                    rank = latest.priority_rank;
+                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                                    demoted = true;
+                                    break;
+                                }
+                            }
+                            _ = tokio::time::sleep(tokio::time::Duration::from_secs(20)) => {}
+                        }
+
+                        if demoted {
                             break;
                         }
-                        Some(notif) = notify_rx.recv() => {
-                            let mut latest = notif;
-                            while let Ok(n) = notify_rx.try_recv() {
-                                latest = n;
-                            }
-                            if latest.slot_state != slot_state || latest.priority_rank != rank {
-                                slot_state = latest.slot_state;
-                                rank = latest.priority_rank;
-                                apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
-                                demoted = true;
-                            }
-                        }
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(jitter_secs)) => {
-                            // Concluiu os ~60s ativos: envia o heartbeat minute-watched oficial
+
+                        if step == 2 {
+                            // Concluiu os ~60s ativos: envia o heartbeat minute-watched oficial autenticado
                             if let Some(ref broadcast_id) = context.broadcast_id {
                                 let uid = if resolved_user_id.is_empty() { "0" } else { &resolved_user_id };
-                                let _ = send_spade_minute_watched(&http, &clean_slug, &context.channel_id, broadcast_id, uid, None).await;
+                                let _ = send_spade_minute_watched(
+                                    &http,
+                                    &clean_slug,
+                                    &context.channel_id,
+                                    broadcast_id,
+                                    uid,
+                                    Some(&clean_token),
+                                    None,
+                                ).await;
                             }
                         }
                     }
