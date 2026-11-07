@@ -19,6 +19,7 @@ import {
   Expand,
   Shrink,
   BarChart3,
+  Moon,
 } from 'lucide-react';
 
 export const GameWorkspace: React.FC = () => {
@@ -37,6 +38,93 @@ export const GameWorkspace: React.FC = () => {
     if (typeof window === 'undefined') return false;
     return isAndroidPlatform() || window.innerWidth < 768;
   });
+
+  // Modo de Economia por Inatividade (Auto-Sleep após 5 min)
+  const [inactivityMinutes, setInactivityMinutes] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('__idlestream_inactivity_minutes__');
+      if (saved !== null) return Number(saved);
+    } catch (_) {}
+    return 5; // Padrão: 5 minutos
+  });
+  const [isIdleDimmed, setIsIdleDimmed] = useState<boolean>(false);
+  const [idleDurationSec, setIdleDurationSec] = useState<number>(0);
+  const lastActivityTimeRef = useRef<number>(Date.now());
+
+  const handleInactivityChange = (mins: number) => {
+    setInactivityMinutes(mins);
+    try {
+      localStorage.setItem('__idlestream_inactivity_minutes__', String(mins));
+    } catch (_) {}
+    if (mins === 0 && isIdleDimmed) {
+      setIsIdleDimmed(false);
+    }
+  };
+
+  const wakeUpFromIdle = useCallback(() => {
+    lastActivityTimeRef.current = Date.now();
+    if (isIdleDimmed) {
+      setIsIdleDimmed(false);
+    }
+  }, [isIdleDimmed]);
+
+  // Escutar eventos de atividade do usuário na janela
+  useEffect(() => {
+    const handleUserActivity = () => {
+      lastActivityTimeRef.current = Date.now();
+      if (isIdleDimmed) {
+        setIsIdleDimmed(false);
+      }
+    };
+
+    window.addEventListener('mousemove', handleUserActivity, { passive: true });
+    window.addEventListener('mousedown', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+    window.addEventListener('touchstart', handleUserActivity, { passive: true });
+    window.addEventListener('wheel', handleUserActivity, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('mousedown', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('touchstart', handleUserActivity);
+      window.removeEventListener('wheel', handleUserActivity);
+    };
+  }, [isIdleDimmed]);
+
+  // Loop de monitoramento de inatividade do sistema e do aplicativo
+  useEffect(() => {
+    if (inactivityMinutes <= 0) {
+      if (isIdleDimmed) setIsIdleDimmed(false);
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      const thresholdSeconds = inactivityMinutes * 60;
+      const appIdleSec = Math.floor((Date.now() - lastActivityTimeRef.current) / 1000);
+
+      let systemIdleSec = 0;
+      try {
+        systemIdleSec = await gamePlatformService.getSystemIdleSeconds();
+      } catch (_) {}
+
+      // Consideramos inatividade se o app não foi interagido ou se o SO geral está ocioso
+      const currentIdleSec = Math.max(appIdleSec, systemIdleSec);
+      setIdleDurationSec(currentIdleSec);
+
+      if (currentIdleSec >= thresholdSeconds) {
+        if (!isIdleDimmed && activeSlots.length > 0) {
+          setIsIdleDimmed(true);
+        }
+      } else {
+        if (isIdleDimmed) {
+          setIsIdleDimmed(false);
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [inactivityMinutes, isIdleDimmed, activeSlots.length]);
 
   // Referências para os containers DOM onde cada WebView deve se posicionar
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -108,9 +196,10 @@ export const GameWorkspace: React.FC = () => {
 
   // Função para calcular e sincronizar as coordenadas de cada slot com a plataforma nativa
   const syncBounds = useCallback(() => {
-    // Se o modal de configurações estiver aberto, ocultamos temporariamente as WebViews nativas
-    // para que não fiquem sobrepostas ao modal na tela. O farm continua rodando normalmente.
+    // Se o modal de configurações estiver aberto ou o modo de economia por inatividade estiver ativo,
+    // ocultamos temporariamente as WebViews nativas (caindo para 1 FPS e liberando a GPU).
     const isModalOpen = editingSlot !== null;
+    const shouldHideWebviews = isModalOpen || isIdleDimmed;
 
     const bounds: SlotBounds[] = [];
 
@@ -119,7 +208,7 @@ export const GameWorkspace: React.FC = () => {
       const el = containerRefs.current[slot.id];
       const isRunning = activeSlots.includes(slot.id);
 
-      if (!el || !isRunning || isModalOpen) {
+      if (!el || !isRunning || shouldHideWebviews) {
         bounds.push({
           slot_id: slot.id,
           x: 0,
@@ -157,7 +246,7 @@ export const GameWorkspace: React.FC = () => {
         console.warn('Falha ao atualizar bounds de jogos:', e);
       });
     }
-  }, [gameSlots, activeSlots, layoutMode, focusedSlotId, editingSlot]);
+  }, [gameSlots, activeSlots, layoutMode, focusedSlotId, editingSlot, isIdleDimmed]);
 
   // Fechar modal ao pressionar a tecla Escape ou sair do modo imersivo
   useEffect(() => {
@@ -175,12 +264,12 @@ export const GameWorkspace: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [editingSlot, isImmersiveMode, isToolbarVisible, setImmersiveMode]);
 
-  // Recalcular limites quando o modo imersivo ou visibilidade da barra mudar
+  // Recalcular limites quando o modo de inatividade, modo imersivo ou visibilidade da barra mudar
   useEffect(() => {
     syncBounds();
     const t = setTimeout(syncBounds, 80);
     return () => clearTimeout(t);
-  }, [isImmersiveMode, isToolbarVisible, syncBounds]);
+  }, [isIdleDimmed, isImmersiveMode, isToolbarVisible, syncBounds]);
 
   // Monitorar redimensionamento, foco na janela e restauração da bandeja do sistema
   useEffect(() => {
@@ -443,6 +532,26 @@ export const GameWorkspace: React.FC = () => {
               </button>
             </div>
 
+            {/* Seletor de Inatividade / Auto-Sleep (Economia de GPU a 1 FPS) */}
+            <div className="flex items-center bg-neutral-800/90 rounded-lg p-0.5 border border-neutral-700/80 text-[11px] shrink-0">
+              <div className="flex items-center gap-1 px-1.5 py-0.5 text-neutral-300">
+                <Moon className="w-3 h-3 text-indigo-400 shrink-0" />
+                <span className="hidden sm:inline text-neutral-400">Sleep:</span>
+              </div>
+              <select
+                value={inactivityMinutes}
+                onChange={(e) => handleInactivityChange(Number(e.target.value))}
+                className="bg-transparent text-[11px] font-medium text-neutral-200 px-1 py-0.5 outline-hidden cursor-pointer hover:text-indigo-400"
+                title="Tempo de inatividade para ativar o modo invisível de economia de GPU (1 FPS)"
+              >
+                <option value={1} className="bg-neutral-900 text-white">1 min</option>
+                <option value={5} className="bg-neutral-900 text-white">5 min (Padrão)</option>
+                <option value={10} className="bg-neutral-900 text-white">10 min</option>
+                <option value={15} className="bg-neutral-900 text-white">15 min</option>
+                <option value={0} className="bg-neutral-900 text-white">Desativado</option>
+              </select>
+            </div>
+
             {/* Seletores de Layout (Responsivo Mobile vs Desktop) */}
             <div className="flex bg-neutral-800 rounded-lg p-0.5 border border-neutral-700/80 shrink-0">
               <button
@@ -564,6 +673,65 @@ export const GameWorkspace: React.FC = () => {
               {gameSlots
                 .filter((slot) => slot.id !== focusedSlotId)
                 .map((slot) => renderSlotCard(slot, false, true))}
+            </div>
+          </div>
+        )}
+
+        {/* Overlay de Economia por Inatividade (Tela de Proteção / Sleep Mode) */}
+        {isIdleDimmed && (
+          <div
+            onClick={wakeUpFromIdle}
+            onMouseMove={wakeUpFromIdle}
+            className="absolute inset-0 z-40 bg-neutral-950/92 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center select-none cursor-pointer animate-in fade-in duration-300"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-md w-full bg-neutral-900/90 border border-neutral-800 rounded-3xl p-8 shadow-2xl flex flex-col items-center space-y-5"
+            >
+              <div className="relative">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-950/80 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-600/20">
+                  <Moon className="w-8 h-8 animate-pulse text-indigo-400" />
+                </div>
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500"></span>
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <h2 className="text-lg font-bold text-white tracking-tight">
+                  Modo de Economia por Inatividade Ativo
+                </h2>
+                <p className="text-xs text-neutral-400">
+                  Detectada inatividade de {inactivityMinutes} minutos. O aplicativo reduziu os jogos para 1 FPS para liberar sua GPU e poupar energia.
+                </p>
+              </div>
+
+              <div className="w-full bg-neutral-950/80 border border-neutral-800/80 rounded-xl p-3 flex items-center justify-around text-xs">
+                <div className="text-center">
+                  <span className="text-[10px] text-neutral-500 uppercase font-semibold block">Contas Ativas</span>
+                  <span className="font-bold text-emerald-400">{activeSlots.length} de {gameSlots.length}</span>
+                </div>
+                <div className="w-px h-6 bg-neutral-800" />
+                <div className="text-center">
+                  <span className="text-[10px] text-neutral-500 uppercase font-semibold block">Farming 24/7</span>
+                  <span className="font-bold text-indigo-400">100% Contínuo</span>
+                </div>
+                <div className="w-px h-6 bg-neutral-800" />
+                <div className="text-center">
+                  <span className="text-[10px] text-neutral-500 uppercase font-semibold block">Tempo Inativo</span>
+                  <span className="font-mono font-bold text-amber-300">
+                    {Math.floor(idleDurationSec / 60)}m {idleDurationSec % 60}s
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={wakeUpFromIdle}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition cursor-pointer shadow-md shadow-indigo-600/30 flex items-center justify-center gap-2"
+              >
+                <span>Clique ou mova o mouse para retomar</span>
+              </button>
             </div>
           </div>
         )}

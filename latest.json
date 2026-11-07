@@ -1,11 +1,11 @@
 {
-  "version": "3.2.4",
-  "notes": "IdleStream v3.2.4 — Otimizações Críticas de Performance e Resolução de Sobrecarga (Issues #1, #2, #3): fim do loop infinito de CPU nos watchers Twitch, modo ultra econômico de 1 FPS com CSS pausado para slots ocultos e em bandeja, resgate direto de baús via GQL sem janelas pesadas, eliminação de crash loops e artefatos de GPU, suporte estrito a minimize_to_tray e seletor granular de estado.",
-  "pub_date": "2026-11-07T18:54:00Z",
+  "version": "3.2.5",
+  "notes": "IdleStream v3.2.5 — Modo de Economia por Inatividade e Correção do Resgate Twitch: modo invisível automático de 1 FPS após 5 minutos de inatividade para zerar uso ocioso de GPU mantendo farms 24/7 ativos, e correção do looping de fechamento da aba de resgates da Twitch no Desktop e Android.",
+  "pub_date": "2026-11-07T21:10:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjdlVGJiTmVKRStPdnllZkRldnNGSGFqRUdtczg5dUw1TzNGYjdlQTc2NE1VY2RldEVpM2RiK0dxM0QzNFRoQkFobmhHSTVESzlWa0JSNy9naEpMOUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDc3NjU4CWZpbGU6SWRsZVN0cmVhbV8zLjIuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjQKQjBueGZNK2lsOWdyZHp5MGN5WDkwcWhxaVFMaVBDQWh2UHBidHhxMURvK3RCcDdTSTdoSm9oQ05HV0VmV0NnRGFOdXBQQVBJUkxabjUrN3JaeHFiQ1E9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.4/IdleStream_3.2.4_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjJuSDFCdThtUWhUVTNnTTl2bHhVM2xmcG5Nay9RY0s1bXZ5L2xzWEY0cXdOWnBURDBldUNkWW5nZEswNFpVdGRPRFB4am96UDZROUlkSDB3OER3dnd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDg1NzA3CWZpbGU6SWRsZVN0cmVhbV8zLjIuNV94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjUKZ05VUXRKM2RGUzhMK0V4VlRLZ1NxZDVoM3BLNk5aVks3Q0dsWjVDWVA0T05WdWM0Z3hXU1ZqcVlWSnFOY1Zkb0NUaGpqdUlZelducEVTajNGeXMwQUE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.5/IdleStream_3.2.5_x64-setup.exe"
     }
   }
 }

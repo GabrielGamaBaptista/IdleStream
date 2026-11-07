@@ -279,6 +279,7 @@ pub fn run() {
             games::commands::game_toggle_pokeidle_ultra,
             games::commands::game_hide_all,
             games::commands::game_get_active_slots,
+            games::commands::game_get_system_idle_seconds,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -136,4 +136,16 @@ export const gamePlatformService = {
     }
     return await invoke<string[]>('game_get_active_slots');
   },
+
+  async getSystemIdleSeconds(): Promise<number> {
+    const bridge = getAndroidBridge();
+    if (bridge) {
+      return 0;
+    }
+    try {
+      return await invoke<number>('game_get_system_idle_seconds');
+    } catch {
+      return 0;
+    }
+  },
 };

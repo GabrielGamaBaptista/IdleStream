@@ -18,14 +18,24 @@ const AUTO_CLAIM_TWITCH_SCRIPT: &str = r#"
     if (window._idlestreamClaimerInjected) return;
     window._idlestreamClaimerInjected = true;
 
+    let lastClaimTime = 0;
+    let debounceTimer = null;
+
     function clickChest() {
         try {
+            // Se a gaveta/menu de resgates estiver aberto pelo usuário, não clica para não fechar a interface
+            if (document.querySelector('[data-test-selector="community-points-rewards"], .rewards-list, [data-test-selector="reward-list-item"]')) {
+                return false;
+            }
+
+            const now = Date.now();
+            if (now - lastClaimTime < 3000) return false;
+
             const selectors = [
                 'button[aria-label="Claim Bonus"]',
                 'button[aria-label="Resgatar bônus"]',
-                'button[aria-label*="bônus" i]',
-                'button[aria-label*="bonus" i]',
-                '.community-points-summary button',
+                'button[aria-label*="Claim Bonus" i]',
+                'button[aria-label*="Resgatar bônus" i]',
                 '[data-test-selector="community-points-claim-summary"] button',
                 '[data-test-selector="community-points-claim-summary"]',
                 '.claimable-bonus__icon'
@@ -33,7 +43,8 @@ const AUTO_CLAIM_TWITCH_SCRIPT: &str = r#"
             for (let i = 0; i < selectors.length; i++) {
                 const el = document.querySelector(selectors[i]);
                 if (el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)) {
-                    console.log('[IdleStream] Baú de pontos Twitch detectado! Clicando...');
+                    console.log('[IdleStream] Baú de bônus Twitch detectado! Clicando...');
+                    lastClaimTime = Date.now();
                     el.click();
                     return true;
                 }
@@ -45,10 +56,11 @@ const AUTO_CLAIM_TWITCH_SCRIPT: &str = r#"
     }
 
     clickChest();
-    setInterval(clickChest, 1500);
+    setInterval(clickChest, 2000);
 
     const observer = new MutationObserver(function() {
-        clickChest();
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(clickChest, 400);
     });
     if (document.body) {
         observer.observe(document.body, { childList: true, subtree: true });

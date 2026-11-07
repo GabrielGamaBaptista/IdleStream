@@ -49,9 +49,9 @@ assert(TWITCH_DESKTOP_UA.includes('Chrome/'), 'UA desktop deve simular Chrome');
 const CHEST_SELECTORS = [
   'button[aria-label="Claim Bonus"]',
   'button[aria-label="Resgatar bônus"]',
-  'button[aria-label*="bônus" i]',
-  'button[aria-label*="bonus" i]',
-  '.community-points-summary button',
+  'button[aria-label*="Claim Bonus" i]',
+  'button[aria-label*="Resgatar bônus" i]',
+  '[data-test-selector="community-points-claim-summary"] button',
   '[data-test-selector="community-points-claim-summary"]',
   '.claimable-bonus__icon'
 ];

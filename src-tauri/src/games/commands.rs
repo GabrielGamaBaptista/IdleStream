@@ -100,3 +100,32 @@ pub async fn game_toggle_pokeidle_ultra(
 ) -> Result<(), String> {
     state.toggle_pokeidle_ultra(slot_id.as_deref(), enabled).await
 }
+
+#[tauri::command]
+pub fn game_get_system_idle_seconds() -> u64 {
+    #[cfg(target_os = "windows")]
+    {
+        use std::mem::size_of;
+        #[repr(C)]
+        struct LASTINPUTINFO {
+            cb_size: u32,
+            dw_time: u32,
+        }
+        extern "system" {
+            fn GetLastInputInfo(plii: *mut LASTINPUTINFO) -> i32;
+            fn GetTickCount() -> u32;
+        }
+        unsafe {
+            let mut lii = LASTINPUTINFO {
+                cb_size: size_of::<LASTINPUTINFO>() as u32,
+                dw_time: 0,
+            };
+            if GetLastInputInfo(&mut lii) != 0 {
+                let now = GetTickCount();
+                return (now.wrapping_sub(lii.dw_time) as u64) / 1000;
+            }
+        }
+    }
+    0
+}
+
