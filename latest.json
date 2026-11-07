@@ -1,11 +1,11 @@
 {
-  "version": "3.2.2",
-  "notes": "IdleStream v3.2.2 — Correção definitiva do farm passivo de pontos Twitch no Desktop (pipeline completo com streamPlaybackAccessToken, Usher HLS e telemetria Spade autenticada), auto-resgate headless de baús de +50 pontos no Desktop com suporte a Kasada anti-bot, e janelas de resgate otimizadas.",
-  "pub_date": "2026-11-06T18:00:00Z",
+  "version": "3.2.3",
+  "notes": "IdleStream v3.2.3 — Correção do carregamento infinito ('Conectando...') em transmissões Kick com múltiplas contas vinculadas, detecção robusta de status HTTP e cabeçalhos em WebSockets Kick, recuperação automática de streams pelo loop de vigília e permissão para cancelar streams em conexão.",
+  "pub_date": "2026-11-06T23:40:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9ieVhQdWVMTnNFbyt4ajJhQ0pqVUU0RlA2YkhVSTltS3NTTDlZN0RYZ2o0Um1JQkZKeURjVGtEMzFNdlYreXRQUE40SVhwUnRXMVBMZUljS0toaVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzOTg3OTI4CWZpbGU6SWRsZVN0cmVhbV8zLjIuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjIKN0RXK0l2aWx3TDNRcmZGbmRuWUw0blJRZ01xS253T1J1c25WcnFRcnluYUVjbUdLRlVhalF1R21IRUExMWwzV1prdjZ1UkgrNVV6aFVoVWg2c1V5REE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.2/IdleStream_3.2.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vjl5MHVvaGNGQWhvREM2SHQzMFRYQWZxV1NodjduZTVkMUZHQmRmek1JS2FMdFo2eldBNFNVOUhmVUtGWFN4SmpIeFQ2VHJjbGJCQ203bHZyRVQxaWdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDE5MTQwCWZpbGU6SWRsZVN0cmVhbV8zLjIuM194NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjMKbmdBV0t1VGp2dll4RmoyZ1E5M1FaL01NYVJiZWJWSkt1a09ZdHN0cnJhTmlGdUF2bXBXSWtxakJ1Q0RjSzA4YkMzWGxXUytiTDk2b0QxVzJoZHhZQ1E9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.3/IdleStream_3.2.3_x64-setup.exe"
     }
   }
 }

@@ -362,23 +362,23 @@ impl AppState {
                                     cfg.streams
                                         .iter()
                                         .find(|s| s.id == s_id_cb)
-                                        .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
+                                        .and_then(|s| {
+                                            s.selected_account_id.clone().or_else(|| {
+                                                s.account_ids.iter().find(|id| {
+                                                    cfg.accounts.iter().any(|a| {
+                                                        &a.id == *id
+                                                            && a.oauth_token
+                                                                .as_ref()
+                                                                .map(|t| !t.trim().is_empty())
+                                                                .unwrap_or(false)
+                                                    })
+                                                }).cloned()
+                                            }).or_else(|| s.account_ids.first().cloned())
+                                        })
                                 };
                                 let is_selected_or_first = selected_id.as_deref() == Some(&a_id_cb);
                                 let mut map = this_cb.statuses.lock().await;
                                 if let Some(current) = map.get_mut(&s_id_cb) {
-                                    let is_conn = status_kind == StatusKind::Connected;
-                                    if is_selected_or_first || current.message.is_none() {
-                                        current.status = status_kind;
-                                        current.message = msg;
-                                    }
-                                    current.estimated_ram_mb = 1;
-                                    if is_conn {
-                                        current.is_live = true;
-                                        if current.connected_at.is_none() {
-                                            current.connected_at = Some(now);
-                                        }
-                                    }
                                     if let Some(pts) = points {
                                         let pts_str = pts.to_string();
                                         current.account_points.insert(a_id_cb.clone(), pts_str.clone());
@@ -386,6 +386,50 @@ impl AppState {
                                             current.channel_points = Some(pts_str);
                                         }
                                     }
+
+                                    current.estimated_ram_mb = 1;
+
+                                    match status_kind {
+                                        StatusKind::Connected => {
+                                            current.status = StatusKind::Connected;
+                                            current.is_live = true;
+                                            current.message = None;
+                                            if current.connected_at.is_none() {
+                                                current.connected_at = Some(now);
+                                            }
+                                        }
+                                        StatusKind::Standby => {
+                                            if current.status != StatusKind::Connected {
+                                                current.status = StatusKind::Standby;
+                                                current.is_live = false;
+                                                current.message = msg;
+                                                current.connected_at = None;
+                                            }
+                                        }
+                                        StatusKind::Connecting => {
+                                            if current.status != StatusKind::Connected {
+                                                current.status = StatusKind::Connecting;
+                                                if is_selected_or_first || current.message.is_none() {
+                                                    current.message = msg;
+                                                }
+                                            }
+                                        }
+                                        StatusKind::Error => {
+                                            if current.status != StatusKind::Connected {
+                                                if is_selected_or_first || current.status == StatusKind::Connecting || current.status == StatusKind::Disconnected {
+                                                    current.status = StatusKind::Error;
+                                                    current.message = msg;
+                                                }
+                                            }
+                                        }
+                                        StatusKind::Disconnected => {
+                                            if is_selected_or_first && current.status != StatusKind::Connected {
+                                                current.status = StatusKind::Disconnected;
+                                                current.message = msg;
+                                            }
+                                        }
+                                    }
+
                                     let cloned = current.clone();
                                     drop(map);
                                     this_cb.emit_status(&cloned).await;
@@ -429,15 +473,60 @@ impl AppState {
             }
             Platform::Kick => {
                 let this = Arc::clone(self);
-                let mut started_count = 0;
 
-                for (idx, account) in accounts.iter().enumerate() {
+                let valid_accounts: Vec<crate::config::Account> = accounts
+                    .iter()
+                    .filter(|a| a.session_token.as_ref().map(|t| !t.trim().is_empty()).unwrap_or(false))
+                    .cloned()
+                    .collect();
+
+                if valid_accounts.is_empty() {
+                    let mut stat_lock = self.statuses.lock().await;
+                    let st = StreamRuntimeStatus {
+                        stream_id: stream_id.to_string(),
+                        status: StatusKind::Error,
+                        is_live: true,
+                        message: Some("Nenhuma conta com login da Kick configurado. Vá em 'Contas' e faça o login.".into()),
+                        uptime_seconds: 0,
+                        estimated_ram_mb: 0,
+                        connected_at: None,
+                        channel_points: None,
+                        account_points: HashMap::new(),
+                    };
+                    stat_lock.insert(stream_id.to_string(), st.clone());
+                    drop(stat_lock);
+                    self.emit_status(&st).await;
+                    return Err("Nenhuma conta Kick autenticada com cookies válidos".into());
+                }
+
+                // Preserva pontos conhecidos e emite status inicial Connecting antes de iniciar os watchers
+                let (prev_pts, prev_acc_pts) = {
+                    let map = self.statuses.lock().await;
+                    if let Some(s) = map.get(stream_id) {
+                        (s.channel_points.clone(), s.account_points.clone())
+                    } else {
+                        (None, HashMap::new())
+                    }
+                };
+
+                let connecting_status = StreamRuntimeStatus {
+                    stream_id: stream_id.to_string(),
+                    status: StatusKind::Connecting,
+                    is_live: true,
+                    message: None,
+                    uptime_seconds: 0,
+                    estimated_ram_mb: (valid_accounts.len() as u32) * 1,
+                    connected_at: None,
+                    channel_points: prev_pts,
+                    account_points: prev_acc_pts,
+                };
+                self.statuses.lock().await.insert(stream_id.to_string(), connecting_status.clone());
+                self.emit_status(&connecting_status).await;
+
+                for (idx, account) in valid_accounts.iter().enumerate() {
                     let session_token = match &account.session_token {
                         Some(t) if !t.is_empty() => t.clone(),
-                        _ => {
-                            eprintln!("[Kick] Conta '{}' sem session_token configurado.", account.label);
-                            continue;
-                        }
+                        _ => continue,
                     };
 
                     if idx > 0 {
@@ -469,23 +558,23 @@ impl AppState {
                                     cfg.streams
                                         .iter()
                                         .find(|s| s.id == s_id_cb)
-                                        .and_then(|s| s.selected_account_id.clone().or_else(|| s.account_ids.first().cloned()))
+                                        .and_then(|s| {
+                                            s.selected_account_id.clone().or_else(|| {
+                                                s.account_ids.iter().find(|id| {
+                                                    cfg.accounts.iter().any(|a| {
+                                                        &a.id == *id
+                                                            && a.session_token
+                                                                .as_ref()
+                                                                .map(|t| !t.trim().is_empty())
+                                                                .unwrap_or(false)
+                                                    })
+                                                }).cloned()
+                                            }).or_else(|| s.account_ids.first().cloned())
+                                        })
                                 };
                                 let is_selected_or_first = selected_id.as_deref() == Some(&a_id_cb);
                                 let mut map = this_cb.statuses.lock().await;
                                 if let Some(current) = map.get_mut(&s_id_cb) {
-                                    let is_conn = status_kind == StatusKind::Connected;
-                                    if is_selected_or_first || current.message.is_none() {
-                                        current.status = status_kind;
-                                        current.message = msg;
-                                    }
-                                    current.estimated_ram_mb = 1;
-                                    if is_conn {
-                                        current.is_live = true;
-                                        if current.connected_at.is_none() {
-                                            current.connected_at = Some(now);
-                                        }
-                                    }
                                     if let Some(pts) = points {
                                         let pts_str = pts.to_string();
                                         current.account_points.insert(a_id_cb.clone(), pts_str.clone());
@@ -493,6 +582,51 @@ impl AppState {
                                             current.channel_points = Some(pts_str);
                                         }
                                     }
+
+                                    current.estimated_ram_mb = 1;
+
+                                    match status_kind {
+                                        StatusKind::Connected => {
+                                            // Se QUALQUER conta conectou com sucesso, a stream está ativa e farmando!
+                                            current.status = StatusKind::Connected;
+                                            current.is_live = true;
+                                            current.message = None;
+                                            if current.connected_at.is_none() {
+                                                current.connected_at = Some(now);
+                                            }
+                                        }
+                                        StatusKind::Standby => {
+                                            if current.status != StatusKind::Connected {
+                                                current.status = StatusKind::Standby;
+                                                current.is_live = false;
+                                                current.message = msg;
+                                                current.connected_at = None;
+                                            }
+                                        }
+                                        StatusKind::Connecting => {
+                                            if current.status != StatusKind::Connected {
+                                                current.status = StatusKind::Connecting;
+                                                if is_selected_or_first || current.message.is_none() {
+                                                    current.message = msg;
+                                                }
+                                            }
+                                        }
+                                        StatusKind::Error => {
+                                            if current.status != StatusKind::Connected {
+                                                if is_selected_or_first || current.status == StatusKind::Connecting || current.status == StatusKind::Disconnected {
+                                                    current.status = StatusKind::Error;
+                                                    current.message = msg;
+                                                }
+                                            }
+                                        }
+                                        StatusKind::Disconnected => {
+                                            if is_selected_or_first && current.status != StatusKind::Connected {
+                                                current.status = StatusKind::Disconnected;
+                                                current.message = msg;
+                                            }
+                                        }
+                                    }
+
                                     let cloned = current.clone();
                                     drop(map);
                                     this_cb.emit_status(&cloned).await;
@@ -510,43 +644,8 @@ impl AppState {
                     );
 
                     self.kick_watchers.lock().await.insert(session_key, watcher);
-                    started_count += 1;
                 }
 
-                if started_count == 0 {
-                    let mut stat_lock = self.statuses.lock().await;
-                    let st = StreamRuntimeStatus {
-                        stream_id: stream_id.to_string(),
-                        status: StatusKind::Error,
-                        is_live: true,
-                        message: Some("Nenhuma conta com login da Kick configurado. Vá em 'Contas' e faça o login.".into()),
-                        uptime_seconds: 0,
-                        estimated_ram_mb: 0,
-                        connected_at: None,
-                        channel_points: None,
-                        account_points: HashMap::new(),
-                    };
-                    stat_lock.insert(stream_id.to_string(), st.clone());
-                    drop(stat_lock);
-                    self.emit_status(&st).await;
-                    return Err("Nenhuma conta Kick autenticada com cookies válidos".into());
-                }
-
-                let now = Utc::now().timestamp();
-                let status = StreamRuntimeStatus {
-                    stream_id: stream_id.to_string(),
-                    status: StatusKind::Connecting,
-                    is_live: true,
-                    message: Some("Iniciando watcher nativo da Kick...".into()),
-                    uptime_seconds: 0,
-                    estimated_ram_mb: (started_count as u32) * 1,
-                    connected_at: Some(now),
-                    channel_points: None,
-                    account_points: HashMap::new(),
-                };
-
-                self.statuses.lock().await.insert(stream_id.to_string(), status.clone());
-                self.emit_status(&status).await;
                 Ok(())
             }
         }
@@ -644,8 +743,8 @@ impl AppState {
 
                     let Some(curr) = current_status else { continue };
 
-                    // Only monitor streams that are in Standby or Connected (ignore manually Disconnected streams)
-                    if curr.status != StatusKind::Standby && curr.status != StatusKind::Connected {
+                    // Only monitor streams that are active or in standby/connecting/error (ignore manually Disconnected streams)
+                    if curr.status == StatusKind::Disconnected {
                         continue;
                     }
 
@@ -654,8 +753,8 @@ impl AppState {
                         Platform::Kick => check_kick_live(&this.http_client, &stream.channel_slug).await,
                     };
 
-                    if curr.status == StatusKind::Standby && is_live {
-                        // Stream came ONLINE! Activate player / IRC for all associated accounts
+                    if (curr.status == StatusKind::Standby || curr.status == StatusKind::Error || curr.status == StatusKind::Connecting) && is_live {
+                        // Stream came ONLINE or recovering from temporary error/connecting state
                         let accounts = {
                             let cfg = this.config.lock().await;
                             cfg.accounts
@@ -667,7 +766,7 @@ impl AppState {
                         if !accounts.is_empty() {
                             let _ = this.activate_online_stream(&stream.id, &stream.platform, &stream.channel_slug, &accounts).await;
                         }
-                    } else if curr.status == StatusKind::Connected && !is_live {
+                    } else if (curr.status == StatusKind::Connected || curr.status == StatusKind::Connecting) && !is_live {
                         // Stream went OFFLINE! Stop players to free up RAM, transition to Standby
                         if stream.platform == Platform::Kick {
                             let prefix = format!("{}:", stream.id);

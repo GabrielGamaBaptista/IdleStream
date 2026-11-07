@@ -2,6 +2,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 use crate::config::StatusKind;
 
@@ -98,7 +99,7 @@ pub async fn fetch_viewer_ws_token(
     if status == 429 {
         return Err(format!("Rate limit da Kick (HTTP 429): muitas requisições simultâneas ao obter token (resp: {})", body));
     }
-    if status == 401 || status == 403 {
+    if status == 401 || status == 403 || body.contains("\"Forbidden\"") || body.contains("\"Unauthenticated\"") {
         return Err(format!("Sessão da Kick inválida ou expirada (HTTP {}). Reautentique sua conta.", status));
     }
     if !(200..=299).contains(&status) {
@@ -134,6 +135,9 @@ pub async fn fetch_channel_points(session_token: &str, channel_slug: &str) -> Re
 
     if status == 429 {
         return Err("Rate limit da Kick (HTTP 429) em pontos".to_string());
+    }
+    if status == 401 || status == 403 || body.contains("\"Unauthenticated\"") {
+        return Err("Sessão Kick não autenticada para pontos".to_string());
     }
     if !(200..=299).contains(&status) {
         return Err(format!("HTTP {} ao consultar pontos", status));
@@ -266,7 +270,27 @@ pub fn start_kick_watcher(
 
             // 4. Conecta ao WebSocket do viewer
             let ws_url = format!("wss://websockets.kick.com/viewer/v1/connect?token={}", ws_token);
-            let ws_stream = match tokio_tungstenite::connect_async(&ws_url).await {
+            let ws_req = match ws_url.as_str().into_client_request() {
+                Ok(mut req) => {
+                    if let Ok(origin) = "https://kick.com".parse() {
+                        req.headers_mut().insert("Origin", origin);
+                    }
+                    if let Ok(ua) = BROWSER_USER_AGENT.parse() {
+                        req.headers_mut().insert("User-Agent", ua);
+                    }
+                    req
+                }
+                Err(_) => match ws_url.as_str().into_client_request() {
+                    Ok(r) => r,
+                    Err(e) => {
+                        on_status(StatusKind::Error, Some(format!("URL de WS Kick inválida: {}", e)), initial_points);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
+                        continue;
+                    }
+                },
+            };
+
+            let ws_stream = match tokio_tungstenite::connect_async(ws_req).await {
                 Ok((ws, _)) => ws,
                 Err(e) => {
                     on_status(StatusKind::Error, Some(format!("Falha ao conectar WS Kick: {}", e)), initial_points);

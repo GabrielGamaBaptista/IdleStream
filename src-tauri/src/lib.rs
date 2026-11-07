@@ -198,7 +198,10 @@ pub fn run() {
                         .collect()
                 };
                 eprintln!("[AutoStart] Starting {} auto-start streams: {:?}", auto_ids.len(), auto_ids);
-                for sid in auto_ids {
+                for (idx, sid) in auto_ids.into_iter().enumerate() {
+                    if idx > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
                     let res = auto_start_state.start_stream(&sid).await;
                     eprintln!("[AutoStart] Stream {} start result: {:?}", sid, res);
                 }

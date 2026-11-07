@@ -174,7 +174,16 @@ pub async fn kick_http_request(
 
     tokio::task::spawn_blocking(move || {
         let mut cmd = std::process::Command::new("curl.exe");
-        cmd.args(["-s", "-m", &timeout_secs.to_string(), "-X", &method, &url]);
+        cmd.args([
+            "-s",
+            "-m",
+            &timeout_secs.to_string(),
+            "-w",
+            "\n<HTTP_STATUS>%{http_code}</HTTP_STATUS>",
+            "-X",
+            &method,
+            &url,
+        ]);
 
         for (k, v) in &headers_vec {
             cmd.args(["-H", &format!("{}: {}", k, v)]);
@@ -190,7 +199,18 @@ pub async fn kick_http_request(
         match cmd.output() {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                Ok((200, stdout))
+                if let Some(pos) = stdout.rfind("\n<HTTP_STATUS>") {
+                    let resp_body = stdout[..pos].trim_end().to_string();
+                    let status_str = &stdout[pos + 14..];
+                    let status_code = status_str
+                        .trim_end_matches("</HTTP_STATUS>")
+                        .trim()
+                        .parse::<u16>()
+                        .unwrap_or(200);
+                    Ok((status_code, resp_body))
+                } else {
+                    Ok((200, stdout))
+                }
             }
             Ok(out) => Err(format!("curl falhou com status: {}", out.status)),
             Err(e) => Err(format!("Erro ao executar curl: {}", e)),
@@ -219,7 +239,16 @@ pub async fn kick_http_request(
 
     tokio::task::spawn_blocking(move || {
         let mut cmd = std::process::Command::new("curl");
-        cmd.args(["-s", "-m", &timeout_secs.to_string(), "-X", &method, &url]);
+        cmd.args([
+            "-s",
+            "-m",
+            &timeout_secs.to_string(),
+            "-w",
+            "\n<HTTP_STATUS>%{http_code}</HTTP_STATUS>",
+            "-X",
+            &method,
+            &url,
+        ]);
 
         for (k, v) in &headers_vec {
             cmd.args(["-H", &format!("{}: {}", k, v)]);
@@ -232,7 +261,18 @@ pub async fn kick_http_request(
         match cmd.output() {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                Ok((200, stdout))
+                if let Some(pos) = stdout.rfind("\n<HTTP_STATUS>") {
+                    let resp_body = stdout[..pos].trim_end().to_string();
+                    let status_str = &stdout[pos + 14..];
+                    let status_code = status_str
+                        .trim_end_matches("</HTTP_STATUS>")
+                        .trim()
+                        .parse::<u16>()
+                        .unwrap_or(200);
+                    Ok((status_code, resp_body))
+                } else {
+                    Ok((200, stdout))
+                }
             }
             Ok(out) => Err(format!("curl falhou com status: {}", out.status)),
             Err(e) => Err(format!("Erro ao executar curl: {}", e)),

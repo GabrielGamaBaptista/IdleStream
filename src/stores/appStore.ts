@@ -63,7 +63,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '3.2.2',
+  appVersion: '3.2.3',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,

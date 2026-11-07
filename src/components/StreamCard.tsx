@@ -229,6 +229,14 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
           </div>
         )}
 
+        {/* Connecting message banner */}
+        {isConnecting && status.message && (
+          <div className="mt-2.5 p-2 rounded bg-amber-950/30 border border-amber-900/40 flex items-start gap-1.5 text-amber-300 text-[11px] leading-tight">
+            <Radio className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400 animate-pulse" />
+            <span className="truncate">{status.message}</span>
+          </div>
+        )}
+
         {/* Standby info notice */}
         {isStandby && (
           <div className="mt-2.5 p-2 rounded bg-indigo-950/30 border border-indigo-900/40 flex items-start gap-1.5 text-indigo-300 text-[11px] leading-tight">
@@ -259,7 +267,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
       <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           {/* Main Toggle Button */}
-          {isConnected || isStandby ? (
+          {isConnected || isStandby || isConnecting ? (
             <button
               onClick={() => stopStream(stream.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-rose-400 hover:text-rose-300 text-xs font-medium border border-neutral-700 transition cursor-pointer"
@@ -270,8 +278,7 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
           ) : (
             <button
               onClick={() => startStream(stream.id)}
-              disabled={isConnecting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition shadow-sm hover:shadow-emerald-500/20 disabled:opacity-40 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition shadow-sm hover:shadow-emerald-500/20 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Ativar</span>

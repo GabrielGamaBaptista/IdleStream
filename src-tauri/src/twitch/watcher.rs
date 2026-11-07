@@ -186,7 +186,44 @@ pub fn start_twitch_watcher(
                 }
                 MiningSlotState::StandbyVigil => {
                     cached_hls_stream_url = None;
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                    let mut chest_available = context.available_claim_id.is_some();
+
+                    // Mesmo em fila de espera (Standby), se houver baú de bônus (+50 pontos) disponível, resgata imediatamente!
+                    if let Some(ref claim_id) = context.available_claim_id {
+                        #[cfg(desktop)]
+                        if let Some(ref app) = app_handle {
+                            crate::twitch::webview::TwitchWebManager::trigger_background_chest_claim(
+                                app,
+                                &account_id,
+                                &clean_slug,
+                                Some(&clean_token),
+                            );
+                        }
+
+                        if integrity_token.is_none() || last_integrity_fetch.elapsed() > std::time::Duration::from_secs(3 * 3600) {
+                            if let Ok(tok) = fetch_client_integrity(&http, &device_id, Some(&clean_token)).await {
+                                integrity_token = Some(tok);
+                                last_integrity_fetch = std::time::Instant::now();
+                            }
+                        }
+
+                        if let Ok(claim_res) = claim_community_points(
+                            &http,
+                            &context.channel_id,
+                            claim_id,
+                            &clean_token,
+                            integrity_token.as_deref(),
+                            Some(&device_id),
+                        ).await {
+                            println!("[Twitch] Sucesso ao resgatar baú em standby de +{} pontos em {}", claim_res.points, clean_slug);
+                            if let Some(cur) = current_points {
+                                current_points = Some(cur + claim_res.points);
+                            }
+                            chest_available = false;
+                        }
+                    }
+
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available);
 
                     // Canal está online, mas é 3º ou inferior na lista de prioridade.
                     // Aguarda notificação reativa instantânea ou timer de 45s para reavaliação.
