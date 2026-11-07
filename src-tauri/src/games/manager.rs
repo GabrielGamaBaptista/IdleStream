@@ -105,8 +105,7 @@ impl GameLayoutManager {
 
             let builder = WebviewBuilder::new(slot_id, WebviewUrl::External(parsed_url))
                 .data_directory(profile_dir)
-                .initialization_script(&full_init_script)
-                .auto_resize();
+                .initialization_script(&full_init_script);
 
             // Adiciona a Child Webview à janela principal
             win.add_child(
@@ -205,11 +204,12 @@ impl GameLayoutManager {
                                 position: LogicalPosition::new(px, py).into(),
                                 size: LogicalSize::new(half_w, half_h).into(),
                             });
-                            let _ = wv.show();
                             let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
-                            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                         } else {
-                            let _ = wv.hide();
+                            let _ = wv.set_bounds(Rect {
+                                position: LogicalPosition::new(-99999.0, -99999.0).into(),
+                                size: LogicalSize::new(1.0, 1.0).into(),
+                            });
                             let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                         }
                     }
@@ -223,11 +223,13 @@ impl GameLayoutManager {
                                 position: LogicalPosition::new(rect.x, rect.y).into(),
                                 size: LogicalSize::new(rect.width, rect.height).into(),
                             });
-                            let _ = wv.show();
                             let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                         } else {
-                            // IMPORTANTE: Em vez de destroy, apenas ocultamos e reduzimos para 1 FPS
-                            let _ = wv.hide();
+                            // Move para offscreen preservando DirectComposition sem tela preta/TDR
+                            let _ = wv.set_bounds(Rect {
+                                position: LogicalPosition::new(-99999.0, -99999.0).into(),
+                                size: LogicalSize::new(1.0, 1.0).into(),
+                            });
                             let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                         }
                     }
@@ -249,7 +251,6 @@ impl GameLayoutManager {
                         position: LogicalPosition::new(rect.x, rect.y).into(),
                         size: LogicalSize::new(main_w, rect.height).into(),
                     });
-                    let _ = wv.show();
                     let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                 }
 
@@ -264,7 +265,6 @@ impl GameLayoutManager {
                             .into(),
                             size: LogicalSize::new(side_w, side_h).into(),
                         });
-                        let _ = wv.show();
                         let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                     }
                 }
@@ -284,12 +284,14 @@ impl GameLayoutManager {
                         position: LogicalPosition::new(b.x, b.y).into(),
                         size: LogicalSize::new(b.width, b.height).into(),
                     });
-                    let _ = wv.show();
                     let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
-                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                 } else {
-                    // Oculta e reduz para 1 FPS sem parar o farm
-                    let _ = wv.hide();
+                    // Oculta movendo para fora da tela (offscreen) sem chamar wv.hide() (put_IsVisible(false))
+                    // Isso preserva a árvore DirectComposition do Windows DWM e previne tela preta / travamento
+                    let _ = wv.set_bounds(Rect {
+                        position: LogicalPosition::new(-99999.0, -99999.0).into(),
+                        size: LogicalSize::new(1.0, 1.0).into(),
+                    });
                     let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                 }
             }
@@ -402,7 +404,11 @@ impl GameLayoutManager {
             let slots_map = self.active_slots.lock().await;
             for slot_id in slots_map.keys() {
                 if let Some(wv) = self.app.get_webview(slot_id) {
-                    let _ = wv.hide();
+                    // Oculta movendo para offscreen para não destruir DirectComposition no DWM
+                    let _ = wv.set_bounds(Rect {
+                        position: LogicalPosition::new(-99999.0, -99999.0).into(),
+                        size: LogicalSize::new(1.0, 1.0).into(),
+                    });
                     let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                 }
             }

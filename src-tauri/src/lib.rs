@@ -86,24 +86,6 @@ pub fn run() {
                         }
                     }
                 }
-                WindowEvent::Resized(size) => {
-                    if window.label() == "main" {
-                        let is_min = window.is_minimized().unwrap_or(false) || (size.width == 0 && size.height == 0);
-                        let app = window.app_handle().clone();
-                        if let Some(gm) = app.try_state::<Arc<games::manager::GameLayoutManager>>() {
-                            let gm = Arc::clone(&gm);
-                            tauri::async_runtime::spawn(async move {
-                                if is_min {
-                                    let _ = gm.hide_all_game_views().await;
-                                } else {
-                                    // Aguarda 100ms para a superfície gráfica da janela principal se estabilizar
-                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                    let _ = gm.restore_current_layout().await;
-                                }
-                            });
-                        }
-                    }
-                }
                 _ => {}
             }
         });
