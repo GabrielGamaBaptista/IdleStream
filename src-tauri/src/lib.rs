@@ -32,6 +32,9 @@ pub fn run() {
         std::env::set_var(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
             "--disable-background-timer-throttling \
+             --disable-renderer-backgrounding \
+             --disable-backgrounding-occluded-windows \
+             --disable-gpu-watchdog \
              --disable-features=CalculateNativeWinOcclusion,SpareRendererForSitePerProcess,TranslateUI,MediaRouter,AutofillServerCommunication \
              --enable-features=SharedArrayBuffer \
              --renderer-process-limit=6 \
@@ -93,6 +96,8 @@ pub fn run() {
                                 if is_min {
                                     let _ = gm.hide_all_game_views().await;
                                 } else {
+                                    // Aguarda 100ms para a superfície gráfica da janela principal se estabilizar
+                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                                     let _ = gm.restore_current_layout().await;
                                 }
                             });

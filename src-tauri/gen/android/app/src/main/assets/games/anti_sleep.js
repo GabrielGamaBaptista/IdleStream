@@ -293,11 +293,15 @@
           }
         } else {
           htmlEl.classList.remove('idlestream-slot-hidden');
-          // Força flush imediato ao reaparecer
-          flushCallbacks();
+          // Limpa callbacks acumulados obsoletos para não sobrecarregar a GPU na restauração (Anti-TDR/Crash)
+          pendingCallbacks.clear();
         }
       }
-      scheduleNextFlush();
+      // Warm-up suave: quando reaparece, aguarda 100ms para DirectX/DWM estabilizarem antes dos ticks
+      const delay = isSlotHidden ? 1000 : 100;
+      flushTimer = setTimeout(() => {
+        scheduleNextFlush();
+      }, delay);
       console.log('[IdleStream] Slot hidden state alterado:', { isSlotHidden });
     };
 
@@ -346,7 +350,10 @@
         });
       } else {
         document.querySelectorAll('audio, video').forEach((m) => {
-          m.muted = true;
+          // NUNCA mutar o áudio silencioso de anti-throttling para manter o IsAudible do Chromium ativo
+          if (m.id !== '__idlestream_silent_audio__') {
+            m.muted = true;
+          }
         });
         if (typeof window.gc === 'function') {
           try {

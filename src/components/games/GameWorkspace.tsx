@@ -276,9 +276,12 @@ export const GameWorkspace: React.FC = () => {
     syncBounds();
     const timer = setTimeout(syncBounds, 100);
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const handleSync = () => {
-      syncBounds();
-      setTimeout(syncBounds, 80);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        syncBounds();
+      }, 60);
     };
 
     window.addEventListener('resize', handleSync);
@@ -293,6 +296,7 @@ export const GameWorkspace: React.FC = () => {
 
     return () => {
       clearTimeout(timer);
+      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener('resize', handleSync);
       window.removeEventListener('focus', handleSync);
       if (unlistenRestored) unlistenRestored();

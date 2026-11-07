@@ -207,6 +207,7 @@ impl GameLayoutManager {
                             });
                             let _ = wv.show();
                             let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
+                            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                         } else {
                             let _ = wv.hide();
                             let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
@@ -285,6 +286,7 @@ impl GameLayoutManager {
                     });
                     let _ = wv.show();
                     let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                 } else {
                     // Oculta e reduz para 1 FPS sem parar o farm
                     let _ = wv.hide();
