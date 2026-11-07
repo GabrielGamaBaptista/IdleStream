@@ -48,6 +48,7 @@ pub struct GameLayoutManager {
     pub current_layout: Mutex<ViewLayoutMode>,
     pub current_rect: Mutex<Option<ViewportRect>>,
     pub eco_mode: Mutex<bool>,
+    pub current_fps: Mutex<u32>,
 }
 
 impl GameLayoutManager {
@@ -58,6 +59,7 @@ impl GameLayoutManager {
             current_layout: Mutex::new(ViewLayoutMode::Grid2x2),
             current_rect: Mutex::new(None),
             eco_mode: Mutex::new(true),
+            current_fps: Mutex::new(30),
         }
     }
 
@@ -83,7 +85,8 @@ impl GameLayoutManager {
             let anti_sleep_script = include_str!("anti_sleep.js");
             let hunt_extension_script = include_str!("hunt_extension.js");
 
-            let mut full_init_script = anti_sleep_script.to_string();
+            let current_fps = *self.current_fps.lock().await;
+            let mut full_init_script = anti_sleep_script.replace("let targetFps = 30;", &format!("let targetFps = {};", current_fps));
             if url.contains("pokeidle.io") {
                 full_init_script.push_str("\n\n// === /hunt for PokeIdle Extension ===\n");
                 full_init_script.push_str(hunt_extension_script);
@@ -117,11 +120,11 @@ impl GameLayoutManager {
                 let _ = self.set_slot_zoom(slot_id, z).await;
             }
 
-            let current_eco = *self.eco_mode.lock().await;
-            if !current_eco {
-                if let Some(wv) = self.app.get_webview(slot_id) {
-                    let _ = wv.eval("if (typeof window.__setIdleStreamEcoMode === 'function') { window.__setIdleStreamEcoMode(false); }");
-                }
+            if let Some(wv) = self.app.get_webview(slot_id) {
+                let _ = wv.eval(&format!(
+                    "if (typeof window.__setIdleStreamFps === 'function') {{ window.__setIdleStreamFps({}); }}",
+                    current_fps
+                ));
             }
         }
 
@@ -194,14 +197,20 @@ impl GameLayoutManager {
                     (rect.x + half_w, rect.y + half_h), // Bottom-Right
                 ];
 
-                for (idx, slot_id) in slot_keys.iter().enumerate().take(4) {
+                for (idx, slot_id) in slot_keys.iter().enumerate() {
                     if let Some(wv) = self.app.get_webview(slot_id) {
-                        let (px, py) = positions[idx];
-                        let _ = wv.set_bounds(Rect {
-                            position: LogicalPosition::new(px, py).into(),
-                            size: LogicalSize::new(half_w, half_h).into(),
-                        });
-                        let _ = wv.show();
+                        if idx < 4 {
+                            let (px, py) = positions[idx];
+                            let _ = wv.set_bounds(Rect {
+                                position: LogicalPosition::new(px, py).into(),
+                                size: LogicalSize::new(half_w, half_h).into(),
+                            });
+                            let _ = wv.show();
+                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
+                        } else {
+                            let _ = wv.hide();
+                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                        }
                     }
                 }
             }
@@ -214,10 +223,11 @@ impl GameLayoutManager {
                                 size: LogicalSize::new(rect.width, rect.height).into(),
                             });
                             let _ = wv.show();
+                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                         } else {
-                            // IMPORTANTE: Em vez de destroy, apenas movemos para fora ou hide
-                            // Com nossas flags anti-sleep, os timers de farm continuam rodando!
+                            // IMPORTANTE: Em vez de destroy, apenas ocultamos e reduzimos para 1 FPS
                             let _ = wv.hide();
+                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                         }
                     }
                 }
@@ -239,6 +249,7 @@ impl GameLayoutManager {
                         size: LogicalSize::new(main_w, rect.height).into(),
                     });
                     let _ = wv.show();
+                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                 }
 
                 // Slots secundários na coluna direita
@@ -253,6 +264,7 @@ impl GameLayoutManager {
                             size: LogicalSize::new(side_w, side_h).into(),
                         });
                         let _ = wv.show();
+                        let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                     }
                 }
             }
@@ -272,20 +284,29 @@ impl GameLayoutManager {
                         size: LogicalSize::new(b.width, b.height).into(),
                     });
                     let _ = wv.show();
+                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                 } else {
-                    // Oculta sem parar os scripts ou timers de background!
+                    // Oculta e reduz para 1 FPS sem parar o farm
                     let _ = wv.hide();
+                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                 }
             }
         }
         Ok(())
     }
 
-    /// Recarrega a página de um slot específico
+    /// Recarrega a página de um slot específico e reaplica as configurações de performance
     pub async fn reload_slot(&self, slot_id: &str) -> Result<(), String> {
         #[cfg(desktop)]
         if let Some(wv) = self.app.get_webview(slot_id) {
+            let current_fps = *self.current_fps.lock().await;
             let _ = wv.eval("window.location.reload();");
+            // Re-injeta FPS atualizado pós-reload
+            let script = format!(
+                "setTimeout(() => {{ if (typeof window.__setIdleStreamFps === 'function') {{ window.__setIdleStreamFps({}); }} }}, 500);",
+                current_fps
+            );
+            let _ = wv.eval(&script);
         }
         Ok(())
     }
@@ -303,6 +324,8 @@ impl GameLayoutManager {
     /// Altera o Modo Econômico para todas as child webviews ativas em tempo real
     pub async fn set_eco_mode(&self, enabled: bool) -> Result<(), String> {
         *self.eco_mode.lock().await = enabled;
+        let fps = if enabled { 30 } else { 60 };
+        *self.current_fps.lock().await = fps;
 
         #[cfg(desktop)]
         {
@@ -323,6 +346,9 @@ impl GameLayoutManager {
 
     /// Altera o limite de FPS (60, 30 ou 10 Super Economia) em todas as child webviews ativas
     pub async fn set_fps(&self, fps: u32) -> Result<(), String> {
+        *self.current_fps.lock().await = fps;
+        *self.eco_mode.lock().await = fps < 60;
+
         #[cfg(desktop)]
         {
             let script = format!(
@@ -366,7 +392,8 @@ impl GameLayoutManager {
     }
 
     /// Oculta todas as child webviews quando o usuário sai da aba de Jogos (ex: vai para Streams)
-    /// As contas continuam ativas rodando em background com nosso motor anti-sleep!
+    /// ou quando a janela é minimizada/enviada para a bandeja.
+    /// Reduz a renderização para 1 FPS enquanto mantém farms e timers de background ativos!
     pub async fn hide_all_game_views(&self) -> Result<(), String> {
         #[cfg(desktop)]
         {
@@ -374,7 +401,21 @@ impl GameLayoutManager {
             for slot_id in slots_map.keys() {
                 if let Some(wv) = self.app.get_webview(slot_id) {
                     let _ = wv.hide();
+                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Restaura o layout atual para as child webviews
+    pub async fn restore_current_layout(&self) -> Result<(), String> {
+        #[cfg(desktop)]
+        {
+            let rect_opt = self.current_rect.lock().await.clone();
+            let layout_opt = self.current_layout.lock().await.clone();
+            if let Some(rect) = rect_opt {
+                return self.apply_layout(rect, layout_opt).await;
             }
         }
         Ok(())

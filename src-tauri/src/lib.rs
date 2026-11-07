@@ -32,9 +32,6 @@ pub fn run() {
         std::env::set_var(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
             "--disable-background-timer-throttling \
-             --disable-renderer-backgrounding \
-             --disable-backgrounding-occluded-windows \
-             --disable-gpu-process-crash-limit \
              --disable-features=CalculateNativeWinOcclusion,SpareRendererForSitePerProcess,TranslateUI,MediaRouter,AutofillServerCommunication \
              --enable-features=SharedArrayBuffer \
              --renderer-process-limit=6 \
@@ -62,11 +59,47 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
         builder = builder.on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == "main" {
+                        let app = window.app_handle().clone();
+                        let should_minimize = if let Some(state) = app.try_state::<Arc<AppState>>() {
+                            state.config.blocking_lock().settings.minimize_to_tray
+                        } else {
+                            true
+                        };
+
+                        if should_minimize {
+                            api.prevent_close();
+                            let _ = window.hide();
+                            if let Some(gm) = app.try_state::<Arc<games::manager::GameLayoutManager>>() {
+                                let gm = Arc::clone(&gm);
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = gm.hide_all_game_views().await;
+                                });
+                            }
+                        } else {
+                            std::process::exit(0);
+                        }
+                    }
                 }
+                WindowEvent::Resized(size) => {
+                    if window.label() == "main" {
+                        let is_min = window.is_minimized().unwrap_or(false) || (size.width == 0 && size.height == 0);
+                        let app = window.app_handle().clone();
+                        if let Some(gm) = app.try_state::<Arc<games::manager::GameLayoutManager>>() {
+                            let gm = Arc::clone(&gm);
+                            tauri::async_runtime::spawn(async move {
+                                if is_min {
+                                    let _ = gm.hide_all_game_views().await;
+                                } else {
+                                    let _ = gm.restore_current_layout().await;
+                                }
+                            });
+                        }
+                    }
+                }
+                _ => {}
             }
         });
     }

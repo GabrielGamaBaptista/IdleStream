@@ -22,21 +22,17 @@ interface StreamCardProps {
 }
 
 export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
-  const {
-    config,
-    statuses,
-    startStream,
-    stopStream,
-    removeStream,
-    openStreamRedeem,
-  } = useAppStore();
-
-  const status = statuses[stream.id] || {
+  const config = useAppStore((state) => state.config);
+  const status = useAppStore((state) => state.statuses[stream.id]) || {
     status: 'disconnected',
     is_live: false,
     uptime_seconds: 0,
     estimated_ram_mb: 0,
   };
+  const startStream = useAppStore((state) => state.startStream);
+  const stopStream = useAppStore((state) => state.stopStream);
+  const removeStream = useAppStore((state) => state.removeStream);
+  const openStreamRedeem = useAppStore((state) => state.openStreamRedeem);
 
   const accountIds = stream.account_ids && stream.account_ids.length > 0
     ? stream.account_ids

@@ -5,7 +5,15 @@
   try {
     let isEcoMode = true;
     let isMutedByEco = true;
+    let isSlotHidden = false;
     let targetFps = 30; // 60, 30, ou 10 (Super Economia)
+    try {
+      const savedFps = Number(localStorage.getItem('__idlestream_target_fps__'));
+      if (savedFps === 10 || savedFps === 30 || savedFps === 60) {
+        targetFps = savedFps;
+        isEcoMode = targetFps < 60;
+      }
+    } catch (_) {}
 
     // ============================================================
     // 1. FORÇAR VISIBILIDADE ATIVA PERMANENTE (ANTI-SLEEP SPOOFING)
@@ -65,16 +73,19 @@
     };
     window.__flushIdleStreamCallbacks = flushCallbacks;
 
-    // Loop imune a throttling do navegador com suporte a 60 FPS, 30 FPS e Super Economia (10 FPS)
-    let lastFlush = 0;
-    setInterval(() => {
-      const now = performance.now();
-      const minInterval = 1000 / (targetFps || 30);
-      if (now - lastFlush >= minInterval - 2) {
-        lastFlush = now;
+    // Loop dinâmico adaptativo imune a throttling com suporte a 60 FPS, 30 FPS e Super Economia (10 FPS)
+    // Quando o slot está oculto ou na bandeja, o timer passa a dormir 1000ms (1 FPS), permitindo
+    // que a CPU entre em C-states profundos e os coolers parem completamente.
+    let flushTimer = null;
+    const scheduleNextFlush = () => {
+      const effectiveFps = isSlotHidden ? 1 : (targetFps || 30);
+      const delay = Math.max(8, Math.round(1000 / effectiveFps));
+      flushTimer = setTimeout(() => {
         flushCallbacks();
-      }
-    }, 8);
+        scheduleNextFlush();
+      }, delay);
+    };
+    scheduleNextFlush();
 
     // ============================================================
     // 4. BYPASS DE THROTTLING CHROMIUM VIA WEB AUDIO & HTML5 AUDIO
@@ -257,10 +268,48 @@
 
     window.__setIdleStreamFps = function (fps) {
       targetFps = Number(fps) || 30;
+      try {
+        localStorage.setItem('__idlestream_target_fps__', String(targetFps));
+      } catch (_) {}
       isEcoMode = targetFps < 60;
       isMutedByEco = isEcoMode;
       window.__setIdleStreamEcoMode(isEcoMode, targetFps);
+      clearTimeout(flushTimer);
+      scheduleNextFlush();
     };
+
+    window.__setIdleStreamSlotHidden = function (hidden) {
+      isSlotHidden = !!hidden;
+      clearTimeout(flushTimer);
+      const htmlEl = document.documentElement;
+      if (htmlEl) {
+        if (isSlotHidden) {
+          htmlEl.classList.add('idlestream-slot-hidden');
+          // Força coleta de lixo JS para liberar memória quando ocultado
+          if (typeof window.gc === 'function') {
+            try {
+              window.gc();
+            } catch (_) {}
+          }
+        } else {
+          htmlEl.classList.remove('idlestream-slot-hidden');
+          // Força flush imediato ao reaparecer
+          flushCallbacks();
+        }
+      }
+      scheduleNextFlush();
+      console.log('[IdleStream] Slot hidden state alterado:', { isSlotHidden });
+    };
+
+    try {
+      const hiddenCss = document.createElement('style');
+      hiddenCss.textContent = `
+        .idlestream-slot-hidden * {
+          animation-play-state: paused !important;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(hiddenCss);
+    } catch (_) {}
 
     window.__setIdleStreamEcoMode = function (enabled, customFps) {
       isEcoMode = !!enabled;

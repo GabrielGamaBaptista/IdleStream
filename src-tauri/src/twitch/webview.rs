@@ -1,5 +1,9 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+
+static ACTIVE_HEADLESS_CLAIMS: AtomicUsize = AtomicUsize::new(0);
+const MAX_CONCURRENT_HEADLESS_CLAIMS: usize = 1;
 
 #[derive(Debug, Clone)]
 pub struct TwitchCredentials {
@@ -251,6 +255,11 @@ impl TwitchWebManager {
                 return;
             }
 
+            // Limite global de janelas headless de claim ativas simultaneamente
+            if ACTIVE_HEADLESS_CLAIMS.load(Ordering::Relaxed) >= MAX_CONCURRENT_HEADLESS_CLAIMS {
+                return;
+            }
+
             let target_url = format!("https://www.twitch.tv/popout/{}/chat?popout=", clean_slug);
             let Ok(url_parsed) = target_url.parse::<url::Url>() else {
                 return;
@@ -291,6 +300,7 @@ impl TwitchWebManager {
                 builder
             };
 
+            ACTIVE_HEADLESS_CLAIMS.fetch_add(1, Ordering::Relaxed);
             if let Ok(win) = builder.build() {
                 println!("[Twitch] Disparado auto-claim headless para conta {} em {}", account_id, clean_slug);
                 let win_clone = win.clone();
@@ -298,7 +308,10 @@ impl TwitchWebManager {
                     // Mantém a janela oculta ativa por 25 segundos para completar Kasada e clique do baú
                     tokio::time::sleep(tokio::time::Duration::from_secs(25)).await;
                     let _ = win_clone.close();
+                    ACTIVE_HEADLESS_CLAIMS.fetch_sub(1, Ordering::Relaxed);
                 });
+            } else {
+                ACTIVE_HEADLESS_CLAIMS.fetch_sub(1, Ordering::Relaxed);
             }
         }
 

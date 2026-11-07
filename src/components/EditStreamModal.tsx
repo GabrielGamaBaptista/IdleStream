@@ -15,7 +15,9 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { config, statuses, updateStream } = useAppStore();
+  const config = useAppStore((state) => state.config);
+  const updateStream = useAppStore((state) => state.updateStream);
+  const status = useAppStore((state) => (stream ? state.statuses[stream.id] : undefined));
 
   const [channelSlug, setChannelSlug] = useState('');
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -39,7 +41,6 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
 
   const platformAccounts = config.accounts.filter((a) => a.platform === stream.platform);
   const isKick = stream.platform === 'kick';
-  const status = statuses[stream.id];
 
   const toggleAccount = (accId: string) => {
     setSelectedAccountIds((prev) => {

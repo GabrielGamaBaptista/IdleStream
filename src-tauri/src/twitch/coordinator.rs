@@ -16,6 +16,7 @@ pub struct StreamerSlotNotification {
 struct AccountState {
     streamers: Vec<TwitchStreamerStats>,
     listeners: HashMap<String, mpsc::UnboundedSender<StreamerSlotNotification>>,
+    last_sent: HashMap<String, (MiningSlotState, usize)>,
 }
 
 /// Calcula a ordem de prioridade (do 1º ao último) com base na média de tempo online
@@ -96,14 +97,16 @@ impl AccountPriorityCoordinator {
     ) {
         let mut map = self.inner.lock().await;
         let acc_state = map.entry(account_id.to_string()).or_default();
+        let clean = channel_slug.to_lowercase();
         acc_state
             .listeners
-            .insert(channel_slug.to_lowercase(), sender);
+            .insert(clean.clone(), sender);
+        acc_state.last_sent.remove(&clean);
     }
 
     /// Atualiza ou insere o status de um streamer para determinada conta e retorna:
     /// (Estado do slot: ActiveMining/StandbyVigil/Offline, Rank atual do streamer)
-    /// Notifica imediatamente todos os listeners da conta caso haja alteração de rank ou vaga
+    /// Notifica imediatamente os listeners da conta caso haja alteração de rank ou vaga
     pub async fn update_streamer_status(
         &self,
         account_id: &str,
@@ -144,17 +147,25 @@ impl AccountPriorityCoordinator {
         // Reconcilia quem fica com vaga ativa (Top 2 online)
         let slot_states = reconcile_account_slots(list);
 
-        // Notifica reativamente todos os watchers da conta
+        // Notifica reativamente apenas peers cujo estado ou rank mudou
         for streamer in list.iter() {
-            if let Some(tx) = acc_state.listeners.get(&streamer.channel_slug) {
-                let state = slot_states
-                    .get(&streamer.channel_slug)
-                    .copied()
-                    .unwrap_or(MiningSlotState::Offline);
-                let _ = tx.send(StreamerSlotNotification {
-                    slot_state: state,
-                    priority_rank: streamer.priority_rank,
-                });
+            let state = slot_states
+                .get(&streamer.channel_slug)
+                .copied()
+                .unwrap_or(MiningSlotState::Offline);
+            let now = (state, streamer.priority_rank);
+            let changed = acc_state.last_sent.get(&streamer.channel_slug) != Some(&now);
+            acc_state.last_sent.insert(streamer.channel_slug.clone(), now);
+
+            // Não notifica o próprio chamador (ele recebe o retorno direto)
+            // e só notifica outros watchers se houver mudança real de estado/rank
+            if changed && streamer.channel_slug != clean_slug {
+                if let Some(tx) = acc_state.listeners.get(&streamer.channel_slug) {
+                    let _ = tx.send(StreamerSlotNotification {
+                        slot_state: state,
+                        priority_rank: streamer.priority_rank,
+                    });
+                }
             }
         }
 
@@ -179,20 +190,27 @@ impl AccountPriorityCoordinator {
             let clean = channel_slug.to_lowercase();
             acc_state.streamers.retain(|s| s.channel_slug != clean);
             acc_state.listeners.remove(&clean);
+            acc_state.last_sent.remove(&clean);
             compute_priority_ranks(&mut acc_state.streamers);
             let slot_states = reconcile_account_slots(&acc_state.streamers);
 
-            // Notifica os streamers restantes (ex: o 3º que subiu para 2º ganha a vaga no mesmo milissegundo)
+            // Notifica os streamers restantes apenas se o estado/rank mudou
             for streamer in acc_state.streamers.iter() {
-                if let Some(tx) = acc_state.listeners.get(&streamer.channel_slug) {
-                    let state = slot_states
-                        .get(&streamer.channel_slug)
-                        .copied()
-                        .unwrap_or(MiningSlotState::Offline);
-                    let _ = tx.send(StreamerSlotNotification {
-                        slot_state: state,
-                        priority_rank: streamer.priority_rank,
-                    });
+                let state = slot_states
+                    .get(&streamer.channel_slug)
+                    .copied()
+                    .unwrap_or(MiningSlotState::Offline);
+                let now = (state, streamer.priority_rank);
+                let changed = acc_state.last_sent.get(&streamer.channel_slug) != Some(&now);
+                acc_state.last_sent.insert(streamer.channel_slug.clone(), now);
+
+                if changed {
+                    if let Some(tx) = acc_state.listeners.get(&streamer.channel_slug) {
+                        let _ = tx.send(StreamerSlotNotification {
+                            slot_state: state,
+                            priority_rank: streamer.priority_rank,
+                        });
+                    }
                 }
             }
         }
