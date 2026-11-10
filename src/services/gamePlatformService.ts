@@ -140,6 +140,13 @@ export const gamePlatformService = {
   async getSystemIdleSeconds(): Promise<number> {
     const bridge = getAndroidBridge();
     if (bridge) {
+      try {
+        if (typeof (bridge as any).getUserIdleSeconds === 'function') {
+          return Number((bridge as any).getUserIdleSeconds()) || 0;
+        }
+      } catch {
+        return 0;
+      }
       return 0;
     }
     try {

@@ -20,6 +20,26 @@ class MainActivity : TauriActivity() {
     private var mainWebView: WebView? = null
     val gameSlotManager by lazy { GameSlotManager(this) }
 
+    @Volatile
+    var lastUserInteractionTime = System.currentTimeMillis()
+    private var lastActivityJsDispatchTime = 0L
+
+    fun recordUserActivity() {
+        lastUserInteractionTime = System.currentTimeMillis()
+        val now = lastUserInteractionTime
+        if (now - lastActivityJsDispatchTime > 1000) {
+            lastActivityJsDispatchTime = now
+            runOnUiThread {
+                mainWebView?.evaluateJavascript("if (typeof window.__onUserActivity === 'function') { window.__onUserActivity(); }", null)
+            }
+        }
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        recordUserActivity()
+        return super.dispatchTouchEvent(ev)
+    }
+
     class WebAppInterface(private val activity: MainActivity) {
         @JavascriptInterface
         fun isBatteryOptimizationIgnored(): Boolean {
@@ -220,6 +240,12 @@ class MainActivity : TauriActivity() {
             }
             return arr.toString()
         }
+
+        @JavascriptInterface
+        fun getUserIdleSeconds(): Long {
+            val idleMs = System.currentTimeMillis() - activity.lastUserInteractionTime
+            return if (idleMs < 0) 0 else idleMs / 1000
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -314,6 +340,7 @@ class MainActivity : TauriActivity() {
     override fun onPause() {
         super.onPause()
         try {
+            android.webkit.CookieManager.getInstance().flush()
             // WryActivity.onPause() chama mWebView.onPause().
             // Chamamos onResume() imediatamente para manter o pipeline de JavaScript do Tauri ativo
             // e evitar congelamento dos slots e do frontend em segundo plano.
@@ -326,6 +353,7 @@ class MainActivity : TauriActivity() {
     override fun onStop() {
         super.onStop()
         try {
+            android.webkit.CookieManager.getInstance().flush()
             mainWebView?.onResume()
             mainWebView?.resumeTimers()
             gameSlotManager.resumeAllTimers()

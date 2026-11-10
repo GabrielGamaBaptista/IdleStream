@@ -17,6 +17,7 @@ pub struct AppState {
     pub twitch_watchers: Mutex<HashMap<String, crate::twitch::watcher::TwitchWatcherHandle>>,
     pub twitch_coordinator: crate::twitch::coordinator::AccountPriorityCoordinator,
     pub kick_watchers: Mutex<HashMap<String, crate::kick::watcher::KickWatcherHandle>>,
+    pub kick_coordinator: crate::kick::coordinator::KickPriorityCoordinator,
     pub statuses: Mutex<HashMap<String, StreamRuntimeStatus>>,
     pub http_client: reqwest::Client,
     pub app_handle: AppHandle,
@@ -57,6 +58,7 @@ impl AppState {
             twitch_watchers: Mutex::new(HashMap::new()),
             twitch_coordinator: crate::twitch::coordinator::AccountPriorityCoordinator::new(),
             kick_watchers: Mutex::new(HashMap::new()),
+            kick_coordinator: crate::kick::coordinator::KickPriorityCoordinator::new(),
             statuses: Mutex::new(statuses),
             http_client,
             app_handle,
@@ -640,6 +642,7 @@ impl AppState {
                         account.id.clone(),
                         session_token,
                         channel_slug.to_string(),
+                        self.kick_coordinator.clone(),
                         on_status,
                     );
 
@@ -693,6 +696,22 @@ impl AppState {
             for k in keys {
                 if let Some(mut watcher) = watchers.remove(&k) {
                     watcher.stop();
+                }
+            }
+        }
+
+        // Garante remoção imediata dos streamers dos coordenadores de prioridade
+        let stream_info = {
+            let cfg = self.config.lock().await;
+            cfg.streams.iter().find(|s| s.id == stream_id).cloned()
+        };
+        if let Some(stream) = stream_info {
+            let clean_slug = stream.channel_slug.trim().trim_start_matches('/').to_lowercase();
+            for acc_id in &stream.account_ids {
+                if stream.platform == Platform::Kick {
+                    self.kick_coordinator.remove_streamer(acc_id, &clean_slug).await;
+                } else if stream.platform == Platform::Twitch {
+                    self.twitch_coordinator.remove_streamer(acc_id, &clean_slug).await;
                 }
             }
         }

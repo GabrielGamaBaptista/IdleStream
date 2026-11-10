@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 use crate::config::StatusKind;
+use crate::kick::models::MiningSlotState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KickChannelInfo {
@@ -62,6 +63,60 @@ pub async fn fetch_channel_info(channel_slug: &str) -> Result<KickChannelInfo, S
         livestream_id,
         is_live,
     })
+}
+
+/// Extrai a média de horas de duração a partir do JSON de vídeos/VODs da Kick
+pub fn parse_kick_uptime_from_videos_json(json: &serde_json::Value) -> Option<f64> {
+    let arr = json.as_array()?;
+    if arr.is_empty() {
+        return None;
+    }
+
+    let mut total_hours = 0.0;
+    let mut count = 0;
+
+    for item in arr.iter().take(10) {
+        let is_live = item["is_live"].as_bool().unwrap_or(false);
+        if is_live {
+            continue;
+        }
+
+        if let Some(dur_ms) = item["duration"].as_u64() {
+            if dur_ms > 0 {
+                let hours = (dur_ms as f64) / 3_600_000.0;
+                total_hours += hours;
+                count += 1;
+            }
+        }
+    }
+
+    if count == 0 {
+        return None;
+    }
+
+    let avg = total_hours / (count as f64);
+    Some((avg * 10.0).round() / 10.0)
+}
+
+/// Consulta o histórico recente de VODs da Kick e calcula a média de tempo online em horas
+pub async fn fetch_kick_streamer_uptime_avg(channel_slug: &str) -> Result<f64, String> {
+    let clean_slug = channel_slug.trim().trim_start_matches('/').to_lowercase();
+    let url = format!("https://kick.com/api/v2/channels/{}/videos", clean_slug);
+
+    let headers = [
+        ("User-Agent", BROWSER_USER_AGENT),
+        ("Accept", "application/json"),
+        ("Referer", "https://kick.com/"),
+        ("Origin", "https://kick.com"),
+    ];
+
+    let (status, body) = crate::kick::http::kick_http_request("GET", &url, Some(&headers), None, 10).await?;
+    if !(200..=299).contains(&status) {
+        return Ok(4.0); // Fallback padrão de 4 horas
+    }
+
+    let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("JSON inválido: {}", e))?;
+    Ok(parse_kick_uptime_from_videos_json(&json).unwrap_or(4.0))
 }
 
 /// Obtém o viewer WebSocket token para contabilizar watch time e farmar pontos
@@ -168,28 +223,79 @@ impl KickWatcherHandle {
 
 pub type StatusCallback = Arc<dyn Fn(StatusKind, Option<String>, Option<i64>) + Send + Sync + 'static>;
 
-/// Inicia o watcher nativo ultraleve de transmissão Kick via viewer WebSocket
+fn apply_kick_status(
+    on_status: &StatusCallback,
+    state: MiningSlotState,
+    rank: usize,
+    avg_hours: f64,
+    current_points: Option<i64>,
+) {
+    match state {
+        MiningSlotState::Offline => {
+            on_status(
+                StatusKind::Standby,
+                Some(format!("Streamer offline no Kick (Rank #{} • Média: {:.1}h)", rank, avg_hours)),
+                current_points,
+            );
+        }
+        MiningSlotState::StandbyVigil => {
+            on_status(
+                StatusKind::Standby,
+                Some(format!("Em fila de vigília Kick (Rank #{} • Média: {:.1}h)", rank, avg_hours)),
+                current_points,
+            );
+        }
+        MiningSlotState::ActiveMining => {
+            on_status(
+                StatusKind::Connected,
+                Some(format!("Minerando pontos no Kick (Prioridade #{} • Média: {:.1}h)", rank, avg_hours)),
+                current_points,
+            );
+        }
+    }
+}
+
+/// Inicia o watcher nativo de transmissão Kick integrado ao Coordenador de Prioridade Multi-Stream
 pub fn start_kick_watcher(
     _stream_id: String,
-    _account_id: String,
+    account_id: String,
     session_token: String,
     channel_slug: String,
+    coordinator: crate::kick::coordinator::KickPriorityCoordinator,
     on_status: StatusCallback,
 ) -> KickWatcherHandle {
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
     tokio::spawn(async move {
+        let clean_slug = channel_slug.trim().trim_start_matches('/').to_lowercase();
+        let (notify_tx, mut notify_rx) = mpsc::unbounded_channel::<crate::kick::models::KickSlotNotification>();
+        coordinator.register_listener(&account_id, &clean_slug, notify_tx).await;
+
+        let mut avg_hours = fetch_kick_streamer_uptime_avg(&clean_slug).await.unwrap_or(4.0);
+        let mut last_vod_check = std::time::Instant::now();
+        let mut current_points: Option<i64> = None;
         let mut retry_delay_secs = 5u64;
+
+        let mut slot_state;
+        let mut rank;
 
         loop {
             // Verifica sinal de parada
             if stop_rx.try_recv().is_ok() {
+                coordinator.remove_streamer(&account_id, &clean_slug).await;
                 break;
             }
 
+            // A cada 6 horas, atualiza a média histórica de VODs
+            if last_vod_check.elapsed() > std::time::Duration::from_secs(6 * 3600) {
+                if let Ok(new_avg) = fetch_kick_streamer_uptime_avg(&clean_slug).await {
+                    avg_hours = new_avg;
+                }
+                last_vod_check = std::time::Instant::now();
+            }
+
             // 1. Obtém dados do canal
-            let slug = channel_slug.clone();
-            let ch_info = match fetch_channel_info(&slug).await {
+            let ch_info = match fetch_channel_info(&clean_slug).await {
                 Ok(info) => info,
                 Err(e) => {
                     let is_429 = e.contains("429") || e.contains("Rate limit");
@@ -205,204 +311,271 @@ pub fn start_kick_watcher(
                     } else {
                         format!("Erro Kick: {}", e)
                     };
-                    on_status(StatusKind::Error, Some(user_msg), None);
+                    on_status(StatusKind::Error, Some(user_msg), current_points);
                     tokio::select! {
-                        _ = stop_rx.recv() => break,
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(backoff)) => {
-                            continue;
-                        }
-                    }
-                }
-            };
-
-            // Se o canal estiver offline, notifica e aguarda
-            if !ch_info.is_live || ch_info.livestream_id.is_none() {
-                on_status(StatusKind::Standby, Some("Streamer offline no Kick (vigília ativa - 300s)".into()), None);
-                tokio::select! {
-                    _ = stop_rx.recv() => break,
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(300)) => continue,
-                }
-            }
-
-            let livestream_id = match ch_info.livestream_id {
-                Some(id) => id,
-                None => {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    continue;
-                }
-            };
-            let channel_id = ch_info.channel_id;
-            let user_id = ch_info.user_id;
-
-            // 2. Consulta pontos iniciais
-            let token_clone = session_token.clone();
-            let slug_clone = channel_slug.clone();
-            let initial_points = fetch_channel_points(&token_clone, &slug_clone).await.ok();
-
-            // 3. Obtém o viewer WS token
-            let token_clone = session_token.clone();
-            let slug_clone = channel_slug.clone();
-            let ws_token = match fetch_viewer_ws_token(&token_clone, &slug_clone, channel_id, user_id).await {
-                Ok(t) => t,
-                Err(e) => {
-                    let is_429 = e.contains("429") || e.contains("Rate limit");
-                    let backoff = if is_429 {
-                        retry_delay_secs = (retry_delay_secs.max(30) * 2).min(180);
-                        retry_delay_secs
-                    } else {
-                        retry_delay_secs = (retry_delay_secs * 2).min(60);
-                        retry_delay_secs
-                    };
-                    let user_msg = if is_429 {
-                        format!("Rate limit Kick (429): aguardando {}s para reobter token...", backoff)
-                    } else {
-                        format!("Erro WS Token: {}", e)
-                    };
-                    on_status(StatusKind::Error, Some(user_msg), initial_points);
-                    tokio::select! {
-                        _ = stop_rx.recv() => break,
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(backoff)) => {
-                            continue;
-                        }
-                    }
-                }
-            };
-
-            // 4. Conecta ao WebSocket do viewer
-            let ws_url = format!("wss://websockets.kick.com/viewer/v1/connect?token={}", ws_token);
-            let ws_req = match ws_url.as_str().into_client_request() {
-                Ok(mut req) => {
-                    if let Ok(origin) = "https://kick.com".parse() {
-                        req.headers_mut().insert("Origin", origin);
-                    }
-                    if let Ok(ua) = BROWSER_USER_AGENT.parse() {
-                        req.headers_mut().insert("User-Agent", ua);
-                    }
-                    req
-                }
-                Err(_) => match ws_url.as_str().into_client_request() {
-                    Ok(r) => r,
-                    Err(e) => {
-                        on_status(StatusKind::Error, Some(format!("URL de WS Kick inválida: {}", e)), initial_points);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
-                        continue;
-                    }
-                },
-            };
-
-            let ws_stream = match tokio_tungstenite::connect_async(ws_req).await {
-                Ok((ws, _)) => ws,
-                Err(e) => {
-                    on_status(StatusKind::Error, Some(format!("Falha ao conectar WS Kick: {}", e)), initial_points);
-                    tokio::select! {
-                        _ = stop_rx.recv() => break,
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)) => {
-                            retry_delay_secs = (retry_delay_secs * 2).min(60);
-                            continue;
-                        }
-                    }
-                }
-            };
-
-            // Conectado com sucesso! Reseta backoff
-            retry_delay_secs = 5;
-            on_status(StatusKind::Connected, None, initial_points);
-
-            let (mut ws_write, mut ws_read) = ws_stream.split();
-
-            // Envia handshake e ping inicial
-            let handshake_payload = serde_json::json!({
-                "type": "channel_handshake",
-                "data": {
-                    "message": {
-                        "channelId": channel_id
-                    }
-                }
-            }).to_string();
-
-            if ws_write.send(Message::Text(handshake_payload.into())).await.is_err() {
-                continue;
-            }
-            let _ = ws_write.send(Message::Text(serde_json::json!({"type": "ping"}).to_string().into())).await;
-
-            // Loops periódicos
-            let mut tracking_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
-            let mut handshake_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-            let mut points_interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
-
-            // Descarta o primeiro tick imediato dos intervalos
-            tracking_interval.tick().await;
-            handshake_interval.tick().await;
-            points_interval.tick().await;
-
-            let mut current_points = initial_points;
-
-            loop {
-                tokio::select! {
-                    _ = stop_rx.recv() => {
-                        let _ = ws_write.close().await;
-                        return;
-                    }
-                    _ = tracking_interval.tick() => {
-                        let user_event = serde_json::json!({
-                            "type": "user_event",
-                            "data": {
-                                "message": {
-                                    "name": "tracking.user.watch.livestream",
-                                    "channel_id": channel_id,
-                                    "livestream_id": livestream_id
-                                }
-                            }
-                        }).to_string();
-
-                        if ws_write.send(Message::Text(user_event.into())).await.is_err() {
-                            break; // Conexão caiu, reconecta
-                        }
-                    }
-                    _ = handshake_interval.tick() => {
-                        let hs = serde_json::json!({
-                            "type": "channel_handshake",
-                            "data": {
-                                "message": {
-                                    "channelId": channel_id
-                                }
-                            }
-                        }).to_string();
-
-                        if ws_write.send(Message::Text(hs.into())).await.is_err() {
+                        _ = stop_rx.recv() => {
+                            coordinator.remove_streamer(&account_id, &clean_slug).await;
                             break;
                         }
-                        let _ = ws_write.send(Message::Text(serde_json::json!({"type": "ping"}).to_string().into())).await;
-                    }
-                    _ = points_interval.tick() => {
-                        let token_c = session_token.clone();
-                        let slug_c = channel_slug.clone();
-                        if let Ok(new_pts) = fetch_channel_points(&token_c, &slug_c).await {
-                            current_points = Some(new_pts);
-                            on_status(StatusKind::Connected, None, current_points);
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(backoff)) => {
+                            continue;
                         }
                     }
-                    msg_res = ws_read.next() => {
-                        match msg_res {
-                            Some(Ok(Message::Text(text))) => {
-                                if text.trim() == "ping" || text.contains("\"type\":\"ping\"") {
-                                    let _ = ws_write.send(Message::Text(serde_json::json!({"type": "pong"}).to_string().into())).await;
+                }
+            };
+
+            // Consulta pontos atuais se tivermos token
+            if let Ok(pts) = fetch_channel_points(&session_token, &clean_slug).await {
+                current_points = Some(pts);
+            }
+
+            let is_online = ch_info.is_live && ch_info.livestream_id.is_some();
+            let channel_id = ch_info.channel_id;
+            let user_id = ch_info.user_id;
+            let livestream_id = ch_info.livestream_id.unwrap_or(0);
+
+            // 2. Atualiza coordenador de prioridade (Ranqueia pelo tempo online da maior para menor)
+            let (new_slot_state, new_rank) = coordinator
+                .update_streamer_status(
+                    &account_id,
+                    &clean_slug,
+                    Some(channel_id.to_string()),
+                    avg_hours,
+                    is_online,
+                    current_points,
+                )
+                .await;
+
+            slot_state = new_slot_state;
+            rank = new_rank;
+
+            // 3. Executa de acordo com o estado do slot
+            match slot_state {
+                MiningSlotState::Offline => {
+                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+
+                    let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(120));
+                    tokio::pin!(sleep);
+                    loop {
+                        tokio::select! {
+                            _ = stop_rx.recv() => {
+                                coordinator.remove_streamer(&account_id, &clean_slug).await;
+                                return;
+                            }
+                            Some(notif) = notify_rx.recv() => {
+                                let mut latest = notif;
+                                while let Ok(n) = notify_rx.try_recv() {
+                                    latest = n;
+                                }
+                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                    slot_state = latest.slot_state;
+                                    rank = latest.priority_rank;
+                                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                    break;
                                 }
                             }
-                            Some(Ok(Message::Close(_))) | None => {
-                                break; // Servidor fechou a conexão
-                            }
-                            Some(Err(_)) => {
+                            _ = &mut sleep => {
                                 break;
                             }
-                            _ => {}
+                        }
+                    }
+                }
+                MiningSlotState::StandbyVigil => {
+                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+
+                    // Em StandbyVigil, aguarda vaga no Top 1 online sem abrir viewer WebSocket (0 MB extra)
+                    let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(30));
+                    tokio::pin!(sleep);
+                    loop {
+                        tokio::select! {
+                            _ = stop_rx.recv() => {
+                                coordinator.remove_streamer(&account_id, &clean_slug).await;
+                                return;
+                            }
+                            Some(notif) = notify_rx.recv() => {
+                                let mut latest = notif;
+                                while let Ok(n) = notify_rx.try_recv() {
+                                    latest = n;
+                                }
+                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                    slot_state = latest.slot_state;
+                                    rank = latest.priority_rank;
+                                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                    break;
+                                }
+                            }
+                            _ = &mut sleep => {
+                                break;
+                            }
+                        }
+                    }
+                }
+                MiningSlotState::ActiveMining => {
+                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+
+                    // Conecta no Viewer WebSocket para computar pontos
+                    let ws_token = match fetch_viewer_ws_token(&session_token, &clean_slug, channel_id, user_id).await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            let is_429 = e.contains("429") || e.contains("Rate limit");
+                            let backoff = if is_429 {
+                                retry_delay_secs = (retry_delay_secs.max(30) * 2).min(180);
+                                retry_delay_secs
+                            } else {
+                                retry_delay_secs = (retry_delay_secs * 2).min(60);
+                                retry_delay_secs
+                            };
+                            let user_msg = if is_429 {
+                                format!("Rate limit Kick (429): aguardando {}s para reobter token...", backoff)
+                            } else {
+                                format!("Erro WS Token: {}", e)
+                            };
+                            on_status(StatusKind::Error, Some(user_msg), current_points);
+                            tokio::select! {
+                                _ = stop_rx.recv() => {
+                                    coordinator.remove_streamer(&account_id, &clean_slug).await;
+                                    break;
+                                }
+                                _ = tokio::time::sleep(tokio::time::Duration::from_secs(backoff)) => {
+                                    continue;
+                                }
+                            }
+                        }
+                    };
+
+                    let ws_url = format!("wss://websockets.kick.com/viewer/v1/connect?token={}", ws_token);
+                    let ws_req = match ws_url.as_str().into_client_request() {
+                        Ok(mut req) => {
+                            if let Ok(origin) = "https://kick.com".parse() {
+                                req.headers_mut().insert("Origin", origin);
+                            }
+                            if let Ok(ua) = BROWSER_USER_AGENT.parse() {
+                                req.headers_mut().insert("User-Agent", ua);
+                            }
+                            req
+                        }
+                        Err(e) => {
+                            on_status(StatusKind::Error, Some(format!("URL de WS Kick inválida: {}", e)), current_points);
+                            tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
+                            continue;
+                        }
+                    };
+
+                    let ws_stream = match tokio_tungstenite::connect_async(ws_req).await {
+                        Ok((ws, _)) => ws,
+                        Err(e) => {
+                            on_status(StatusKind::Error, Some(format!("Falha ao conectar WS Kick: {}", e)), current_points);
+                            tokio::select! {
+                                _ = stop_rx.recv() => {
+                                    coordinator.remove_streamer(&account_id, &clean_slug).await;
+                                    break;
+                                }
+                                _ = tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)) => {
+                                    retry_delay_secs = (retry_delay_secs * 2).min(60);
+                                    continue;
+                                }
+                            }
+                        }
+                    };
+
+                    retry_delay_secs = 5;
+                    apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+
+                    let (mut ws_write, mut ws_read) = ws_stream.split();
+
+                    let handshake_payload = serde_json::json!({
+                        "type": "channel_handshake",
+                        "data": {
+                            "message": {
+                                "channelId": channel_id
+                            }
+                        }
+                    }).to_string();
+
+                    let _ = ws_write.send(Message::Text(handshake_payload.into())).await;
+                    let _ = ws_write.send(Message::Text(serde_json::json!({"type": "ping"}).to_string().into())).await;
+
+                    let mut tracking_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+                    let mut handshake_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+                    let mut points_interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
+
+                    tracking_interval.tick().await;
+                    handshake_interval.tick().await;
+                    points_interval.tick().await;
+
+                    loop {
+                        tokio::select! {
+                            _ = stop_rx.recv() => {
+                                let _ = ws_write.close().await;
+                                coordinator.remove_streamer(&account_id, &clean_slug).await;
+                                return;
+                            }
+                            Some(notif) = notify_rx.recv() => {
+                                let mut latest = notif;
+                                while let Ok(n) = notify_rx.try_recv() {
+                                    latest = n;
+                                }
+                                if latest.slot_state != MiningSlotState::ActiveMining {
+                                    // Demovido para StandbyVigil ou Offline: fecha WebSocket com elegância
+                                    let _ = ws_write.close().await;
+                                    apply_kick_status(&on_status, latest.slot_state, latest.priority_rank, avg_hours, current_points);
+                                    break;
+                                }
+                            }
+                            _ = tracking_interval.tick() => {
+                                let user_event = serde_json::json!({
+                                    "type": "user_event",
+                                    "data": {
+                                        "message": {
+                                            "name": "tracking.user.watch.livestream",
+                                            "channel_id": channel_id,
+                                            "livestream_id": livestream_id
+                                        }
+                                    }
+                                }).to_string();
+
+                                if ws_write.send(Message::Text(user_event.into())).await.is_err() {
+                                    break;
+                                }
+                            }
+                            _ = handshake_interval.tick() => {
+                                let hs = serde_json::json!({
+                                    "type": "channel_handshake",
+                                    "data": {
+                                        "message": {
+                                            "channelId": channel_id
+                                        }
+                                    }
+                                }).to_string();
+
+                                if ws_write.send(Message::Text(hs.into())).await.is_err() {
+                                    break;
+                                }
+                                let _ = ws_write.send(Message::Text(serde_json::json!({"type": "ping"}).to_string().into())).await;
+                            }
+                            _ = points_interval.tick() => {
+                                if let Ok(new_pts) = fetch_channel_points(&session_token, &clean_slug).await {
+                                    current_points = Some(new_pts);
+                                    apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+                                }
+                            }
+                            msg_res = ws_read.next() => {
+                                match msg_res {
+                                    Some(Ok(Message::Text(text))) => {
+                                        if text.trim() == "ping" || text.contains("\"type\":\"ping\"") {
+                                            let _ = ws_write.send(Message::Text(serde_json::json!({"type": "pong"}).to_string().into())).await;
+                                        }
+                                    }
+                                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => {
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            on_status(StatusKind::Connecting, Some("Reconectando watcher Kick...".into()), current_points);
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         }
     });
 

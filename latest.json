@@ -1,11 +1,11 @@
 {
-  "version": "3.2.7",
-  "notes": "IdleStream v3.2.7 — Fim Definitivo de Travamento DWM/Tela Preta: eliminação de put_IsVisible/wv.hide destruindo árvores DirectComposition no Windows, transição offscreen 1x1 sem quedas de sinal de monitor, fim de conflito de auto-resize e manutenção total da economia de 1 FPS com ~0% de GPU sem desconectar jogos.",
-  "pub_date": "2026-11-07T22:31:00Z",
+  "version": "3.2.8",
+  "notes": "IdleStream v3.2.8 — Coordenador de Prioridade da Kick (limite de 1 vaga ativa por conta, fila reativa MPSC e ranqueamento por horas de live), persistência atômica da sessão do PokeIdle no Android (evita tela de login ao reabrir app) e correção de falso sleep por inatividade durante interação nos jogos.",
+  "pub_date": "2026-11-09T22:30:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9lSEpEUFBQQ0lIeFYxTmRoQU5Qb3RiVlQ5b3JBOUhmZUZFRDhyditTY1V3YU5nYWtjZlRURDA0SFllay93ZXVsVlNjenZ3dHdJSFMrQzFoelVTbEE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDkwNzAxCWZpbGU6SWRsZVN0cmVhbV8zLjIuN194NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjcKS1gwaGdtV1IxR3B5MytuYXY3bGR0ZC80R25QdTJGVVVhazBoN3ZvQmFqN0dDRW5sRy8rMTA4TzlqNkJjLzFkU0VnRVR4a0F4cWxNUll0K2pXZTFiQUE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.7/IdleStream_3.2.7_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vng5cmk4RW55WXIvb20xelpQMVczaTkwZ1FMbWluTnNEVG9BSW9SNTRkUXE5WEdkVE41dmljK01IN0JvZUJvSTFEZG5TcDJ6bml5KzNESFZIRy9yRVFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Mjc0Mzk1CWZpbGU6SWRsZVN0cmVhbV8zLjIuOF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjgKYTROSUJ6TUZSSjhBRkxLNlMwMUpLaGtZendKem4zalkxL0FnaTNBQmUwdkNaUUVyRFFSaGtGZ3dEa0R2Rlkra0FBZk5mUUU1Sll5U21zck1QSHgzQ2c9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.8/IdleStream_3.2.8_x64-setup.exe"
     }
   }
 }

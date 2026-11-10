@@ -72,11 +72,63 @@ class PersistentWebView(context: Context) : WebView(context) {
     }
 
     override fun onPause() {
-        // Intencionalmente vazio: não permite que o ciclo de vida da Activity congele o slot
+        // Intencionalmente não congela o slot, mas assegura o flush atômico de cookies e cache SQLite para o disco
+        try {
+            CookieManager.getInstance().flush()
+        } catch (_: Throwable) {}
     }
 
     override fun pauseTimers() {
         // Intencionalmente vazio: impede o congelamento global de timers
+    }
+}
+
+/**
+ * Bridge Javascript nativa exposta para cada slot de jogo ("IdleStreamSlotBridge").
+ * Responsável pela persistência atômica da sessão do PokeIdle em SharedPreferences,
+ * garantindo sobrevivência do login através de fechamentos completos do app no Android,
+ * e reporte de eventos de toque/interação para o monitor de inatividade (anti-sleep).
+ */
+class GameSlotBridge(private val slotId: String, private val activity: MainActivity) {
+    private val prefs = activity.getSharedPreferences("idlestream_game_sessions", Context.MODE_PRIVATE)
+
+    @JavascriptInterface
+    fun saveSession(sessionJson: String) {
+        if (sessionJson.isBlank() || sessionJson == "null" || sessionJson == "undefined") return
+        try {
+            prefs.edit().putString("slot_${slotId}_sessao", sessionJson).apply()
+            CookieManager.getInstance().flush()
+            activity.recordUserActivity()
+            Log.d("GameSlotBridge", "Sessão salva com sucesso no slot $slotId (${sessionJson.length} bytes)")
+        } catch (e: Throwable) {
+            Log.e("GameSlotBridge", "Erro ao salvar sessão no slot $slotId: ${e.message}")
+        }
+    }
+
+    @JavascriptInterface
+    fun getSavedSession(): String {
+        return try {
+            val s = prefs.getString("slot_${slotId}_sessao", "") ?: ""
+            if (s.isNotBlank() && s != "null") s else ""
+        } catch (e: Throwable) {
+            ""
+        }
+    }
+
+    @JavascriptInterface
+    fun clearSession() {
+        try {
+            prefs.edit().remove("slot_${slotId}_sessao").apply()
+            CookieManager.getInstance().flush()
+            Log.d("GameSlotBridge", "Sessão removida do slot $slotId")
+        } catch (e: Throwable) {
+            Log.e("GameSlotBridge", "Erro ao limpar sessão no slot $slotId: ${e.message}")
+        }
+    }
+
+    @JavascriptInterface
+    fun reportActivity() {
+        activity.recordUserActivity()
     }
 }
 
@@ -235,6 +287,9 @@ class GameSlotManager(private val activity: MainActivity) {
                         .replace("; wv", "")
                         .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
 
+                    // Registra a bridge nativa para persistência atômica da sessão do PokeIdle e monitor de atividade
+                    addJavascriptInterface(GameSlotBridge(slotId, activity), "IdleStreamSlotBridge")
+
                     // Isolamento NATIVO de Cookies e Sessões via Multi-Profile (AndroidX WebKit)
                     val profileName = "slot_$slotId"
                     if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
@@ -371,15 +426,34 @@ class GameSlotManager(private val activity: MainActivity) {
                 const rawClear = proto.clear;
                 const rawKey = proto.key;
 
-                // Higieniza qualquer sessão global antiga para evitar contaminação entre contas
+                // Restaura imediatamente a sessão persistida no SharedPreferences nativo
+                // garantindo que ao fechar e reabrir o app no Android a conta permaneça logada
                 try {
-                    rawRemove.call(window.localStorage, 'sessao');
+                    let savedSession = null;
+                    if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.getSavedSession === 'function') {
+                        savedSession = window.IdleStreamSlotBridge.getSavedSession();
+                    }
+                    if (savedSession && savedSession.length > 2 && savedSession !== 'null') {
+                        rawSet.call(window.localStorage, PREFIX + 'sessao', savedSession);
+                        rawSet.call(window.localStorage, 'sessao', savedSession);
+                    }
                 } catch (_) {}
 
                 proto.getItem = function(k) {
                     if (this === window.localStorage) {
-                        const val = rawGet.call(this, PREFIX + k);
+                        let val = rawGet.call(this, PREFIX + k);
                         if (val !== null && val !== undefined) return val;
+                        if (k === 'sessao') {
+                            try {
+                                if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.getSavedSession === 'function') {
+                                    const saved = window.IdleStreamSlotBridge.getSavedSession();
+                                    if (saved && saved.length > 2 && saved !== 'null') {
+                                        rawSet.call(this, PREFIX + 'sessao', saved);
+                                        return saved;
+                                    }
+                                }
+                            } catch (_) {}
+                        }
                         // APENAS chaves efêmeras anti-CSRF do OAuth têm fallback, NUNCA a sessão do jogo!
                         if (k === 'oauth-ida' || k === 'oauth_state') {
                             return rawGet.call(this, k);
@@ -393,6 +467,13 @@ class GameSlotManager(private val activity: MainActivity) {
                     if (this === window.localStorage) {
                         const strVal = String(v);
                         rawSet.call(this, PREFIX + k, strVal);
+                        if (k === 'sessao') {
+                            try {
+                                if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.saveSession === 'function') {
+                                    window.IdleStreamSlotBridge.saveSession(strVal);
+                                }
+                            } catch (_) {}
+                        }
                         // APENAS chaves efêmeras de ida ao OAuth são espelhadas
                         if (k === 'oauth-ida') {
                             rawSet.call(this, k, strVal);
@@ -405,6 +486,13 @@ class GameSlotManager(private val activity: MainActivity) {
                 proto.removeItem = function(k) {
                     if (this === window.localStorage) {
                         rawRemove.call(this, PREFIX + k);
+                        if (k === 'sessao') {
+                            try {
+                                if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.clearSession === 'function') {
+                                    window.IdleStreamSlotBridge.clearSession();
+                                }
+                            } catch (_) {}
+                        }
                         if (k === 'oauth-ida') {
                             rawRemove.call(this, k);
                         }
@@ -649,6 +737,9 @@ class GameSlotManager(private val activity: MainActivity) {
     fun destroy() {
         stopWatchdog()
         activity.runOnUiThread {
+            try {
+                CookieManager.getInstance().flush()
+            } catch (_: Throwable) {}
             slotWebViews.values.forEach { wv ->
                 wv.stopLoading()
                 wv.destroy()

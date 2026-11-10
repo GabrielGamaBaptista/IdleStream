@@ -483,6 +483,24 @@
       }
     };
 
+    // ============================================================
+    // 10. REPORTE DE ATIVIDADE DO USUÁRIO PARA ANTI-SLEEP / INATIVIDADE
+    // ============================================================
+    const reportUserActivity = () => {
+      try {
+        if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.reportActivity === 'function') {
+          window.IdleStreamSlotBridge.reportActivity();
+        }
+        if (typeof window.__onUserActivity === 'function') {
+          window.__onUserActivity();
+        }
+      } catch (_) {}
+    };
+
+    ['mousedown', 'touchstart', 'keydown', 'wheel', 'pointerdown'].forEach((evtName) => {
+      window.addEventListener(evtName, reportUserActivity, { passive: true, capture: true });
+    });
+
     console.log('[IdleStream] Hi-Performance & Anti-Sleep engine ativo.');
   } catch (e) {
     console.error('[IdleStream] Falha ao injetar anti-sleep:', e);

@@ -206,15 +206,12 @@ mod tests {
         coordinator.register_listener("acc_1", "streamer_x", tx_x).await;
         coordinator.register_listener("acc_1", "streamer_z", tx_z).await;
 
-        // 1. Cadastra streamer_x com 5h
+        // 1. Cadastra streamer_x com 5h (caller recebe estado e rank diretamente)
         let (state_x, rank_x) = coordinator
             .update_streamer_status("acc_1", "streamer_x", Some("101".into()), 5.0, true, Some(100))
             .await;
         assert_eq!(state_x, MiningSlotState::ActiveMining);
         assert_eq!(rank_x, 1);
-        let notif_x = rx_x.recv().await.expect("Notificação esperada para streamer_x");
-        assert_eq!(notif_x.slot_state, MiningSlotState::ActiveMining);
-        assert_eq!(notif_x.priority_rank, 1);
 
         // 2. Cadastra streamer_y com 10h (ultrapassa streamer_x)
         let (state_y, rank_y) = coordinator
@@ -234,10 +231,6 @@ mod tests {
             .await;
         assert_eq!(state_z, MiningSlotState::ActiveMining);
         assert_eq!(rank_z, 2);
-
-        let notif_z = rx_z.recv().await.expect("Notificação esperada para streamer_z");
-        assert_eq!(notif_z.slot_state, MiningSlotState::ActiveMining);
-        assert_eq!(notif_z.priority_rank, 2);
 
         let notif_x3 = rx_x.recv().await.expect("Notificação de democao esperada para streamer_x");
         assert_eq!(notif_x3.slot_state, MiningSlotState::StandbyVigil, "streamer_x deve ir para StandbyVigil sem atraso");

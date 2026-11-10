@@ -68,7 +68,7 @@ export const GameWorkspace: React.FC = () => {
     }
   }, [isIdleDimmed]);
 
-  // Escutar eventos de atividade do usuário na janela
+  // Escutar eventos de atividade do usuário na janela e nas WebViews filhas (via bridge e window.__onUserActivity)
   useEffect(() => {
     const handleUserActivity = () => {
       lastActivityTimeRef.current = Date.now();
@@ -77,6 +77,8 @@ export const GameWorkspace: React.FC = () => {
       }
     };
 
+    (window as any).__onUserActivity = handleUserActivity;
+
     window.addEventListener('mousemove', handleUserActivity, { passive: true });
     window.addEventListener('mousedown', handleUserActivity, { passive: true });
     window.addEventListener('keydown', handleUserActivity, { passive: true });
@@ -84,6 +86,7 @@ export const GameWorkspace: React.FC = () => {
     window.addEventListener('wheel', handleUserActivity, { passive: true });
 
     return () => {
+      delete (window as any).__onUserActivity;
       window.removeEventListener('mousemove', handleUserActivity);
       window.removeEventListener('mousedown', handleUserActivity);
       window.removeEventListener('keydown', handleUserActivity);
@@ -108,8 +111,9 @@ export const GameWorkspace: React.FC = () => {
         systemIdleSec = await gamePlatformService.getSystemIdleSeconds();
       } catch (_) {}
 
-      // Consideramos inatividade se o app não foi interagido ou se o SO geral está ocioso
-      const currentIdleSec = Math.max(appIdleSec, systemIdleSec);
+      // Consideramos inatividade REAL apenas quando AMBOS o app e o sistema estiverem ociosos (mínimo entre ambos)
+      // Isso impede falso sleep se o usuário estiver clicando nos jogos dentro dos WebViews filhos ou no sistema
+      const currentIdleSec = Math.min(appIdleSec, systemIdleSec);
       setIdleDurationSec(currentIdleSec);
 
       if (currentIdleSec >= thresholdSeconds) {
