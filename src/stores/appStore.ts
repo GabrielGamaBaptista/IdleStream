@@ -2,9 +2,49 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Update } from '@tauri-apps/plugin-updater';
-import { Account, AppConfig, AppSettings, GameSlotConfig, Platform, StreamConfig, StreamRuntimeStatus } from '../types';
+import {
+  Account,
+  AppConfig,
+  AppSettings,
+  GameSlotConfig,
+  Platform,
+  StreamConfig,
+  StreamRuntimeStatus,
+  VoteAccountConfig,
+  VoteReadyNotificationPayload,
+} from '../types';
 import { checkForAppUpdates, installAppUpdate, UnifiedUpdateResult } from '../services/updaterService';
 import { gamePlatformService } from '../services/gamePlatformService';
+import { votePlatformService } from '../services/votePlatformService';
+
+function playGentleVoteChime() {
+  try {
+    if (typeof window === 'undefined') return;
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const notes = [659.25, 880]; // E5 -> A5
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+      gain.gain.setValueAtTime(0.001, now + idx * 0.14);
+      gain.gain.exponentialRampToValueAtTime(0.06, now + idx * 0.14 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.14 + 0.42);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.14);
+      osc.stop(now + idx * 0.14 + 0.45);
+    });
+    setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 1200);
+  } catch (_) {}
+}
+
+type NavigationTab = 'streams' | 'games' | 'votes' | 'accounts' | 'settings';
 
 interface AppState {
   appVersion: string;
@@ -18,20 +58,24 @@ interface AppState {
 
   config: AppConfig;
   statuses: Record<string, StreamRuntimeStatus>;
-  activeTab: 'streams' | 'games' | 'accounts' | 'settings';
+  activeTab: NavigationTab;
   platformFilter: 'all' | Platform;
   isAddStreamOpen: boolean;
   isAddAccountOpen: boolean;
   isInitialized: boolean;
   visibleKickWindows: Record<string, boolean>;
   isImmersiveMode: boolean;
+  voteAlerts: VoteReadyNotificationPayload[];
+  pendingVoteOpenAccountId: string | null;
 
-  setActiveTab: (tab: 'streams' | 'games' | 'accounts' | 'settings') => void;
+  setActiveTab: (tab: NavigationTab) => void;
   setPlatformFilter: (filter: 'all' | Platform) => void;
   setAddStreamOpen: (open: boolean) => void;
   setAddAccountOpen: (open: boolean) => void;
   toggleImmersiveMode: () => void;
   setImmersiveMode: (val: boolean) => void;
+  dismissVoteAlert: (accountId: string, lastVotedAt?: number) => void;
+  clearPendingVoteOpenAccountId: () => void;
 
   init: () => Promise<void>;
   fetchAppVersion: () => Promise<void>;
@@ -60,10 +104,14 @@ interface AppState {
 
   updateSettings: (settings: AppSettings) => Promise<void>;
   updateGameSlot: (slot: GameSlotConfig) => Promise<void>;
+  updateVoteAccount: (account: VoteAccountConfig) => Promise<void>;
+  markVoteCompleted: (accountId: string, votedAt?: number) => Promise<void>;
+  resetVoteTimer: (accountId: string) => Promise<void>;
+  testVoteNotification: (accountId?: string) => Promise<VoteReadyNotificationPayload | null>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '3.2.8',
+  appVersion: '4.0.0',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -94,6 +142,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   isInitialized: false,
   visibleKickWindows: {},
   isImmersiveMode: false,
+  voteAlerts: [],
+  pendingVoteOpenAccountId: null,
 
   setActiveTab: (tab) => {
     if (tab !== 'games') {
@@ -101,8 +151,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Se mudar de aba enquanto estiver em modo imersivo, restaurar menus normais
       set({ isImmersiveMode: false });
     }
+    if (tab !== 'votes') {
+      // Destrói imediatamente qualquer WebView de votação ao sair da aba Votos (0 MB RAM)
+      votePlatformService.closeVoteWebView().catch(() => {});
+    }
     set({ activeTab: tab });
   },
+  dismissVoteAlert: (accountId, lastVotedAt) =>
+    set((state) => ({
+      voteAlerts: state.voteAlerts.filter(
+        (a) => !(a.account_id === accountId && (lastVotedAt === undefined || a.last_voted_at === lastVotedAt))
+      ),
+    })),
+  clearPendingVoteOpenAccountId: () => set({ pendingVoteOpenAccountId: null }),
   setPlatformFilter: (filter) => set({ platformFilter: filter }),
   setAddStreamOpen: (open) => set({ isAddStreamOpen: open }),
   setAddAccountOpen: (open) => set({ isAddAccountOpen: open }),
@@ -273,7 +334,51 @@ export const useAppStore = create<AppState>((set, get) => ({
             updateStatusMessage: null,
           });
         });
+
+        window.addEventListener('idlestream-open-tab', (e: any) => {
+          const tab = e.detail?.tab as NavigationTab | undefined;
+          const accId = (e.detail?.accountId as string | undefined) || null;
+          if (tab) {
+            get().setActiveTab(tab);
+            if (tab === 'votes' && accId) {
+              set({ pendingVoteOpenAccountId: accId });
+            }
+          }
+        });
+
+        if (typeof window.AndroidBridge?.consumePendingOpenTab === 'function') {
+          try {
+            const rawPending = window.AndroidBridge.consumePendingOpenTab();
+            if (rawPending) {
+              const parsed = JSON.parse(rawPending) as { tab?: NavigationTab; accountId?: string };
+              if (parsed.tab) {
+                get().setActiveTab(parsed.tab);
+                if (parsed.tab === 'votes' && parsed.accountId) {
+                  set({ pendingVoteOpenAccountId: parsed.accountId });
+                }
+              }
+            }
+          } catch (_) {}
+        }
       }
+
+      // Notificações de votos prontos (ciclo de 24h 01m concluído ou teste manual)
+      await listen<VoteReadyNotificationPayload>('vote-ready-notification', (event) => {
+        const alertPayload = event.payload;
+        playGentleVoteChime();
+        set((state) => {
+          const exists = state.voteAlerts.some(
+            (a) =>
+              a.account_id === alertPayload.account_id &&
+              a.last_voted_at === alertPayload.last_voted_at &&
+              a.is_test === alertPayload.is_test
+          );
+          if (exists) return state;
+          return {
+            voteAlerts: [alertPayload, ...state.voteAlerts].slice(0, 6),
+          };
+        });
+      });
 
       // Listen to backend stream status changes (event-driven, 0% CPU polling)
       await listen<StreamRuntimeStatus>('stream-status-update', (event) => {
@@ -308,6 +413,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const config = await invoke<AppConfig>('get_config');
       set({ config });
+      votePlatformService.syncAndroidAlarms(config.vote_accounts);
     } catch (err) {
       console.error('get_config failed:', err);
     }
@@ -442,6 +548,42 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ config: updated });
     } catch (e) {
       console.error('Falha ao atualizar slot de jogo:', e);
+    }
+  },
+
+  updateVoteAccount: async (account) => {
+    const updated = await invoke<AppConfig>('vote_update_account', { account });
+    set({ config: updated });
+    votePlatformService.syncAndroidAlarms(updated.vote_accounts);
+  },
+
+  markVoteCompleted: async (accountId, votedAt) => {
+    const updated = await invoke<AppConfig>('vote_mark_completed', {
+      accountId,
+      votedAt: votedAt ?? null,
+    });
+    set((state) => ({
+      config: updated,
+      voteAlerts: state.voteAlerts.filter((a) => a.account_id !== accountId),
+    }));
+    votePlatformService.syncAndroidAlarms(updated.vote_accounts);
+  },
+
+  resetVoteTimer: async (accountId) => {
+    const updated = await invoke<AppConfig>('vote_reset_timer', { accountId });
+    set((state) => ({
+      config: updated,
+      voteAlerts: state.voteAlerts.filter((a) => a.account_id !== accountId),
+    }));
+    votePlatformService.syncAndroidAlarms(updated.vote_accounts);
+  },
+
+  testVoteNotification: async (accountId) => {
+    try {
+      return await votePlatformService.sendTestNotification(accountId);
+    } catch (e) {
+      console.error('Falha ao disparar notificação de teste de voto:', e);
+      return null;
     }
   },
 }));

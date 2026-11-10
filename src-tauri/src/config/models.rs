@@ -172,6 +172,102 @@ pub fn default_game_slots() -> Vec<GameSlotConfig> {
     ]
 }
 
+pub const DEFAULT_TOPIDLE_GAME_URL: &str = "https://topidle.com/jogo/pokeidle-io-5f9969";
+/// 24 horas e 1 minuto em segundos = 86.460s
+pub const VOTE_COOLDOWN_SECONDS: i64 = 24 * 60 * 60 + 60;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoteAccountConfig {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub player_identifier: String,
+    #[serde(default = "default_vote_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub linked_game_slot_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub share_game_profile: bool,
+    #[serde(default)]
+    pub google_hint: Option<String>,
+    #[serde(default = "default_game_color")]
+    pub color: String,
+    #[serde(default)]
+    pub last_voted_at: Option<i64>,
+    #[serde(default)]
+    pub last_notified_for_vote_at: Option<i64>,
+    #[serde(default)]
+    pub total_votes: u32,
+    #[serde(default = "default_true")]
+    pub notifications_enabled: bool,
+}
+
+fn default_vote_base_url() -> String {
+    DEFAULT_TOPIDLE_GAME_URL.to_string()
+}
+
+pub fn default_vote_accounts() -> Vec<VoteAccountConfig> {
+    vec![
+        VoteAccountConfig {
+            id: "vote-1".into(),
+            label: "GGB2006".into(),
+            player_identifier: "GGB2006".into(),
+            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            linked_game_slot_id: Some("slot-1".into()),
+            share_game_profile: true,
+            google_hint: None,
+            color: "#6366F1".into(),
+            last_voted_at: None,
+            last_notified_for_vote_at: None,
+            total_votes: 0,
+            notifications_enabled: true,
+        },
+        VoteAccountConfig {
+            id: "vote-2".into(),
+            label: "GGB2006_2".into(),
+            player_identifier: "GGB2006_2".into(),
+            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            linked_game_slot_id: Some("slot-2".into()),
+            share_game_profile: true,
+            google_hint: None,
+            color: "#10B981".into(),
+            last_voted_at: None,
+            last_notified_for_vote_at: None,
+            total_votes: 0,
+            notifications_enabled: true,
+        },
+        VoteAccountConfig {
+            id: "vote-3".into(),
+            label: "GGB2006_3".into(),
+            player_identifier: "GGB2006_3".into(),
+            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            linked_game_slot_id: Some("slot-3".into()),
+            share_game_profile: true,
+            google_hint: None,
+            color: "#F59E0B".into(),
+            last_voted_at: None,
+            last_notified_for_vote_at: None,
+            total_votes: 0,
+            notifications_enabled: true,
+        },
+        VoteAccountConfig {
+            id: "vote-4".into(),
+            label: "GGB2006_4".into(),
+            player_identifier: "GGB2006_4".into(),
+            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            linked_game_slot_id: Some("slot-4".into()),
+            share_game_profile: true,
+            google_hint: None,
+            color: "#EF4444".into(),
+            last_voted_at: None,
+            last_notified_for_vote_at: None,
+            total_votes: 0,
+            notifications_enabled: true,
+        },
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -182,6 +278,8 @@ pub struct AppConfig {
     pub settings: AppSettings,
     #[serde(default = "default_game_slots")]
     pub game_slots: Vec<GameSlotConfig>,
+    #[serde(default = "default_vote_accounts")]
+    pub vote_accounts: Vec<VoteAccountConfig>,
 }
 
 impl Default for AppConfig {
@@ -191,6 +289,7 @@ impl Default for AppConfig {
             streams: Vec::new(),
             settings: AppSettings::default(),
             game_slots: default_game_slots(),
+            vote_accounts: default_vote_accounts(),
         }
     }
 }

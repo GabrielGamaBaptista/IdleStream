@@ -11,6 +11,8 @@ related_code:
   - "src/components/BottomNav.tsx"
   - "src/components/StreamCard.tsx"
   - "src/services/gamePlatformService.ts"
+  - "src/services/votePlatformService.ts"
+  - "src/components/votes/VoteWorkspace.tsx"
   - "src/services/updaterService.ts"
 wiki_links:
   - "[[README]]"
@@ -19,9 +21,10 @@ wiki_links:
   - "[[04-games-engine]]"
   - "[[05-backend-core]]"
   - "[[07-multiplataforma-android]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-07"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Especificação completa da interface visual do IdleStream: arquitetura da store global com Zustand 5, ciclo de inicialização init(), catálogo detalhado de componentes React 19 e camada de serviços híbridos Desktop/Mobile."
 ---
 
@@ -97,6 +100,7 @@ graph TB
         subgraph Viewport_Tabs ["Roteamento Baseado em Abas"]
             TabStreams["StreamsTab (Lista de StreamCard.tsx + Filtros)"]
             TabGames["GameWorkspace.tsx (Viewport de Child Webviews)"]
+            TabVotes["VoteWorkspace.tsx (TopIdle WebView + Cooldown 24h 01m)"]
             TabAccounts["AccountManager.tsx (Gestão Multi-Conta)"]
             TabSettings["SettingsTab.tsx (Preferências e Diagnóstico)"]
         end
@@ -122,8 +126,11 @@ Barra de status superior agregada:
 - **Badge de Atualização de Versão**: Exibe uma pílula destacada quando uma nova versão (`v3.2.x`) for detectada no GitHub ou servidor de update.
 
 #### `Sidebar.tsx` & `BottomNav.tsx`
-- **`Sidebar.tsx` (Desktop)**: Barra lateral fixa à esquerda com ícones Lucide para Streams, Jogos, Contas e Configurações, além de alternador de tema e modo compacto.
-- **`BottomNav.tsx` (Mobile Android)**: Barra de navegação inferior ergonomicamente posicionada para alcance do polegar em dispositivos móveis.
+- **`Sidebar.tsx` (Desktop)**: Barra lateral fixa à esquerda com ícones Lucide para Streams, Idle Games, **Votos** (com contador pulsante de contas prontas), Contas e Configurações.
+- **`BottomNav.tsx` (Mobile Android)**: Barra de navegação inferior ergonomicamente posicionada para alcance do polegar em dispositivos móveis, incluindo atalho e badge de contas prontas em **Votos**.
+
+#### `VoteWorkspace.tsx` & `votePlatformService.ts`
+- Gerencia as 4 contas de votação diária (`GGB2006`, `GGB2006_2`, `GGB2006_3`, `GGB2006_4`) com ticker em tempo real (`HH:MM:SS`), barra de progresso de **24h 01m** (`86.460s`), edição de vínculos com os slots do `Idle Games` e abertura sob demanda da WebView restrita ao `topidle.com` (destruída automaticamente ao fechar ou trocar de aba).
 
 #### `StreamCard.tsx`
 O componente atômico mais complexo do sistema:

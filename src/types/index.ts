@@ -53,11 +53,63 @@ export interface SlotBounds {
   visible: boolean;
 }
 
+export interface VoteAccountConfig {
+  id: string;
+  label: string;
+  player_identifier: string;
+  base_url: string;
+  linked_game_slot_id?: string | null;
+  share_game_profile: boolean;
+  google_hint?: string | null;
+  color: string;
+  last_voted_at?: number | null;
+  last_notified_for_vote_at?: number | null;
+  total_votes: number;
+  notifications_enabled: boolean;
+}
+
+export interface VoteBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible: boolean;
+}
+
+export interface VoteReadyNotificationPayload {
+  account_id: string;
+  label: string;
+  player_identifier: string;
+  last_voted_at: number;
+  ready_at: number;
+  title: string;
+  body: string;
+  is_test: boolean;
+}
+
+export interface VoteUrlChangedPayload {
+  account_id: string;
+  url: string;
+  loading: boolean;
+}
+
+export interface VoteBlockedPayload {
+  account_id: string;
+  blocked_url: string;
+  host: string;
+}
+
+export interface VoteDetectedHintPayload {
+  account_id: string;
+  reason: string;
+}
+
 export interface AppConfig {
   accounts: Account[];
   streams: StreamConfig[];
   settings: AppSettings;
   game_slots?: GameSlotConfig[];
+  vote_accounts?: VoteAccountConfig[];
 }
 
 export type StatusKind = 'disconnected' | 'standby' | 'connecting' | 'connected' | 'error';

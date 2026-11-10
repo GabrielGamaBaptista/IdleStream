@@ -1,5 +1,6 @@
 package com.idlestream.app
 
+import android.content.Context
 import android.util.Log
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -41,6 +42,24 @@ object KickHttpBridge {
             IdleStreamForegroundService.updateStatusDirect(title, text)
         } catch (e: Throwable) {
             Log.e(TAG, "Error updating notification from native: ${e.message}")
+        }
+    }
+
+    @JvmStatic
+    fun sendVoteAlertNotification(accountId: String, title: String, text: String, dedupVoteAtSec: Long) {
+        try {
+            val ctx: Context? = MainActivity.instance ?: IdleStreamForegroundService.instance
+            if (ctx != null) {
+                VoteNotificationHelper.showVoteAlert(
+                    context = ctx,
+                    accountId = accountId,
+                    title = title,
+                    text = text,
+                    dedupVoteAtSec = dedupVoteAtSec
+                )
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error sending vote alert notification from native: ${e.message}")
         }
     }
 

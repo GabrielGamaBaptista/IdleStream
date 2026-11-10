@@ -47,6 +47,15 @@ impl ConfigStore {
                                 slot.url = "https://pokeidle.io/app".to_string();
                             }
                         }
+                        if config.vote_accounts.is_empty() {
+                            config.vote_accounts = crate::config::default_vote_accounts();
+                        } else {
+                            for vote in &mut config.vote_accounts {
+                                if vote.base_url.trim().is_empty() {
+                                    vote.base_url = crate::config::DEFAULT_TOPIDLE_GAME_URL.to_string();
+                                }
+                            }
+                        }
                         eprintln!("[ConfigStore] Loaded {} streams successfully", config.streams.len());
                         config
                     }
@@ -73,8 +82,20 @@ impl ConfigStore {
                                     slot.url = "https://pokeidle.io/app".to_string();
                                 }
                             }
+                            let mut vote_accounts: Vec<crate::config::VoteAccountConfig> = val.get("vote_accounts")
+                                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                .unwrap_or_else(crate::config::default_vote_accounts);
+                            if vote_accounts.is_empty() {
+                                vote_accounts = crate::config::default_vote_accounts();
+                            } else {
+                                for vote in &mut vote_accounts {
+                                    if vote.base_url.trim().is_empty() {
+                                        vote.base_url = crate::config::DEFAULT_TOPIDLE_GAME_URL.to_string();
+                                    }
+                                }
+                            }
                             eprintln!("[ConfigStore] Lenient fallback salvaged {} accounts and {} streams", accounts.len(), streams.len());
-                            AppConfig { accounts, streams, settings, game_slots }
+                            AppConfig { accounts, streams, settings, game_slots, vote_accounts }
                         } else {
                             eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED completely: {}! Content: {}", e, clean_content);
                             AppConfig::default()

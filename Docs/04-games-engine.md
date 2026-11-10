@@ -16,8 +16,8 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[06-frontend]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-09"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Documentação do ecossistema de jogos ociosos (PokeIdle) do IdleStream: orquestração de Child Webviews nativas no Tauri v2, layouts geométricos dinâmicos, motor anti-sleep JS de 6 camadas, monitor de inatividade com reporte de toque e injeção da extensão de caça /hunt."
 ---
 

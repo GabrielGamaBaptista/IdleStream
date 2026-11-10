@@ -18,8 +18,8 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[07-multiplataforma-android]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-09"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Engenharia profunda do subsistema Kick: mitigação de bloqueio TLS Cloudflare via curl/OkHttp, Coordenador de Prioridade Multi-Stream com limite de 1 vaga ativa, Pusher WebSocket e telemetria de visualizador."
 ---
 

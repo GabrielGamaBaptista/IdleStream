@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Tv, Users, Settings, Plus, Filter, Gamepad2 } from 'lucide-react';
+import { Tv, Users, Settings, Plus, Filter, Gamepad2, Vote } from 'lucide-react';
+import { countReadyVoteAccounts, DEFAULT_VOTE_ACCOUNTS } from '../services/votePlatformService';
 
 export const Sidebar: React.FC = () => {
   const {
@@ -9,12 +10,24 @@ export const Sidebar: React.FC = () => {
     platformFilter,
     setPlatformFilter,
     config,
+    voteAlerts,
     setAddStreamOpen,
     setAddAccountOpen,
   } = useAppStore();
 
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 15000);
+    return () => clearInterval(id);
+  }, []);
+
   const twitchStreams = config.streams.filter((s) => s.platform === 'twitch').length;
   const kickStreams = config.streams.filter((s) => s.platform === 'kick').length;
+  const voteAccounts = config.vote_accounts && config.vote_accounts.length > 0
+    ? config.vote_accounts
+    : DEFAULT_VOTE_ACCOUNTS;
+  const readyVotesCount = countReadyVoteAccounts(voteAccounts, nowSec);
+  const hasVoteAlert = voteAlerts.length > 0 || readyVotesCount > 0;
 
   return (
     <aside className="hidden md:flex w-64 border-r border-neutral-800 bg-neutral-900/50 p-4 flex-col select-none overflow-y-auto h-full min-h-0">
@@ -56,6 +69,30 @@ export const Sidebar: React.FC = () => {
               </div>
               <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950/80 text-indigo-300 border border-indigo-800/60 font-mono">
                 4
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('votes')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition cursor-pointer ${
+                activeTab === 'votes'
+                  ? 'bg-neutral-800 text-white'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Vote className={`w-4 h-4 ${hasVoteAlert ? 'text-amber-400' : 'text-amber-400/80'}`} />
+                <span>Votos</span>
+              </div>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full border font-mono ${
+                  readyVotesCount > 0
+                    ? 'bg-emerald-950/90 text-emerald-300 border-emerald-700/70 animate-pulse'
+                    : 'bg-neutral-950 text-neutral-400 border-neutral-800'
+                }`}
+                title={`${readyVotesCount} de ${voteAccounts.length} conta(s) prontas para votar no TopIdle`}
+              >
+                {readyVotesCount}/{voteAccounts.length}
               </span>
             </button>
 

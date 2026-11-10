@@ -1,11 +1,11 @@
 {
-  "version": "3.2.8",
-  "notes": "IdleStream v3.2.8 — Coordenador de Prioridade da Kick (limite de 1 vaga ativa por conta, fila reativa MPSC e ranqueamento por horas de live), persistência atômica da sessão do PokeIdle no Android (evita tela de login ao reabrir app) e correção de falso sleep por inatividade durante interação nos jogos.",
-  "pub_date": "2026-11-09T22:30:00Z",
+  "version": "4.0.0",
+  "notes": "IdleStream v4.0.0 — Nova seção Votos Diários (TopIdle) no Desktop e Android logo abaixo de Idle Games para as 4 contas (GGB2006, GGB2006_2, GGB2006_3 e GGB2006_4) com WebView interativa sob demanda (0 MB em repouso), whitelist estrita (topidle.com, OAuth Google dos perfis do Idle Games e CAPTCHA manual), observador passivo e notificações exatas após 24h 01m (WinRT Toast no Windows e AlarmManager/NotificationManager no Android).",
+  "pub_date": "2026-11-10T22:21:30Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vng5cmk4RW55WXIvb20xelpQMVczaTkwZ1FMbWluTnNEVG9BSW9SNTRkUXE5WEdkVE41dmljK01IN0JvZUJvSTFEZG5TcDJ6bml5KzNESFZIRy9yRVFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Mjc0Mzk1CWZpbGU6SWRsZVN0cmVhbV8zLjIuOF94NjQtc2V0dXAuZXhlCXZlcnNpb246My4yLjgKYTROSUJ6TUZSSjhBRkxLNlMwMUpLaGtZendKem4zalkxL0FnaTNBQmUwdkNaUUVyRFFSaGtGZ3dEa0R2Rlkra0FBZk5mUUU1Sll5U21zck1QSHgzQ2c9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v3.2.8/IdleStream_3.2.8_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjhPd0h0MEVXSVFUTXN2MlhiaktyWFdISUNHaTZkWmxhNG5uZWIzNWwvWTZkSnRnQ1RscEU3cmtVR0VLak41YlRkUDhXRXRYSEszUzB1dUN3NzdIa1FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzQ5MDQzCWZpbGU6SWRsZVN0cmVhbV80LjAuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4wLjAKYlpING0yWWU5VHgyM1dPUTJFYy85aGloNDF1bFoxbGdSYVM3UjBZNTZzd2NQMDJkVGxEcHA5VGpGczd4dVNCVEtVeCtFaEJzNVRVd3ZvdHB1TmpRQkE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.0.0/IdleStream_4.0.0_x64-setup.exe"
     }
   }
 }

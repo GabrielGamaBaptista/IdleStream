@@ -15,9 +15,10 @@ wiki_links:
   - "[[02-twitch-engine]]"
   - "[[03-kick-engine]]"
   - "[[04-games-engine]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-09"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Análise aprofundada do propósito de negócio, problemas do farming de streams via browsers tradicionais, solução de engenharia nativa headless do IdleStream, coordenadores de prioridade Twitch/Kick e cenários operacionais Desktop e Android."
 ---
 
@@ -231,6 +232,11 @@ stateDiagram-v2
 - O usuário executa o aplicativo em um smartphone Android.
 - Ao alternar para outro aplicativo ou bloquear a tela, o `IdleStreamForegroundService` assume a execução com uma notificação persistente atualizada dinamicamente com o saldo de pontos e quantidade de lives ativas.
 - O sistema solicita isenção das otimizações agressivas de bateria das fabricantes OEM (*Doze mode*), garantindo que a conexão WebSocket com Twitch e Kick permaneça aberta ininterruptamente.
+
+### Caso de Uso 3: Votação Diária em 4 Contas no TopIdle (Desktop e Android)
+- Na seção **Votos** (logo abaixo de **Idle Games**), o usuário visualiza o status de suas 4 contas (`GGB2006`, `GGB2006_2`, `GGB2006_3`, `GGB2006_4`) pré-vinculadas aos perfis Google do `Idle Games`.
+- Somente ao clicar para votar, o IdleStream abre uma WebView restrita ao `topidle.com` (+ login Google e CAPTCHA interativo), destruindo-a completamente ao sair (0 MB em repouso).
+- Exatamente após **24h 01m** (`86.460s`) do último voto, um alerta de sistema (Toast Windows / AlarmManager Android) notifica o jogador para votar novamente.
 
 ---
 

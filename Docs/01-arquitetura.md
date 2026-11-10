@@ -18,9 +18,10 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[06-frontend]]"
   - "[[07-multiplataforma-android]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-07"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Especificação exaustiva da arquitetura de camadas do IdleStream: inicialização do runtime Rust/Tokio, flags do WebView2, sincronização de estado concorrente via Arc/Mutex, barramento IPC bidirecional e ponte JNI para Android."
 ---
 

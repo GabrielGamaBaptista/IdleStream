@@ -15,6 +15,8 @@ class BootReceiver : BroadcastReceiver() {
         ) {
             // Inicia o Foreground Service em segundo plano após reinicialização do dispositivo
             IdleStreamForegroundService.start(context)
+            // Reagenda os alarmes de votação (24h 01m) e dispara notificações pendentes vencidas
+            VoteAlarmScheduler.rescheduleAllFromStorage(context, fireImmediatelyIfOverdue = true)
         }
     }
 }

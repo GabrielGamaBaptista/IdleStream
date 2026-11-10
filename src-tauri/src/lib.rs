@@ -5,6 +5,7 @@ pub mod kick;
 pub mod live_check;
 pub mod state;
 pub mod twitch;
+pub mod votes;
 
 use commands::*;
 use state::AppState;
@@ -81,6 +82,12 @@ pub fn run() {
                                     let _ = gm.hide_all_game_views().await;
                                 });
                             }
+                            if let Some(vm) = app.try_state::<Arc<votes::manager::VoteManager>>() {
+                                let vm = Arc::clone(&vm);
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = vm.hide_vote_webview().await;
+                                });
+                            }
                         } else {
                             std::process::exit(0);
                         }
@@ -100,8 +107,14 @@ pub fn run() {
             let game_manager = Arc::new(games::manager::GameLayoutManager::new(app_handle.clone()));
             app.manage(game_manager.clone());
 
+            let vote_manager = Arc::new(votes::manager::VoteManager::new(app_handle.clone()));
+            app.manage(vote_manager.clone());
+
             // Start background vigilance loop (Auto-Live detection & standby recovery)
             app_state.start_vigilance_loop();
+
+            // Start background daily vote scheduler (24h 01m notification alerts)
+            votes::notifier::start_vote_scheduler(app_state.clone());
 
             #[cfg(desktop)]
             {
@@ -267,6 +280,17 @@ pub fn run() {
             games::commands::game_hide_all,
             games::commands::game_get_active_slots,
             games::commands::game_get_system_idle_seconds,
+            votes::commands::vote_update_account,
+            votes::commands::vote_open_webview,
+            votes::commands::vote_close_webview,
+            votes::commands::vote_update_bounds,
+            votes::commands::vote_hide_webview,
+            votes::commands::vote_reload_webview,
+            votes::commands::vote_clear_topidle_session,
+            votes::commands::vote_get_active,
+            votes::commands::vote_mark_completed,
+            votes::commands::vote_reset_timer,
+            votes::commands::vote_test_notification,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$Target = "aarch64-linux-android",
     [string]$BuildType = "release"
 )
@@ -50,11 +50,15 @@ $destAssets = "src-tauri/gen/android/app/src/main/assets"
 New-Item -ItemType Directory -Force -Path $destAssets | Out-Null
 Copy-Item -Path "dist/*" -Destination $destAssets -Recurse -Force
 
-# Copiar scripts de jogos e extensões para os assets do Android
+# Copiar scripts de jogos, extensão /hunt e observador de votos para os assets do Android
 $destGames = "$destAssets/games"
 New-Item -ItemType Directory -Force -Path $destGames | Out-Null
 Copy-Item -Path "src-tauri/src/games/anti_sleep.js" -Destination "$destGames/anti_sleep.js" -Force
 Copy-Item -Path "src-tauri/src/games/hunt_extension.js" -Destination "$destGames/hunt_extension.js" -Force
+
+$destVotes = "$destAssets/votes"
+New-Item -ItemType Directory -Force -Path $destVotes | Out-Null
+Copy-Item -Path "src-tauri/src/votes/vote_observer.js" -Destination "$destVotes/vote_observer.js" -Force
 
 Write-Host "==> [5/5] Montando APK Gradle ($BuildType)..." -ForegroundColor Cyan
 if ($Target -eq "x86_64-linux-android") {

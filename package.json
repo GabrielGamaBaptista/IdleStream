@@ -1,7 +1,7 @@
 {
   "name": "idlestream",
   "private": true,
-  "version": "3.2.8",
+  "version": "4.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
     "test:kick": "jiti ./scripts/test-kick-coordinator.ts",
     "test:redeem": "jiti ./scripts/test-stream-redeem.ts",
     "test:games": "jiti ./scripts/test-games.ts",
+    "test:votes": "jiti ./scripts/test-votes.ts",
     "test:perf": "jiti ./scripts/benchmark-performance.ts",
     "tauri": "tauri"
   },

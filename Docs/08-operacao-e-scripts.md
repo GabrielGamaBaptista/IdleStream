@@ -16,9 +16,10 @@ wiki_links:
   - "[[01-arquitetura]]"
   - "[[05-backend-core]]"
   - "[[07-multiplataforma-android]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-07"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Manual de engenharia de operações do IdleStream: catálogo completo de scripts de testes e benchmarks, procedimentos de assinatura digital com Minisign, protocolo de release multiplataforma e guia de troubleshooting."
 ---
 
@@ -39,6 +40,7 @@ O repositório mantém uma suíte de utilitários em TypeScript, JavaScript e Po
 | [`test-twitch-android-points.ts`](file:///C:/Projetos/Chatter/scripts/test-twitch-android-points.ts) | `npm run test:twitch` (jiti) | Valida a mutation GraphQL de pontos com o Client ID do Android (`kd1unb4b...`) e verifica o retorno de saldo de canal. |
 | [`test-stream-redeem.ts`](file:///C:/Projetos/Chatter/scripts/test-stream-redeem.ts) | `npm run test:redeem` (jiti) | Testa a injeção do cookie `auth-token` e o carregamento do popout web de resgate da Twitch. |
 | [`test-games.ts`](file:///C:/Projetos/Chatter/scripts/test-games.ts) | `npm run test:games` (jiti) | Valida a integridade do script `anti_sleep.js` e a inicialização dos 4 slots de jogos. |
+| [`test-votes.ts`](file:///C:/Projetos/Chatter/scripts/test-votes.ts) | `npm run test:votes` (jiti) | Valida as 4 contas padrão (`GGB2006..4`), URLs do TopIdle, whitelist restrita e regra exata de cooldown de `24h 01m` (`86.460s`). |
 | [`test-hunt-lifecycle.ts`](file:///C:/Projetos/Chatter/scripts/test-hunt-lifecycle.ts) | `jiti ./scripts/test-hunt-lifecycle.ts` | Valida o ciclo de injeção da extensão `/hunt` e a integridade das tabelas elementais e regiões Outland. |
 | [`test-ultra-and-heartbeat.ts`](file:///C:/Projetos/Chatter/scripts/test-ultra-and-heartbeat.ts) | `jiti ./scripts/test-ultra-and-heartbeat.ts` | Testa a ativação programática do Modo Ultra do PokeIdle e a estabilidade dos pings de WebSocket do jogo. |
 | [`test-v3-mobile-games.ts`](file:///C:/Projetos/Chatter/scripts/test-v3-mobile-games.ts) | `jiti ./scripts/test-v3-mobile-games.ts` | Simula os limites e o viewport adaptativo do Android para WebViews de jogos. |

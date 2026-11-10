@@ -8,6 +8,9 @@ related_code:
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/IdleStreamForegroundService.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/KickHttpBridge.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/BatteryOptimizationHelper.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/VoteWebViewManager.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/VoteNotificationHelper.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/VoteAlarmReceiver.kt"
   - "scripts/build-android.ps1"
 wiki_links:
   - "[[README]]"
@@ -17,9 +20,10 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[06-frontend]]"
   - "[[08-operacao-e-scripts]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-09"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Engenharia profunda do ecossistema Android: persistência nativa de sessões PokeIdle em SharedPreferences, pontes JNI e JavaScript, Foreground Service com WakeLock, rastreamento de toques anti-sleep e pipeline NDK/Gradle."
 ---
 
@@ -82,6 +86,7 @@ Disponibilizada no WebView via `@JavascriptInterface` na classe `MainActivity.kt
 - **Isenção de Bateria**: `isBatteryOptimizationIgnored()` e `requestIgnoreBatteryOptimization()`.
 - **Serviço de Segundo Plano**: `startForegroundService()`, `stopForegroundService()`, `updateNotification(title, text)`.
 - **Slots de Jogos**: `startGameSlot()`, `stopGameSlot()`, `updateGameSlotBounds()`, `setGameSlotFps()`.
+- **Votos TopIdle & Alarmes**: `openVoteWebView()`, `closeVoteWebView()`, `updateVoteWebViewBounds()`, `reloadVoteWebView()`, `clearVoteTopIdleSession()`, `syncVoteAlarms()`, `sendVoteTestNotification()` e `consumePendingOpenTab()`.
 - **Login OAuth Seguro**: `openTwitchLogin(accountId, label)` e `openKickLogin(accountId, label)` abrem activities separadas, evitando poluição de cookies no WebView principal.
 
 ### 2.2 Callback JNI Rust $\leftrightarrow$ OkHttp (`KickHttpBridge.kt` & `kick/http.rs`)
@@ -108,6 +113,10 @@ No Android, o fechamento completo do aplicativo pelo usuário ou o encerramento 
 - **Persistência Atômica em `SharedPreferences`**: Sempre que o PokeIdle grava sua chave de autenticação (`localStorage.setItem('sessao', ...)`), o script de isolamento espelha o JSON completo no arquivo nativo `idlestream_game_sessions` sob a chave `slot_{slotId}_sessao` e aciona `CookieManager.getInstance().flush()`.
 - **Restauração Transparente no Boot**: No carregamento inicial do slot (`onPageStarted` e `DOCUMENT_START_SCRIPT`), se o localStorage estiver limpo, a sessão salva é resgatada de `IdleStreamSlotBridge.getSavedSession()` e re-injetada antes de `app.js` rodar, abrindo o jogo já autenticado sem exigir login do Google ou e-mail/senha.
 - **Rastreamento de Toques (`MainActivity.dispatchTouchEvent`)**: Intercepta eventos físicos de toque na tela, atualizando `lastUserInteractionTime` e disparando `window.__onUserActivity()` para impedir suspensão indevida por inatividade.
+
+### 2.4 WebView de Votos e Alarmes `24h 01m` (`VoteWebViewManager` & `VoteAlarmReceiver`)
+- **`VoteWebViewManager`**: Cria uma única WebView interativa sob demanda quando o usuário entra para votar em uma conta, compartilhando o `ProfileStore` (`slot_slot-X`) dos Idle Games para aproveitar as 4 contas Google sem interferir em popups OAuth (`onCreateWindow`) ou CAPTCHAs. Destrói completamente a WebView (`destroy()`) ao sair.
+- **`VoteAlarmReceiver` & `VoteNotificationHelper`**: Usa `AlarmManager.setAndAllowWhileIdle` (`RTC_WAKEUP`) em conjunto com `VoteNotificationHelper` (deduplicado via `SharedPreferences`) e re-agendamento pós-boot no `BootReceiver.kt`, garantindo alertas exatos de **24h 01m** mesmo em Doze Mode e abrindo a aba `Votos` ao tocar na notificação.
 
 ---
 
@@ -160,7 +169,7 @@ flowchart TD
     S4["[4/5] Cópia de Binários (.so) e Assets Web para gen/android/"]
     S5["[5/5] Montagem do APK via Gradle (assembleArm64Release)"]
 
-    S1 --> S2 --> S3 --> S4 --> S5 --> FinalAPK["APK Final: IdleStream_3.2.7_arm64.apk"]
+    S1 --> S2 --> S3 --> S4 --> S5 --> FinalAPK["APK Final: IdleStream_4.0.0_arm64.apk"]
 ```
 
 ### Análise das Etapas do Script:
@@ -175,7 +184,7 @@ flowchart TD
 4. **Passo 4 (Distribuição de Assets)**:
    - Copia `libidlestream_lib.so` para `src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/`.
    - Copia o frontend compilado (`dist/*`) para `src-tauri/gen/android/app/src/main/assets/`.
-   - Copia os scripts `anti_sleep.js` e `hunt_extension.js` para `assets/games/`.
+   - Copia os scripts `anti_sleep.js` e `hunt_extension.js` para `assets/games/` e `vote_observer.js` para `assets/votes/`.
 5. **Passo 5 (Gradle Packaging)**:
    - Invoca `.\gradlew.bat assembleArm64Release`.
    - Gera o binário standalone assinado e otimizado com ProGuard/R8 para distribuição.

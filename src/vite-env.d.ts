@@ -25,6 +25,21 @@ interface AndroidBridge {
   canInstallPackages?(): boolean;
   requestInstallPermission?(): void;
   downloadAndInstallApk?(apkUrl: string): void;
+  openVoteWebView?(
+    accountId: string,
+    targetUrl: string,
+    linkedSlotId: string,
+    shareGameProfile: boolean
+  ): void;
+  closeVoteWebView?(): void;
+  updateVoteWebViewBounds?(x: number, y: number, width: number, height: number, visible: boolean): void;
+  hideVoteWebView?(): void;
+  reloadVoteWebView?(): void;
+  clearVoteTopIdleSession?(targetUrl: string): void;
+  getActiveVoteAccount?(): string;
+  syncVoteAlarms?(jsonAccounts: string): void;
+  sendVoteTestNotification?(accountId: string, title: string, text: string): void;
+  consumePendingOpenTab?(): string;
 }
 
 interface Window {

@@ -23,6 +23,7 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density"
             android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"
+            android:windowSoftInputMode="adjustResize"
             android:label="@string/main_activity_title"
             android:name=".MainActivity"
             android:exported="true">
@@ -74,6 +75,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".VoteAlarmReceiver"
+            android:exported="false" />
 
         <provider
           android:name="androidx.core.content.FileProvider"

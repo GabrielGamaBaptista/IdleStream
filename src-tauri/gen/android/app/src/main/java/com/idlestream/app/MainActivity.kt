@@ -19,6 +19,12 @@ class MainActivity : TauriActivity() {
 
     private var mainWebView: WebView? = null
     val gameSlotManager by lazy { GameSlotManager(this) }
+    val voteWebViewManager by lazy { VoteWebViewManager(this) }
+
+    @Volatile
+    var pendingOpenTab: String? = null
+    @Volatile
+    var pendingVoteAccountId: String? = null
 
     @Volatile
     var lastUserInteractionTime = System.currentTimeMillis()
@@ -246,6 +252,83 @@ class MainActivity : TauriActivity() {
             val idleMs = System.currentTimeMillis() - activity.lastUserInteractionTime
             return if (idleMs < 0) 0 else idleMs / 1000
         }
+
+        // ============================================================
+        // MÉTODOS NATIVOS DA SEÇÃO VOTOS TOPIDLE (ANDROID)
+        // ============================================================
+
+        @JavascriptInterface
+        fun openVoteWebView(
+            accountId: String,
+            targetUrl: String,
+            linkedSlotId: String,
+            shareGameProfile: Boolean
+        ) {
+            activity.voteWebViewManager.openVoteWebView(
+                accountId = accountId,
+                targetUrl = targetUrl,
+                linkedGameSlotId = if (linkedSlotId.isBlank()) null else linkedSlotId,
+                shareGameProfile = shareGameProfile
+            )
+        }
+
+        @JavascriptInterface
+        fun closeVoteWebView() {
+            activity.voteWebViewManager.closeVoteWebView()
+        }
+
+        @JavascriptInterface
+        fun updateVoteWebViewBounds(x: Double, y: Double, width: Double, height: Double, visible: Boolean) {
+            activity.voteWebViewManager.updateBounds(x, y, width, height, visible)
+        }
+
+        @JavascriptInterface
+        fun hideVoteWebView() {
+            activity.voteWebViewManager.hideVoteWebView()
+        }
+
+        @JavascriptInterface
+        fun reloadVoteWebView() {
+            activity.voteWebViewManager.reloadVoteWebView()
+        }
+
+        @JavascriptInterface
+        fun clearVoteTopIdleSession(targetUrl: String) {
+            activity.voteWebViewManager.clearTopIdleSession(targetUrl)
+        }
+
+        @JavascriptInterface
+        fun getActiveVoteAccount(): String {
+            return activity.voteWebViewManager.getActiveAccountId() ?: ""
+        }
+
+        @JavascriptInterface
+        fun syncVoteAlarms(jsonAccounts: String) {
+            VoteAlarmScheduler.syncAlarms(activity, jsonAccounts)
+        }
+
+        @JavascriptInterface
+        fun sendVoteTestNotification(accountId: String, title: String, text: String) {
+            VoteNotificationHelper.showVoteAlert(
+                context = activity,
+                accountId = accountId,
+                title = title,
+                text = text,
+                dedupVoteAtSec = 0L
+            )
+        }
+
+        @JavascriptInterface
+        fun consumePendingOpenTab(): String {
+            val tab = activity.pendingOpenTab ?: return ""
+            val accountId = activity.pendingVoteAccountId ?: ""
+            activity.pendingOpenTab = null
+            activity.pendingVoteAccountId = null
+            return org.json.JSONObject().apply {
+                put("tab", tab)
+                put("accountId", accountId)
+            }.toString()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -270,6 +353,9 @@ class MainActivity : TauriActivity() {
 
         super.onCreate(savedInstanceState)
         KickHttpBridge.ensureRegistered()
+        VoteNotificationHelper.ensureChannel(this)
+        pendingOpenTab = intent?.getStringExtra("open_tab")
+        pendingVoteAccountId = intent?.getStringExtra("vote_account_id")
 
         // Solicita permissão de notificação no Android 13+ (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -326,6 +412,13 @@ class MainActivity : TauriActivity() {
                 notifyKickAuthSuccess(accId, session, token, xsrf)
             }
         }
+        val openTab = intent.getStringExtra("open_tab")
+        if (!openTab.isNullOrBlank()) {
+            val voteAccId = intent.getStringExtra("vote_account_id") ?: ""
+            pendingOpenTab = openTab
+            pendingVoteAccountId = voteAccId
+            notifyOpenTab(openTab, voteAccId)
+        }
     }
 
     override fun onResume() {
@@ -361,6 +454,9 @@ class MainActivity : TauriActivity() {
     }
 
     override fun onDestroy() {
+        try {
+            voteWebViewManager.destroy()
+        } catch (_: Throwable) {}
         try {
             gameSlotManager.destroy()
         } catch (_: Throwable) {}
@@ -466,5 +562,21 @@ class MainActivity : TauriActivity() {
             """.trimIndent()
             mainWebView?.evaluateJavascript(script, null)
         }
+    }
+
+    fun dispatchVoteEvent(eventName: String, jsonPayload: String) {
+        runOnUiThread {
+            val safeEvent = eventName.replace("'", "\\'")
+            val script = "window.dispatchEvent(new CustomEvent('$safeEvent', { detail: $jsonPayload }));"
+            mainWebView?.evaluateJavascript(script, null)
+        }
+    }
+
+    fun notifyOpenTab(tab: String, voteAccountId: String) {
+        val payload = org.json.JSONObject().apply {
+            put("tab", tab)
+            put("accountId", voteAccountId)
+        }.toString()
+        dispatchVoteEvent("idlestream-open-tab", payload)
     }
 }

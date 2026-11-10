@@ -10,6 +10,7 @@ related_code:
   - "src-tauri/src/config/models.rs"
   - "src-tauri/src/config/store.rs"
   - "src-tauri/src/games/commands.rs"
+  - "src-tauri/src/votes/commands.rs"
 wiki_links:
   - "[[README]]"
   - "[[00-visao-geral]]"
@@ -18,9 +19,10 @@ wiki_links:
   - "[[03-kick-engine]]"
   - "[[04-games-engine]]"
   - "[[06-frontend]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-07"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Referência completa do Rust Core: modelo de dados e store tolerante a falhas, ciclo de vida de streams e modo vigília a cada 300s, algoritmos de verificação live_check e dicionário exaustivo de comandos IPC Tauri."
 ---
 
@@ -43,6 +45,7 @@ classDiagram
         +Vec~StreamConfig~ streams
         +AppSettings settings
         +Vec~GameSlotConfig~ game_slots
+        +Vec~VoteAccountConfig~ vote_accounts
     }
     class Account {
         +String id
@@ -235,6 +238,22 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `game_hide_all` | Nenhum | `Result<(), String>` | Oculta visualmente todas as Child Webviews (durante minimizar na bandeja). |
 | `game_get_active_slots` | Nenhum | `Result<Vec<GameSlotInfo>, String>` | Retorna a lista de slots em execução com métricas de memória e uptime. |
 | `game_get_system_idle_seconds` | Nenhum | `u64` | Retorna os segundos de inatividade do usuário no sistema operacional. |
+
+### 4.5 Comandos do Sistema de Votos Diários (`votes/commands.rs`)
+
+| Comando IPC | Parâmetros e Tipos | Retorno | Descrição & Efeitos Colaterais |
+| :--- | :--- | :--- | :--- |
+| `vote_update_account` | `account: VoteAccountConfig` | `Result<AppConfig, String>` | Atualiza metadados, `player_identifier`, vínculo `linked_game_slot_id` e persistência. |
+| `vote_open_webview` | `account_id: String`, `bounds: Option<VoteBounds>` | `Result<String, String>` | Cria WebView única `vote-active` restrita a `topidle.com` (+ OAuth Google / CAPTCHA). |
+| `vote_close_webview` | Nenhum | `Result<(), String>` | Destrói a WebView `vote-active` e popups OAuth liberando 100% da memória. |
+| `vote_update_bounds` | `bounds: VoteBounds` | `Result<(), String>` | Sincroniza geometria física (ou move offscreen `-99999` atrás de modais). |
+| `vote_hide_webview` | Nenhum | `Result<(), String>` | Move temporariamente `vote-active` para offscreen sem destruir sessão DWM. |
+| `vote_reload_webview` | Nenhum | `Result<(), String>` | Recarrega a página atual da WebView de votação. |
+| `vote_clear_topidle_session` | `account_id: String` | `Result<(), String>` | Limpa cookies e storage exclusivamente de `topidle.com`, preservando Google/PokeIdle. |
+| `vote_get_active` | Nenhum | `Result<Option<String>, String>` | Retorna o ID da conta atualmente aberta na WebView de voto (ou `null`). |
+| `vote_mark_completed` | `account_id: String`, `voted_at: Option<i64>` | `Result<AppConfig, String>` | Registra o timestamp do voto e agenda o próximo ciclo de alerta para +24h 01m. |
+| `vote_reset_timer` | `account_id: String` | `Result<AppConfig, String>` | Zera o timer da conta marcando-a novamente como pronta para votar. |
+| `vote_test_notification` | `account_id: Option<String>` | `Result<VoteReadyNotificationPayload, String>` | Dispara alerta imediato na UI e no sistema operacional (Windows Toast / Android). |
 
 ---
 

@@ -17,9 +17,10 @@ wiki_links:
   - "[[06-frontend]]"
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
+  - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-09"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Índice Mestre (Map of Content) da documentação do IdleStream. Mapeia a arquitetura de sistemas, matriz cruzada de código para documento, grafos de dependência e glossário técnico para desenvolvedores e agentes de IA."
 ---
 
@@ -36,7 +37,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 | Componente | Especificação de Engenharia | Detalhes de Implementação |
 | :--- | :--- | :--- |
-| **Versão Corrente** | `3.2.8` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
+| **Versão Corrente** | `4.0.0` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
 | **Framework Host** | **Tauri v2** (`@tauri-apps/cli ^2.0`, `@tauri-apps/api ^2.0`) | Modelo multi-janela, Child Webviews nativas (`wry`), IPC binário e JSON |
 | **Runtime Rust Core** | **Rust 2021 Edition** | Assíncrono com `tokio 1.0` (Full), `tokio-tungstenite 0.24`, `futures-util 0.3` |
 | **Camada HTTP / Web** | **Reqwest 0.12** (`rustls-tls`), `tiny_http 0.12` | Subprocesso `curl.exe` (Windows) e OkHttp Bridge (Android) para bypass TLS |
@@ -50,19 +51,20 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 ## 2. Índice Interativo Obsidian (MOC)
 
-A documentação divide-se em 8 documentos técnicos especializados e este índice mestre:
+A documentação divide-se em 10 documentos técnicos especializados e este índice mestre:
 
 | Documento | Título Formal | Escopo Técnico Resumido | Código-Fonte Referenciado | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **[[00-visao-geral]]** | Visão Geral, Negócio & Casos de Uso | Problema de farming de 10+ abas em Chrome, solução Headless Watcher (~1MB RAM), multi-contas e PokeIdle Hub. | `src-tauri/src/state.rs`<br/>`scripts/benchmark-performance.ts` | **Concluído** |
+| **[[00-visao-geral]]** | Visão Geral, Negócio & Casos de Uso | Problema de farming de 10+ abas em Chrome, solução Headless Watcher (~1MB RAM), multi-contas, PokeIdle Hub e Votos Diários. | `src-tauri/src/state.rs`<br/>`scripts/benchmark-performance.ts` | **Concluído** |
 | **[[01-arquitetura]]** | Arquitetura Geral & Barramento IPC | Topologia C4, fronteira IPC Tauri v2, ciclo de boot (`main.rs`, `lib.rs`), flags V8/WebView2 e canais assíncronos. | `src-tauri/src/lib.rs`<br/>`src-tauri/src/commands.rs` | **Concluído** |
 | **[[02-twitch-engine]]** | Subsistema Twitch & Telemetria | IRC WebSocket, GQL Queries, Spade telemetria (`minute-watched`), claim de baús e Coordenador de Prioridade (máx 2 slots). | `src-tauri/src/twitch/` | **Concluído** |
 | **[[03-kick-engine]]** | Subsistema Kick & TLS Bypass | Pusher WS multiplexado (16 canais/conn), Viewer WebSocket token, bridge TLS via `curl.exe` e OkHttp JNI. | `src-tauri/src/kick/` | **Concluído** |
 | **[[04-games-engine]]** | Game Workspace & Motor Anti-Sleep | Child Webviews Wry, layouts dinâmicos (Grid/Focus/Sidebar), motor anti-sleep JS, rAF override e extensão `/hunt`. | `src-tauri/src/games/`<br/>`src/components/games/` | **Concluído** |
 | **[[05-backend-core]]** | Backend Core, Estado & Dicionário IPC | `AppState` thread-safe, persistência `config.json`, Modo Vigília (300s loop), migrações e catálogo exaustivo de comandos IPC. | `src-tauri/src/state.rs`<br/>`src-tauri/src/config/` | **Concluído** |
-| **[[06-frontend]]** | Camada Frontend React 19 & Zustand | Store Zustand, catálogo de telas/componentes, ciclo reativo de eventos de live e serviços de adaptação mobile/desktop. | `src/`<br/>`src/stores/appStore.ts` | **Concluído** |
-| **[[07-multiplataforma-android]]** | Multiplataforma, JNI & Android Build | Foreground Service, Wakelock, bridges Java/Kotlin, bypass de bateria OEM e pipeline de compilação `build-android.ps1`. | `src-tauri/gen/android/`<br/>`scripts/build-android.ps1` | **Concluído** |
+| **[[06-frontend]]** | Camada Frontend React 19 & Zustand | Store Zustand, catálogo de telas/componentes, ciclo reativo de eventos de live/voto e serviços de adaptação mobile/desktop. | `src/`<br/>`src/stores/appStore.ts` | **Concluído** |
+| **[[07-multiplataforma-android]]** | Multiplataforma, JNI & Android Build | Foreground Service, Wakelock, VoteWebViewManager, AlarmManager, bridges Kotlin e pipeline `build-android.ps1`. | `src-tauri/gen/android/`<br/>`scripts/build-android.ps1` | **Concluído** |
 | **[[08-operacao-e-scripts]]** | Operação, Suíte de Testes & Release | Esteira de testes automatizados (`scripts/*.ts`), assinatura Minisign, atualização via GitHub Releases e diagnóstico de falhas. | `scripts/`<br/>`RELEASE_GUIDE.md` | **Concluído** |
+| **[[09-sistema-de-votos]]** | Sistema de Votos Diários TopIdle | WebView interativa sob demanda (0 MB em repouso), whitelist TopIdle/OAuth/CAPTCHA, reuso Google e alertas de 24h 01m. | `src-tauri/src/votes/`<br/>`src/components/votes/` | **Concluído** |
 
 ---
 
@@ -84,19 +86,23 @@ C:\Projetos\Chatter\
 │   │   │   ├── irc.rs, gql.rs, spade.rs, coordinator.rs, watcher.rs, webview.rs, auth.rs, models.rs
 │   │   ├── kick\                           ──> [[03-kick-engine]]
 │   │   │   ├── pusher.rs, watcher.rs, http.rs, auth.rs, webview.rs
-│   │   └── games\                          ──> [[04-games-engine]]
-│   │       ├── manager.rs, commands.rs, anti_sleep.js, hunt_extension.js
-│   └── gen\android\                        ──> [[07-multiplataforma-android]]
+│   │   ├── games\                          ──> [[04-games-engine]]
+│   │   │   ├── manager.rs, commands.rs, anti_sleep.js, hunt_extension.js
+│   │   └── votes\                          ──> [[09-sistema-de-votos]]
+│   │       ├── manager.rs, policy.rs, notifier.rs, commands.rs, vote_observer.js
+│   └── gen\android\                        ──> [[07-multiplataforma-android]], [[09-sistema-de-votos]]
 │       └── app\src\main\java\com\idlestream\app\
 │           ├── MainActivity.kt, IdleStreamForegroundService.kt, KickHttpBridge.kt, GameSlotManager.kt
+│           └── VoteUrlPolicy.kt, VoteWebViewManager.kt, VoteNotificationHelper.kt, VoteAlarmReceiver.kt
 ├── src\
 │   ├── main.tsx, App.tsx, App.css          ──> [[06-frontend]]
 │   ├── stores\appStore.ts                  ──> [[06-frontend]]
 │   ├── components\                         ──> [[06-frontend]]
 │   │   ├── Header.tsx, Sidebar.tsx, BottomNav.tsx, StreamCard.tsx, AccountManager.tsx
-│   │   └── games\GameWorkspace.tsx         ──> [[04-games-engine]], [[06-frontend]]
-│   ├── services\                           ──> [[06-frontend]], [[07-multiplataforma-android]]
-│   │   ├── gamePlatformService.ts, updaterService.ts
+│   │   ├── games\GameWorkspace.tsx         ──> [[04-games-engine]], [[06-frontend]]
+│   │   └── votes\VoteWorkspace.tsx         ──> [[09-sistema-de-votos]], [[06-frontend]]
+│   ├── services\                           ──> [[06-frontend]], [[07-multiplataforma-android]], [[09-sistema-de-votos]]
+│   │   ├── gamePlatformService.ts, votePlatformService.ts, updaterService.ts
 │   └── types\index.ts, utils\              ──> [[06-frontend]]
 └── scripts\                                ──> [[08-operacao-e-scripts]]
     ├── build-android.ps1, sign-release.ps1, benchmark-performance.ts, test-*.ts
@@ -115,6 +121,7 @@ Esta matriz orienta diretamente novos desenvolvedores ou agentes de IA sobre **q
 | **Ajustar Telemetria de Drops ou Baús Twitch** | 1. `twitch/spade.rs` (`build_spade_payload`)<br/>2. `twitch/gql.rs` (`claim_community_points`)<br/>3. `twitch/coordinator.rs` (`MAX_CONCURRENT_ACTIVE_SLOTS_PER_ACCOUNT`)<br/>4. `twitch/webview.rs` (`AUTO_CLAIM_TWITCH_SCRIPT`) | 1. `src/components/StreamCard.tsx`<br/>2. `src/stores/appStore.ts` (`openStreamRedeem`) | **[[02-twitch-engine]]** |
 | **Ajustar Kick (Bypass TLS, Pusher ou Pontos)** | 1. `kick/http.rs` (`kick_http_request`)<br/>2. `kick/pusher.rs` (`KickAccountSession`)<br/>3. `kick/watcher.rs` (loops de 10s e 120s)<br/>4. `kick/auth.rs` (`authenticate_pusher_channel`) | 1. `src/components/AddAccountModal.tsx`<br/>2. `src/stores/appStore.ts` (`saveKickSession`) | **[[03-kick-engine]]** |
 | **Adicionar Jogos ou Alterar Motor Anti-Sleep** | 1. `games/manager.rs` (`start_game_slot`, `apply_layout`)<br/>2. `games/anti_sleep.js` (rAF dispatcher, áudio `IsAudible`, GC)<br/>3. `games/hunt_extension.js` (tabelas PokeIdle) | 1. `src/components/games/GameWorkspace.tsx`<br/>2. `src/services/gamePlatformService.ts` | **[[04-games-engine]]** |
+| **Ajustar Votos Diários TopIdle & Notificações** | 1. `votes/policy.rs` & `votes/manager.rs`<br/>2. `votes/notifier.rs` (24h 01m scheduler)<br/>3. `VoteWebViewManager.kt` & `VoteAlarmReceiver.kt` | 1. `src/components/votes/VoteWorkspace.tsx`<br/>2. `src/services/votePlatformService.ts`<br/>3. `scripts/test-votes.ts` | **[[09-sistema-de-votos]]** |
 | **Criar Novo Comando IPC (Rust $\leftrightarrow$ React)** | 1. `commands.rs` ou `games/commands.rs` (`#[tauri::command]`)<br/>2. `lib.rs` (adicionar em `tauri::generate_handler![...]`) | 1. `src/stores/appStore.ts` (`invoke('nome_comando', ...)`) | **[[01-arquitetura]]**<br/>**[[05-backend-core]]** |
 | **Modificar Telas, Modais ou Estado da UI** | N/A (Consome comandos IPC existentes) | 1. `src/stores/appStore.ts` (estado / actions)<br/>2. `src/App.tsx` (roteamento e modais)<br/>3. `src/components/` (componentes atômicos) | **[[06-frontend]]** |
 | **Alterar Notificação ou Fundo no Android** | 1. `IdleStreamForegroundService.kt` (notificação e locks)<br/>2. `KickHttpBridge.kt` & `MainActivity.kt` (JNI / JS Bridge)<br/>3. `kick/http.rs` (`update_android_notification`) | 1. `src/services/gamePlatformService.ts`<br/>2. `src/components/BatteryBanner.tsx` | **[[07-multiplataforma-android]]** |

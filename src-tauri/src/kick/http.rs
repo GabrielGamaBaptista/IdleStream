@@ -313,3 +313,41 @@ pub fn update_android_notification(title: &str, text: &str) {
 
 #[cfg(not(target_os = "android"))]
 pub fn update_android_notification(_title: &str, _text: &str) {}
+
+#[cfg(target_os = "android")]
+pub fn send_android_vote_notification(account_id: &str, title: &str, text: &str, dedup_vote_at: i64) {
+    let vm = match JVM.get() {
+        Some(v) => v,
+        None => return,
+    };
+    let mut env = match vm.attach_current_thread() {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let bridge_class = match BRIDGE_CLASS.get() {
+        Some(c) => c,
+        None => return,
+    };
+
+    if let (Ok(j_acc), Ok(j_title), Ok(j_text)) = (
+        env.new_string(account_id),
+        env.new_string(title),
+        env.new_string(text),
+    ) {
+        let args = [
+            JValue::Object(&j_acc),
+            JValue::Object(&j_title),
+            JValue::Object(&j_text),
+            JValue::Long(dedup_vote_at),
+        ];
+        let _ = env.call_static_method(
+            bridge_class,
+            "sendVoteAlertNotification",
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V",
+            &args,
+        );
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn send_android_vote_notification(_account_id: &str, _title: &str, _text: &str, _dedup_vote_at: i64) {}

@@ -16,8 +16,8 @@ wiki_links:
   - "[[01-arquitetura]]"
   - "[[05-backend-core]]"
 status: "completed"
-version: "3.2.8"
-last_updated: "2026-11-07"
+version: "4.0.0"
+last_updated: "2026-11-10"
 summary: "Documentação de engenharia reversa do subsistema Twitch: protocolo IRC WebSocket ultraleve, queries GraphQL públicas e privadas, telemetria Spade, bypass de integridade Kasada, fila do coordenador de slots e automação WebView."
 ---
 
