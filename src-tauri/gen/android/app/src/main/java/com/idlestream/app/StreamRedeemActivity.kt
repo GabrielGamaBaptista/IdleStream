@@ -34,6 +34,7 @@ class StreamRedeemActivity : AppCompatActivity() {
     private var kickSession: String = ""
     private var sessionToken: String = ""
     private var xsrfToken: String = ""
+    private var activeCookieMgr: CookieManager? = null
 
     companion object {
         private const val TAG = "StreamRedeemActivity"
@@ -112,8 +113,87 @@ class StreamRedeemActivity : AppCompatActivity() {
             return "redeem_${platform.lowercase()}_$cleanId"
         }
 
+        fun encodeKickSessionToken(raw: String): String {
+            val decoded = decodeKickSessionToken(raw)
+            if (decoded.isBlank()) return ""
+            return decoded.replace("|", "%7C")
+        }
+
+        fun decodeKickSessionToken(raw: String): String {
+            val trimmed = raw.trim()
+            if (trimmed.isBlank()) return ""
+            return try {
+                java.net.URLDecoder.decode(trimmed, "UTF-8")
+            } catch (_: Exception) {
+                trimmed
+            }
+        }
+
+        fun computeCredentialsHash(
+            platform: String,
+            secret1: String?,
+            secret2: String?,
+            secret3: String? = null
+        ): String {
+            val plat = platform.trim().lowercase()
+            val p1 = secret1?.trim() ?: ""
+            val p2 = if (plat == "kick") decodeKickSessionToken(secret2 ?: "") else (secret2?.trim() ?: "")
+            val p3 = secret3?.trim() ?: ""
+            val raw = "$plat|$p1|$p2|$p3"
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+            return digest.joinToString("") { "%02x".format(it) }
+        }
+
+        private fun parseCookieMap(rawCookies: String?): Map<String, String> {
+            if (rawCookies.isNullOrBlank()) return emptyMap()
+            val map = linkedMapOf<String, String>()
+            for (pair in rawCookies.split(";")) {
+                val trimmed = pair.trim()
+                val idx = trimmed.indexOf('=')
+                if (idx > 0) {
+                    val name = trimmed.substring(0, idx).trim().lowercase()
+                    val value = trimmed.substring(idx + 1).trim()
+                    if (value.isNotBlank()) {
+                        map[name] = value
+                    }
+                }
+            }
+            return map
+        }
+
+        fun shouldSeedProfileCookies(
+            platform: String,
+            existingRawCookies: String?,
+            currentHash: String,
+            savedHash: String?
+        ): Boolean {
+            if (savedHash.isNullOrBlank() || savedHash != currentHash) {
+                return true
+            }
+            val parsed = parseCookieMap(existingRawCookies)
+            return if (platform.equals("kick", ignoreCase = true)) {
+                parsed["kick_session"].isNullOrBlank() || parsed["session_token"].isNullOrBlank()
+            } else {
+                parsed["auth-token"].isNullOrBlank()
+            }
+        }
+
+        fun extractKickCookiesFromHeader(rawCookies: String?): Triple<String?, String?, String?> {
+            val parsed = parseCookieMap(rawCookies)
+            val ks = parsed["kick_session"]
+            val st = parsed["session_token"]?.let { decodeKickSessionToken(it) }?.takeIf { it.isNotBlank() }
+            val xs = parsed["xsrf-token"]
+            return Triple(ks, st, xs)
+        }
+
+        fun extractTwitchAuthFromHeader(rawCookies: String?): String? {
+            val parsed = parseCookieMap(rawCookies)
+            val raw = parsed["auth-token"] ?: return null
+            return decodeKickSessionToken(raw).takeIf { it.isNotBlank() }
+        }
+
         fun buildTwitchCookieString(authToken: String): String {
-            return "auth-token=${authToken.trim()}; Domain=.twitch.tv; Path=/; Secure; SameSite=Lax"
+            return "auth-token=${authToken.trim()}; Domain=.twitch.tv; Path=/; Max-Age=7776000; Secure; SameSite=Lax"
         }
 
         fun buildKickCookies(
@@ -123,13 +203,14 @@ class StreamRedeemActivity : AppCompatActivity() {
         ): List<Pair<String, String>> {
             val list = mutableListOf<Pair<String, String>>()
             if (!sessionToken.isNullOrBlank()) {
-                list.add("session_token" to "session_token=${sessionToken.trim()}; Domain=.kick.com; Path=/; Secure")
+                val encodedSt = encodeKickSessionToken(sessionToken)
+                list.add("session_token" to "session_token=$encodedSt; Domain=.kick.com; Path=/; Max-Age=7776000; Secure")
             }
             if (!kickSession.isNullOrBlank()) {
-                list.add("kick_session" to "kick_session=${kickSession.trim()}; Domain=.kick.com; Path=/; Secure")
+                list.add("kick_session" to "kick_session=${kickSession.trim()}; Domain=.kick.com; Path=/; Max-Age=7776000; Secure; HttpOnly")
             }
             if (!xsrfToken.isNullOrBlank()) {
-                list.add("XSRF-TOKEN" to "XSRF-TOKEN=${xsrfToken.trim()}; Domain=.kick.com; Path=/; Secure")
+                list.add("XSRF-TOKEN" to "XSRF-TOKEN=${xsrfToken.trim()}; Domain=.kick.com; Path=/; Max-Age=7776000; Secure")
             }
             return list
         }
@@ -243,9 +324,6 @@ class StreamRedeemActivity : AppCompatActivity() {
                 super.onPageStarted(view, url, favicon)
                 progressBar.visibility = View.VISIBLE
 
-                // Injeção de reforço de cookies via JS no início do ciclo de renderização
-                injectCookiesViaJs(view)
-
                 if (isTwitch) {
                     view?.evaluateJavascript(AUTO_CLAIM_TWITCH_JS, null)
                 }
@@ -254,6 +332,8 @@ class StreamRedeemActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
+
+                syncCookiesBackToApp()
 
                 if (isTwitch) {
                     view?.evaluateJavascript(AUTO_CLAIM_TWITCH_JS, null)
@@ -312,69 +392,108 @@ class StreamRedeemActivity : AppCompatActivity() {
 
         cookieMgr.setAcceptCookie(true)
         cookieMgr.setAcceptThirdPartyCookies(webView, true)
+        activeCookieMgr = cookieMgr
+
+        val prefs = getSharedPreferences("idlestream_redeem_prefs", MODE_PRIVATE)
+        val syncKey = "sync_hash_${if (isKick) "kick" else "twitch"}_$accountId"
+        val savedHash = prefs.getString(syncKey, null)
 
         if (!isKick) {
-            // Twitch
+            // Twitch (Profile-First + Cookie Nativo com Max-Age=90d)
             if (authToken.isNotBlank()) {
-                val cookieStr = buildTwitchCookieString(authToken)
-                val domains = listOf(
-                    "https://.twitch.tv",
-                    "https://twitch.tv",
-                    "https://www.twitch.tv",
-                    "https://m.twitch.tv",
-                    "https://id.twitch.tv"
-                )
-                for (domain in domains) {
-                    cookieMgr.setCookie(domain, cookieStr)
+                val currentHash = computeCredentialsHash("twitch", authToken, null, null)
+                val existingRaw = cookieMgr.getCookie("https://www.twitch.tv")
+                if (shouldSeedProfileCookies("twitch", existingRaw, currentHash, savedHash)) {
+                    val cookieStr = buildTwitchCookieString(authToken)
+                    val origins = listOf(
+                        "https://twitch.tv",
+                        "https://www.twitch.tv",
+                        "https://m.twitch.tv",
+                        "https://id.twitch.tv"
+                    )
+                    for (origin in origins) {
+                        cookieMgr.setCookie(origin, cookieStr)
+                    }
+                    cookieMgr.flush()
+                    prefs.edit().putString(syncKey, currentHash).apply()
+                    Log.d(TAG, "Seed Profile-First aplicado na Twitch para conta $accountId")
+                } else {
+                    Log.d(TAG, "Profile-First preservou sessão Twitch existente para conta $accountId")
                 }
             }
         } else {
-            // Kick
-            val kickCookies = buildKickCookies(sessionToken, kickSession, xsrfToken)
-            val domains = listOf(
-                "https://.kick.com",
-                "https://kick.com"
-            )
-            for (domain in domains) {
-                for ((_, cookieStr) in kickCookies) {
-                    cookieMgr.setCookie(domain, cookieStr)
+            // Kick (Profile-First + Cookie Nativo HttpOnly + Max-Age=90d)
+            if (sessionToken.isNotBlank() || kickSession.isNotBlank()) {
+                val currentHash = computeCredentialsHash("kick", kickSession, sessionToken, xsrfToken)
+                val existingRaw = cookieMgr.getCookie("https://kick.com")
+                if (shouldSeedProfileCookies("kick", existingRaw, currentHash, savedHash)) {
+                    val kickCookies = buildKickCookies(sessionToken, kickSession, xsrfToken)
+                    val origins = listOf(
+                        "https://kick.com",
+                        "https://www.kick.com"
+                    )
+                    for (origin in origins) {
+                        for ((_, cookieStr) in kickCookies) {
+                            cookieMgr.setCookie(origin, cookieStr)
+                        }
+                    }
+                    cookieMgr.flush()
+                    prefs.edit().putString(syncKey, currentHash).apply()
+                    Log.d(TAG, "Seed Profile-First aplicado na Kick para conta $accountId")
+                } else {
+                    Log.d(TAG, "Profile-First preservou sessão Kick existente para conta $accountId")
                 }
             }
         }
-
-        cookieMgr.flush()
     }
 
-    private fun injectCookiesViaJs(view: WebView?) {
-        if (view == null) return
-        val isKick = platform.equals("kick", ignoreCase = true)
+    private fun syncCookiesBackToApp() {
+        val cookieMgr = activeCookieMgr ?: return
+        try {
+            cookieMgr.flush()
+            val isKick = platform.equals("kick", ignoreCase = true)
+            val prefs = getSharedPreferences("idlestream_redeem_prefs", MODE_PRIVATE)
+            if (isKick) {
+                val raw = cookieMgr.getCookie("https://kick.com") ?: return
+                val (obsKs, obsSt, obsXs) = extractKickCookiesFromHeader(raw)
+                if (obsKs.isNullOrBlank() && obsSt.isNullOrBlank()) return
 
-        if (!isKick && authToken.isNotBlank()) {
-            val safeToken = authToken.replace("'", "\\'")
-            val js = """
-                (function() {
-                    try {
-                        document.cookie = 'auth-token=$safeToken; domain=.twitch.tv; path=/; secure; SameSite=Lax';
-                        document.cookie = 'auth-token=$safeToken; domain=www.twitch.tv; path=/; secure; SameSite=Lax';
-                    } catch(e) {}
-                })();
-            """.trimIndent()
-            view.evaluateJavascript(js, null)
-        } else if (isKick) {
-            val safeSessionToken = sessionToken.replace("'", "\\'")
-            val safeKickSession = kickSession.replace("'", "\\'")
-            val safeXsrf = xsrfToken.replace("'", "\\'")
-            val js = """
-                (function() {
-                    try {
-                        ${if (safeSessionToken.isNotBlank()) "document.cookie = 'session_token=$safeSessionToken; domain=.kick.com; path=/; secure';" else ""}
-                        ${if (safeKickSession.isNotBlank()) "document.cookie = 'kick_session=$safeKickSession; domain=.kick.com; path=/; secure';" else ""}
-                        ${if (safeXsrf.isNotBlank()) "document.cookie = 'XSRF-TOKEN=$safeXsrf; domain=.kick.com; path=/; secure';" else ""}
-                    } catch(e) {}
-                })();
-            """.trimIndent()
-            view.evaluateJavascript(js, null)
+                val curStDecoded = decodeKickSessionToken(sessionToken)
+                val ksChanged = !obsKs.isNullOrBlank() && obsKs != kickSession
+                val stChanged = !obsSt.isNullOrBlank() && obsSt != curStDecoded
+                val xsChanged = !obsXs.isNullOrBlank() && obsXs != xsrfToken
+
+                if (ksChanged || stChanged || xsChanged) {
+                    val mergedKs = obsKs?.takeIf { it.isNotBlank() } ?: kickSession
+                    val mergedSt = obsSt?.takeIf { it.isNotBlank() } ?: curStDecoded
+                    val mergedXs = obsXs?.takeIf { it.isNotBlank() } ?: xsrfToken
+
+                    kickSession = mergedKs
+                    sessionToken = mergedSt
+                    xsrfToken = mergedXs
+
+                    val newHash = computeCredentialsHash("kick", mergedKs, mergedSt, mergedXs)
+                    prefs.edit().putString("sync_hash_kick_$accountId", newHash).apply()
+                    MainActivity.instance?.notifyKickSessionRotated(accountId, mergedKs, mergedSt, mergedXs)
+                }
+            } else {
+                val raw = cookieMgr.getCookie("https://www.twitch.tv") ?: return
+                val obsTok = extractTwitchAuthFromHeader(raw) ?: return
+                if (obsTok.isNotBlank() && obsTok != authToken.removePrefix("oauth:").trim()) {
+                    authToken = obsTok
+                    val newHash = computeCredentialsHash("twitch", obsTok, null, null)
+                    prefs.edit().putString("sync_hash_twitch_$accountId", newHash).apply()
+                    MainActivity.instance?.notifyTwitchAuthSuccess(accountId, obsTok)
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Falha não-crítica ao sincronizar cookies de retorno: ${e.message}")
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        syncCookiesBackToApp()
     }
 
     @Deprecated("Deprecated in Java")
@@ -387,6 +506,7 @@ class StreamRedeemActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        syncCookiesBackToApp()
         webView.stopLoading()
         webView.destroy()
         super.onDestroy()

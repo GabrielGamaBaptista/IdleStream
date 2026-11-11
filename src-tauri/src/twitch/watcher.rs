@@ -22,6 +22,7 @@ impl TwitchWatcherHandle {
 }
 
 pub type StatusCallback = Arc<dyn Fn(StatusKind, Option<String>, Option<i64>) + Send + Sync + 'static>;
+pub type AuthFailureCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 
 fn apply_status(
     on_status: &StatusCallback,
@@ -62,6 +63,7 @@ pub fn start_twitch_watcher(
     coordinator: AccountPriorityCoordinator,
     on_status: StatusCallback,
     app_handle: Option<tauri::AppHandle>,
+    on_auth_failure: Option<AuthFailureCallback>,
 ) -> TwitchWatcherHandle {
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
@@ -81,8 +83,17 @@ pub fn start_twitch_watcher(
         // Obtém ou resolve o user_id do visualizador
         let mut resolved_user_id = user_id_override.unwrap_or_default();
         if resolved_user_id.is_empty() && !clean_token.is_empty() {
-            if let Ok(uid) = fetch_current_user_id(&http, &clean_token).await {
-                resolved_user_id = uid;
+            match fetch_current_user_id(&http, &clean_token).await {
+                Ok(uid) => {
+                    resolved_user_id = uid;
+                }
+                Err(ref err) => {
+                    if err.contains("currentUser") || err.contains("401") || err.contains("403") {
+                        if let Some(ref cb) = on_auth_failure {
+                            cb(err.clone());
+                        }
+                    }
+                }
             }
         }
 
@@ -128,6 +139,11 @@ pub fn start_twitch_watcher(
             let context = match fetch_channel_points_context(&http, &clean_slug, Some(&clean_token)).await {
                 Ok(ctx) => ctx,
                 Err(e) => {
+                    if e.contains("401") || e.contains("403") || e.contains("Unauthorized") {
+                        if let Some(ref cb) = on_auth_failure {
+                            cb(e.clone());
+                        }
+                    }
                     on_status(StatusKind::Error, Some(format!("Erro ao checar Twitch: {}", e)), current_points);
                     tokio::select! {
                         _ = stop_rx.recv() => {

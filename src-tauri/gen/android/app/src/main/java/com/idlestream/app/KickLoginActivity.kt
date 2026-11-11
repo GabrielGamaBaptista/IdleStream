@@ -286,6 +286,10 @@ class KickLoginActivity : AppCompatActivity() {
 
         if (canSave) {
             isCompleted = true
+            getSharedPreferences("idlestream_redeem_prefs", MODE_PRIVATE)
+                .edit()
+                .remove("sync_hash_kick_$accountId")
+                .apply()
             MainActivity.instance?.notifyKickAuthSuccess(
                 accountId,
                 cookies.kickSession!!,

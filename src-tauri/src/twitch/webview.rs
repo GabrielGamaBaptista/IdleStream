@@ -1,8 +1,26 @@
+#[cfg(desktop)]
+use crate::accounts::session_sync::{
+    plan_twitch_cookie_seeding, read_profile_sync_hash, write_profile_sync_hash, SeedingPlan,
+    StoredCookieSnapshot,
+};
+#[cfg(desktop)]
+use crate::state::AppState;
+#[cfg(desktop)]
+use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+#[cfg(desktop)]
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+#[cfg(desktop)]
+use std::sync::Arc;
+#[cfg(desktop)]
+use tauri::webview::PageLoadEvent;
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager};
 
+#[cfg(desktop)]
 static ACTIVE_HEADLESS_CLAIMS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(desktop)]
 const MAX_CONCURRENT_HEADLESS_CLAIMS: usize = 1;
 
 #[derive(Debug, Clone)]
@@ -68,7 +86,89 @@ const AUTO_CLAIM_TWITCH_SCRIPT: &str = r#"
 })();
 "#;
 
+#[cfg(desktop)]
+fn to_twitch_snapshots(cookies: &[tauri::webview::Cookie<'static>]) -> Vec<StoredCookieSnapshot> {
+    cookies
+        .iter()
+        .map(|c| StoredCookieSnapshot {
+            name: c.name().to_string(),
+            value: c.value().to_string(),
+            domain: c.domain().map(|s| s.to_string()),
+            path: c.path().map(|s| s.to_string()),
+            http_only: c.http_only(),
+            is_session: matches!(
+                c.expires(),
+                Some(tauri::webview::cookie::Expiration::Session) | None
+            ),
+        })
+        .collect()
+}
+
+#[cfg(desktop)]
+async fn read_twitch_snapshots(
+    win: &tauri::WebviewWindow,
+) -> Result<Vec<StoredCookieSnapshot>, String> {
+    let win_clone = win.clone();
+    let twitch_url = "https://www.twitch.tv"
+        .parse::<url::Url>()
+        .map_err(|e| format!("URL error: {}", e))?;
+    let cookies = tokio::task::spawn_blocking(move || win_clone.cookies_for_url(twitch_url))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| format!("Erro ao ler cookies da Twitch: {}", e))?;
+    Ok(to_twitch_snapshots(&cookies))
+}
+
+#[cfg(desktop)]
+fn apply_twitch_seeding_plan(
+    win: &tauri::WebviewWindow,
+    profile_dir: &Path,
+    plan: &SeedingPlan,
+) -> bool {
+    let mut changed = false;
+
+    for snap in &plan.cookies_to_delete {
+        let mut cb =
+            tauri::webview::cookie::Cookie::build((snap.name.clone(), snap.value.clone()));
+        if let Some(ref dom) = snap.domain {
+            cb = cb.domain(dom.clone());
+        }
+        if let Some(ref p) = snap.path {
+            cb = cb.path(p.clone());
+        }
+        let _ = win.delete_cookie(cb.build());
+        changed = true;
+    }
+
+    for dc in &plan.cookies_to_set {
+        let mut cb = tauri::webview::cookie::Cookie::build((dc.name.clone(), dc.value.clone()))
+            .domain(dc.domain.clone())
+            .path(dc.path.clone())
+            .http_only(dc.http_only)
+            .secure(dc.secure)
+            .max_age(tauri::webview::cookie::time::Duration::seconds(
+                dc.max_age_secs,
+            ));
+        if dc.same_site_lax {
+            cb = cb.same_site(tauri::webview::cookie::SameSite::Lax);
+        }
+        if win.set_cookie(cb.build()).is_ok() {
+            changed = true;
+        }
+    }
+
+    if let Some(ref hash) = plan.target_hash {
+        write_profile_sync_hash(profile_dir, hash);
+    }
+
+    changed
+}
+
 impl TwitchWebManager {
+    pub fn build_redeem_init_script() -> String {
+        AUTO_CLAIM_TWITCH_SCRIPT.to_string()
+    }
+
     pub fn get_profile_dir(app: &AppHandle, account_id: &str) -> PathBuf {
         let base = app
             .path()
@@ -82,16 +182,17 @@ impl TwitchWebManager {
         account_id: &str,
         account_label: &str,
     ) -> Result<(), String> {
-        let label = format!("twitch_login_{}", account_id);
-
-        if let Some(existing) = app.get_webview_window(&label) {
-            let _ = existing.show();
-            let _ = existing.set_focus();
-            return Ok(());
-        }
-
         #[cfg(desktop)]
         {
+            let label = format!("twitch_login_{}", account_id);
+
+            if let Some(existing) = app.get_webview_window(&label) {
+                let _ = existing.unminimize();
+                let _ = existing.show();
+                let _ = existing.set_focus();
+                return Ok(());
+            }
+
             let profile_dir = Self::get_profile_dir(app, account_id);
             let url_parsed = "https://www.twitch.tv/login"
                 .parse()
@@ -118,7 +219,7 @@ impl TwitchWebManager {
     }
 
     /// Extrai os cookies da janela de login usando a API nativa de cookies do Tauri v2
-    pub fn extract_cookies_native(
+    pub async fn extract_cookies_native(
         app: &AppHandle,
         account_id: &str,
     ) -> Result<TwitchCredentials, String> {
@@ -127,8 +228,9 @@ impl TwitchWebManager {
             .get_webview_window(&label)
             .ok_or_else(|| "Janela de login não encontrada. Abra a janela de login primeiro.".to_string())?;
 
-        let cookies = win
-            .cookies()
+        let cookies = tokio::task::spawn_blocking(move || win.cookies())
+            .await
+            .map_err(|e| format!("Task join error ao ler cookies: {}", e))?
             .map_err(|e| format!("Erro ao ler cookies nativos: {}", e))?;
 
         let mut auth_token: Option<String> = None;
@@ -141,27 +243,26 @@ impl TwitchWebManager {
                 let decoded = urlencoding::decode(&val)
                     .unwrap_or(std::borrow::Cow::Borrowed(&val))
                     .into_owned();
-                auth_token = Some(decoded);
+                if !decoded.trim().is_empty() {
+                    auth_token = Some(decoded);
+                }
             } else if name.eq_ignore_ascii_case("unique_id") {
                 unique_id = Some(cookie.value().to_string());
             }
         }
 
         match auth_token {
-            Some(tok) if !tok.is_empty() => {
-                let _ = win.close();
-                Ok(TwitchCredentials {
-                    auth_token: tok,
-                    unique_id,
-                })
-            }
+            Some(tok) if !tok.is_empty() => Ok(TwitchCredentials {
+                auth_token: tok,
+                unique_id,
+            }),
             _ => Err("Cookie 'auth-token' não encontrado ou vazio. Conclua o login na janela primeiro.".into()),
         }
     }
 
     /// Abre a WebView da live da Twitch para resgatar pontos do canal com a conta especificada.
-    /// Utiliza o modo popout chat por padrão para que o saldo de pontos, baú e loja de resgate fiquem 100% visíveis.
-    pub fn open_redeem_window(
+    /// Usa Cookies Nativos persistentes (Profile-First) sem injetar document.cookie no init script.
+    pub async fn open_redeem_window(
         app: &AppHandle,
         account_id: &str,
         account_label: &str,
@@ -180,67 +281,171 @@ impl TwitchWebManager {
             .parse::<url::Url>()
             .map_err(|e| format!("URL error: {}", e))?;
 
-        if let Some(existing) = app.get_webview_window(&label) {
-            let _ = existing.navigate(url_parsed);
-            let _ = existing.show();
-            let _ = existing.set_focus();
-            return Ok(());
-        }
-
         #[cfg(desktop)]
         {
             let profile_dir = Self::get_profile_dir(app, account_id);
-            let mut init_script = String::new();
-            if let Some(tok) = auth_token {
-                let trimmed = tok.trim_start_matches("oauth:").trim();
-                if !trimmed.is_empty() {
-                    let tok_json = serde_json::to_string(trimmed).unwrap_or_default();
-                    init_script = format!(
-                        r#"
-                        (function() {{
-                            try {{
-                                const tok = {tok_json};
-                                if (tok) {{
-                                    document.cookie = "auth-token=" + tok + "; domain=.twitch.tv; path=/; SameSite=Lax; Secure";
-                                    document.cookie = "auth-token=" + tok + "; domain=www.twitch.tv; path=/; SameSite=Lax; Secure";
-                                }}
-                            }} catch(e) {{}}
-                        }})();
-                        "#
-                    );
-                }
-            }
-            init_script.push_str(AUTO_CLAIM_TWITCH_SCRIPT);
 
-            let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
+            if let Some(existing) = app.get_webview_window(&label) {
+                if let Ok(snaps) = read_twitch_snapshots(&existing).await {
+                    if let Some(state) = app.try_state::<Arc<AppState>>() {
+                        state
+                            .sync_twitch_auth_from_webview(account_id, &profile_dir, &snaps)
+                            .await;
+                    }
+                    let saved_hash = read_profile_sync_hash(&profile_dir);
+                    let latest_token = if let Some(state) = app.try_state::<Arc<AppState>>() {
+                        let cfg = state.config.lock().await;
+                        cfg.accounts
+                            .iter()
+                            .find(|a| a.id == account_id)
+                            .and_then(|a| a.oauth_token.clone())
+                    } else {
+                        None
+                    };
+                    let plan = plan_twitch_cookie_seeding(
+                        &snaps,
+                        latest_token.as_deref().or(auth_token),
+                        saved_hash.as_deref(),
+                    );
+                    if apply_twitch_seeding_plan(&existing, &profile_dir, &plan) {
+                        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                    }
+                }
+                let _ = existing.set_title(&format!(
+                    "IdleStream - Chat & Pontos: {} (@{}) em Twitch/{}",
+                    account_label, account_username, clean_slug
+                ));
+                let _ = existing.navigate(url_parsed);
+                let _ = existing.unminimize();
+                let _ = existing.show();
+                let _ = existing.set_focus();
+                return Ok(());
+            }
+
+            let blank_url = "about:blank"
+                .parse::<url::Url>()
+                .map_err(|e| format!("URL error: {}", e))?;
+
+            let allow_close = Arc::new(AtomicBool::new(false));
+            let closing_started = Arc::new(AtomicBool::new(false));
+            let acc_id_load = account_id.to_string();
+            let app_load = app.clone();
+            let profile_load = profile_dir.clone();
+
+            let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(blank_url))
                 .title(format!(
                     "IdleStream - Chat & Pontos: {} (@{}) em Twitch/{}",
                     account_label, account_username, clean_slug
                 ))
-                .data_directory(profile_dir)
+                .data_directory(profile_dir.clone())
                 .inner_size(520.0, 720.0)
                 .center()
-                .visible(true);
+                .visible(false)
+                .initialization_script(&Self::build_redeem_init_script())
+                .on_page_load(move |webview_win, payload| {
+                    if payload.event() != PageLoadEvent::Finished {
+                        return;
+                    }
+                    if payload.url().as_str().starts_with("about:") {
+                        return;
+                    }
+                    let app_cb = app_load.clone();
+                    let acc_cb = acc_id_load.clone();
+                    let dir_cb = profile_load.clone();
+                    let win_cb = webview_win.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Ok(snaps) = read_twitch_snapshots(&win_cb).await {
+                            if let Some(state) = app_cb.try_state::<Arc<AppState>>() {
+                                state
+                                    .sync_twitch_auth_from_webview(&acc_cb, &dir_cb, &snaps)
+                                    .await;
+                            }
+                        }
+                    });
+                });
 
-            if !init_script.is_empty() {
-                builder = builder.initialization_script(&init_script);
-            }
-
-            builder
+            let win = builder
                 .build()
                 .map_err(|e| format!("Falha ao abrir janela de resgate Twitch: {}", e))?;
+
+            let allow_close_ev = Arc::clone(&allow_close);
+            let closing_ev = Arc::clone(&closing_started);
+            let app_close = app.clone();
+            let acc_close = account_id.to_string();
+            let dir_close = profile_dir.clone();
+            let win_ev = win.clone();
+            win.on_window_event(move |event| {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    if allow_close_ev.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    api.prevent_close();
+                    if closing_ev
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
+                        let allow_done = Arc::clone(&allow_close_ev);
+                        let win_done = win_ev.clone();
+                        let app_done = app_close.clone();
+                        let acc_done = acc_close.clone();
+                        let dir_done = dir_close.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Ok(Ok(snaps)) = tokio::time::timeout(
+                                std::time::Duration::from_millis(1500),
+                                read_twitch_snapshots(&win_done),
+                            )
+                            .await
+                            {
+                                if let Some(state) = app_done.try_state::<Arc<AppState>>() {
+                                    state
+                                        .sync_twitch_auth_from_webview(&acc_done, &dir_done, &snaps)
+                                        .await;
+                                }
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                            allow_done.store(true, Ordering::SeqCst);
+                            let _ = win_done.close();
+                        });
+                    }
+                }
+            });
+
+            let existing_snaps = read_twitch_snapshots(&win).await.unwrap_or_default();
+            let saved_hash = read_profile_sync_hash(&profile_dir);
+            let plan = plan_twitch_cookie_seeding(
+                &existing_snaps,
+                auth_token,
+                saved_hash.as_deref(),
+            );
+            if apply_twitch_seeding_plan(&win, &profile_dir, &plan) {
+                tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            }
+
+            let _ = win.navigate(url_parsed);
+            let _ = win.unminimize();
+            let _ = win.show();
+            let _ = win.set_focus();
         }
 
         #[cfg(not(desktop))]
         {
-            let _ = (app, account_id, account_label, account_username, channel_slug, auth_token);
+            let _ = (
+                app,
+                account_id,
+                account_label,
+                account_username,
+                channel_slug,
+                auth_token,
+                url_parsed,
+                label,
+            );
         }
 
         Ok(())
     }
 
     /// Dispara uma janela WebView oculta em segundo plano para auto-resgatar o baú de +50 pontos
-    /// com validação genuína de JavaScript e Kasada anti-bot.
+    /// com validação genuína de JavaScript e Kasada anti-bot, preservando cookies persistentes.
     pub fn trigger_background_chest_claim(
         app: &AppHandle,
         account_id: &str,
@@ -276,55 +481,47 @@ impl TwitchWebManager {
             let Ok(url_parsed) = target_url.parse::<url::Url>() else {
                 return;
             };
-
-            let profile_dir = Self::get_profile_dir(app, account_id);
-            let mut init_script = String::new();
-            if let Some(tok) = auth_token {
-                let trimmed = tok.trim_start_matches("oauth:").trim();
-                if !trimmed.is_empty() {
-                    let tok_json = serde_json::to_string(trimmed).unwrap_or_default();
-                    init_script = format!(
-                        r#"
-                        (function() {{
-                            try {{
-                                const tok = {tok_json};
-                                if (tok) {{
-                                    document.cookie = "auth-token=" + tok + "; domain=.twitch.tv; path=/; SameSite=Lax; Secure";
-                                    document.cookie = "auth-token=" + tok + "; domain=www.twitch.tv; path=/; SameSite=Lax; Secure";
-                                }}
-                            }} catch(e) {{}}
-                        }})();
-                        "#
-                    );
-                }
-            }
-            init_script.push_str(AUTO_CLAIM_TWITCH_SCRIPT);
-
-            let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url_parsed))
-                .title(format!("IdleStream Claim Headless - {}", clean_slug))
-                .data_directory(profile_dir)
-                .inner_size(800.0, 600.0)
-                .visible(false);
-
-            let builder = if !init_script.is_empty() {
-                builder.initialization_script(&init_script)
-            } else {
-                builder
+            let Ok(blank_url) = "about:blank".parse::<url::Url>() else {
+                return;
             };
 
+            let app_owned = app.clone();
+            let acc_id_owned = account_id.to_string();
+            let tok_owned = auth_token.map(|t| t.to_string());
+            let profile_dir = Self::get_profile_dir(app, account_id);
+
             ACTIVE_HEADLESS_CLAIMS.fetch_add(1, Ordering::Relaxed);
-            if let Ok(win) = builder.build() {
-                println!("[Twitch] Disparado auto-claim headless para conta {} em {}", account_id, clean_slug);
-                let win_clone = win.clone();
-                tauri::async_runtime::spawn(async move {
+            tauri::async_runtime::spawn(async move {
+                let builder =
+                    WebviewWindowBuilder::new(&app_owned, &label, WebviewUrl::External(blank_url))
+                        .title(format!("IdleStream Claim Headless - {}", clean_slug))
+                        .data_directory(profile_dir.clone())
+                        .inner_size(800.0, 600.0)
+                        .visible(false)
+                        .initialization_script(&Self::build_redeem_init_script());
+
+                if let Ok(win) = builder.build() {
+                    let existing_snaps = read_twitch_snapshots(&win).await.unwrap_or_default();
+                    let saved_hash = read_profile_sync_hash(&profile_dir);
+                    let plan = plan_twitch_cookie_seeding(
+                        &existing_snaps,
+                        tok_owned.as_deref(),
+                        saved_hash.as_deref(),
+                    );
+                    if apply_twitch_seeding_plan(&win, &profile_dir, &plan) {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(40)).await;
+                    }
+                    let _ = win.navigate(url_parsed);
+                    println!(
+                        "[Twitch] Disparado auto-claim headless para conta {} em {}",
+                        acc_id_owned, clean_slug
+                    );
                     // Mantém a janela oculta ativa por 25 segundos para completar Kasada e clique do baú
                     tokio::time::sleep(tokio::time::Duration::from_secs(25)).await;
-                    let _ = win_clone.close();
-                    ACTIVE_HEADLESS_CLAIMS.fetch_sub(1, Ordering::Relaxed);
-                });
-            } else {
+                    let _ = win.close();
+                }
                 ACTIVE_HEADLESS_CLAIMS.fetch_sub(1, Ordering::Relaxed);
-            }
+            });
         }
 
         #[cfg(not(desktop))]

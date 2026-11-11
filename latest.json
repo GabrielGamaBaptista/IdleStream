@@ -1,11 +1,11 @@
 {
-  "version": "4.0.0",
-  "notes": "IdleStream v4.0.0 — Nova seção Votos Diários (TopIdle) no Desktop e Android logo abaixo de Idle Games para as 4 contas (GGB2006, GGB2006_2, GGB2006_3 e GGB2006_4) com WebView interativa sob demanda (0 MB em repouso), whitelist estrita (topidle.com, OAuth Google dos perfis do Idle Games e CAPTCHA manual), observador passivo e notificações exatas após 24h 01m (WinRT Toast no Windows e AlarmManager/NotificationManager no Android).",
-  "pub_date": "2026-11-10T22:21:30Z",
+  "version": "4.0.1",
+  "notes": "IdleStream v4.0.1 — Correção crítica de desconexão entre resgates na Kick (Desktop e Android) via arquitetura Profile-First com cookies nativos persistentes (Max-Age 90 dias + HttpOnly em kick_session), eliminação de sobrescrita via document.cookie, sincronização reversa automática de tokens rotacionados e novo Verificador Contínuo das 8 Contas (Twitch e Kick) no startup, a cada 10 minutos e em tempo real via Watchers.",
+  "pub_date": "2026-11-11T14:46:18Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjhPd0h0MEVXSVFUTXN2MlhiaktyWFdISUNHaTZkWmxhNG5uZWIzNWwvWTZkSnRnQ1RscEU3cmtVR0VLak41YlRkUDhXRXRYSEszUzB1dUN3NzdIa1FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MzQ5MDQzCWZpbGU6SWRsZVN0cmVhbV80LjAuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4wLjAKYlpING0yWWU5VHgyM1dPUTJFYy85aGloNDF1bFoxbGdSYVM3UjBZNTZzd2NQMDJkVGxEcHA5VGpGczd4dVNCVEtVeCtFaEJzNVRVd3ZvdHB1TmpRQkE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.0.0/IdleStream_4.0.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjNvdzI5bjE0MUJxZkVleDJSQ3FJUEt1Z3NHdjZETGRtQXVOYitvNHpGR0s1ZEVtSVl2ZXVXOEZoa2pkbnNHWFBFQWRKUHl4SzdyTnlrRW5ERVpDZ2dZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDA4MzcyCWZpbGU6SWRsZVN0cmVhbV80LjAuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4wLjEKSkNWSUJQVVdCRzUrMU1YRDlRTlZDaFFJbHE0c3ZZeDN3NWllZzFMZkJockJCb0dMSjNEeUVmZHdIMHJMNXlQMk1ERjVUNHhNeHY4OGNxK2ZDRzdFQkE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.0.1/IdleStream_4.0.1_x64-setup.exe"
     }
   }
 }

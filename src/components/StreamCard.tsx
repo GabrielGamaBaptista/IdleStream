@@ -3,6 +3,10 @@ import { StreamConfig } from '../types';
 import { useAppStore } from '../stores/appStore';
 import { formatUptime, formatPoints } from '../utils/format';
 import {
+  getAccountHealthStatus,
+  shouldConfirmRedeemWhenUnhealthy,
+} from '../utils/accountHealth';
+import {
   Play,
   Square,
   Trash2,
@@ -23,6 +27,7 @@ interface StreamCardProps {
 
 export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   const config = useAppStore((state) => state.config);
+  const accountsHealth = useAppStore((state) => state.accountsHealth);
   const status = useAppStore((state) => state.statuses[stream.id]) || {
     status: 'disconnected',
     is_live: false,
@@ -179,21 +184,47 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-0.5">
               {streamAccounts.map((acc) => {
                 const accPoints = status.account_points?.[acc.id];
+                const accHealth = getAccountHealthStatus(accountsHealth, acc.id);
+                const isUnhealthy = shouldConfirmRedeemWhenUnhealthy(accHealth);
+                const dotColor = !accHealth
+                  ? 'bg-neutral-500'
+                  : accHealth.state === 'healthy'
+                  ? 'bg-emerald-400'
+                  : isUnhealthy
+                  ? 'bg-rose-500'
+                  : 'bg-amber-400';
 
                 return (
                   <button
                     key={acc.id}
                     type="button"
-                    onClick={() => openStreamRedeem(stream.id, acc.id)}
+                    onClick={() => {
+                      if (isUnhealthy) {
+                        const proceed = window.confirm(
+                          `⚠️ A conta "${acc.label}" (@${acc.username}) está desconectada ou incompleta:\n` +
+                            `${accHealth?.message || 'Reautenticação necessária'}\n\n` +
+                            `Se abrir agora, o resgate poderá exigir login.\nDeseja ABRIR A LIVE mesmo assim?`
+                        );
+                        if (!proceed) return;
+                      }
+                      openStreamRedeem(stream.id, acc.id);
+                    }}
                     className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition cursor-pointer text-left shadow-sm ${
-                      isKick
+                      isUnhealthy
+                        ? 'bg-rose-950/30 border-rose-800/70 hover:border-rose-500 text-rose-200 hover:text-white'
+                        : isKick
                         ? 'bg-neutral-900/90 border-neutral-800 hover:border-emerald-600/70 hover:bg-emerald-950/30 text-neutral-300 hover:text-white'
                         : isTwitch
                         ? 'bg-purple-950/20 border-purple-900/40 hover:border-purple-600/70 hover:bg-purple-950/40 text-purple-200 hover:text-white'
                         : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700 text-neutral-300'
                     }`}
-                    title={`Abrir live de ${stream.channel_slug} como ${acc.label} (@${acc.username}) para resgatar pontos`}
+                    title={
+                      accHealth
+                        ? `${acc.label} (@${acc.username}) — ${accHealth.message}`
+                        : `Abrir live de ${stream.channel_slug} como ${acc.label} (@${acc.username}) para resgatar pontos`
+                    }
                   >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
                     <ExternalLink className={`w-3 h-3 shrink-0 opacity-60 group-hover:opacity-100 transition ${isTwitch ? 'text-purple-400' : 'text-emerald-400'}`} />
                     <span className="font-semibold truncate max-w-[85px]">{acc.label}</span>
                     <span className="text-neutral-500 text-[10px]">@{acc.username}</span>

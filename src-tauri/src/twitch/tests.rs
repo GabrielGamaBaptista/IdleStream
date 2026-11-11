@@ -478,4 +478,19 @@ mod tests {
         assert!(auto_claim_js.contains("Claim Bonus"));
         assert!(auto_claim_js.contains("Resgatar bônus"));
     }
+
+    #[test]
+    fn test_redeem_script_does_not_overwrite_cookies() {
+        // TDD-09: Script de inicializacao da WebView de resgate Twitch deve conter apenas auto-claim de bau,
+        // jamais injetar document.cookie (evita downgrade para session-only e sobrescrita de rotacao).
+        let script = crate::twitch::webview::TwitchWebManager::build_redeem_init_script();
+        assert!(
+            !script.contains("document.cookie"),
+            "Script de resgate Twitch NAO pode manipular document.cookie"
+        );
+        assert!(
+            script.contains("Claim Bonus"),
+            "Script de resgate Twitch deve manter auto-claim de bau +50"
+        );
+    }
 }

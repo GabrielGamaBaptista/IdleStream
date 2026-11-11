@@ -114,6 +114,12 @@ export interface AppConfig {
 
 export type StatusKind = 'disconnected' | 'standby' | 'connecting' | 'connected' | 'error';
 
+export type {
+  AccountHealthState,
+  AccountHealthStatus,
+  AccountsHealthSummary,
+} from '../utils/accountHealth';
+
 export interface StreamRuntimeStatus {
   stream_id: string;
   status: StatusKind;

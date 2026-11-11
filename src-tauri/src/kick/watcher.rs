@@ -223,6 +223,8 @@ impl KickWatcherHandle {
 
 pub type StatusCallback = Arc<dyn Fn(StatusKind, Option<String>, Option<i64>) + Send + Sync + 'static>;
 
+pub type AuthFailureCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
+
 fn apply_kick_status(
     on_status: &StatusCallback,
     state: MiningSlotState,
@@ -263,6 +265,7 @@ pub fn start_kick_watcher(
     channel_slug: String,
     coordinator: crate::kick::coordinator::KickPriorityCoordinator,
     on_status: StatusCallback,
+    on_auth_failure: Option<AuthFailureCallback>,
 ) -> KickWatcherHandle {
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
 
@@ -325,8 +328,17 @@ pub fn start_kick_watcher(
             };
 
             // Consulta pontos atuais se tivermos token
-            if let Ok(pts) = fetch_channel_points(&session_token, &clean_slug).await {
-                current_points = Some(pts);
+            match fetch_channel_points(&session_token, &clean_slug).await {
+                Ok(pts) => {
+                    current_points = Some(pts);
+                }
+                Err(ref err) => {
+                    if err.contains("não autenticada") || err.contains("401") || err.contains("403") {
+                        if let Some(ref cb) = on_auth_failure {
+                            cb(err.clone());
+                        }
+                    }
+                }
             }
 
             let is_online = ch_info.is_live && ch_info.livestream_id.is_some();
@@ -417,6 +429,15 @@ pub fn start_kick_watcher(
                     let ws_token = match fetch_viewer_ws_token(&session_token, &clean_slug, channel_id, user_id).await {
                         Ok(t) => t,
                         Err(e) => {
+                            if e.contains("401")
+                                || e.contains("403")
+                                || e.contains("inválida ou expirada")
+                                || e.contains("Reautentique")
+                            {
+                                if let Some(ref cb) = on_auth_failure {
+                                    cb(e.clone());
+                                }
+                            }
                             let is_429 = e.contains("429") || e.contains("Rate limit");
                             let backoff = if is_429 {
                                 retry_delay_secs = (retry_delay_secs.max(30) * 2).min(180);
@@ -554,9 +575,18 @@ pub fn start_kick_watcher(
                                 let _ = ws_write.send(Message::Text(serde_json::json!({"type": "ping"}).to_string().into())).await;
                             }
                             _ = points_interval.tick() => {
-                                if let Ok(new_pts) = fetch_channel_points(&session_token, &clean_slug).await {
-                                    current_points = Some(new_pts);
-                                    apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+                                match fetch_channel_points(&session_token, &clean_slug).await {
+                                    Ok(new_pts) => {
+                                        current_points = Some(new_pts);
+                                        apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+                                    }
+                                    Err(ref err) => {
+                                        if err.contains("não autenticada") || err.contains("401") || err.contains("403") {
+                                            if let Some(ref cb) = on_auth_failure {
+                                                cb(err.clone());
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             msg_res = ws_read.next() => {

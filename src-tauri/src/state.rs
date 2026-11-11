@@ -1,3 +1,11 @@
+use crate::accounts::models::{
+    aggregate_accounts_health, AccountHealthState, AccountHealthStatus, AccountsHealthSummary,
+};
+use crate::accounts::session_sync::{
+    compute_twitch_credentials_hash, detect_kick_cookie_rotation, detect_twitch_cookie_rotation,
+    write_profile_sync_hash, StoredCookieSnapshot,
+};
+use crate::accounts::verifier::{verify_kick_account, verify_twitch_account};
 use crate::config::{
     AppConfig, ConfigStore, Platform, StatusKind, StreamRuntimeStatus,
 };
@@ -5,6 +13,7 @@ use crate::live_check::{check_kick_live, check_twitch_live};
 use crate::twitch::{TwitchSession, TwitchSessionConfig};
 use chrono::Utc;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -19,6 +28,9 @@ pub struct AppState {
     pub kick_watchers: Mutex<HashMap<String, crate::kick::watcher::KickWatcherHandle>>,
     pub kick_coordinator: crate::kick::coordinator::KickPriorityCoordinator,
     pub statuses: Mutex<HashMap<String, StreamRuntimeStatus>>,
+    pub account_health: Mutex<HashMap<String, AccountHealthStatus>>,
+    pub account_health_last_checked: Mutex<i64>,
+    pub verify_all_lock: Mutex<()>,
     pub http_client: reqwest::Client,
     pub app_handle: AppHandle,
 }
@@ -60,6 +72,9 @@ impl AppState {
             kick_watchers: Mutex::new(HashMap::new()),
             kick_coordinator: crate::kick::coordinator::KickPriorityCoordinator::new(),
             statuses: Mutex::new(statuses),
+            account_health: Mutex::new(HashMap::new()),
+            account_health_last_checked: Mutex::new(0),
+            verify_all_lock: Mutex::new(()),
             http_client,
             app_handle,
         }
@@ -295,6 +310,8 @@ impl AppState {
 
                     let this = Arc::clone(self);
                     let sid = stream_id.to_string();
+                    let this_irc_auth = Arc::clone(self);
+                    let acc_id_irc = account.id.clone();
 
                     let session_config = TwitchSessionConfig {
                         stream_id: stream_id.to_string(),
@@ -308,7 +325,21 @@ impl AppState {
                     let session = TwitchSession::start(session_config, move |status_kind, msg| {
                         let this_inner = Arc::clone(&this);
                         let sid_inner = sid.clone();
+                        let auth_state = Arc::clone(&this_irc_auth);
+                        let auth_acc = acc_id_irc.clone();
                         tauri::async_runtime::spawn(async move {
+                            if status_kind == StatusKind::Error {
+                                if let Some(ref m) = msg {
+                                    if m.contains("Login authentication failed") {
+                                        let m_clone = m.clone();
+                                        let a_state = Arc::clone(&auth_state);
+                                        let a_id = auth_acc.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            a_state.handle_watcher_auth_failure(&a_id, m_clone).await;
+                                        });
+                                    }
+                                }
+                            }
                             let now = Utc::now().timestamp();
                             let mut map = this_inner.statuses.lock().await;
 
@@ -440,6 +471,16 @@ impl AppState {
                         },
                     );
 
+                    let this_tw_auth = Arc::clone(self);
+                    let acc_id_tw_auth = account.id.clone();
+                    let on_twitch_auth_failure: crate::twitch::watcher::AuthFailureCallback = Arc::new(move |err| {
+                        let st = Arc::clone(&this_tw_auth);
+                        let aid = acc_id_tw_auth.clone();
+                        tauri::async_runtime::spawn(async move {
+                            st.handle_watcher_auth_failure(&aid, err).await;
+                        });
+                    });
+
                     let watcher = crate::twitch::watcher::start_twitch_watcher(
                         stream_id.to_string(),
                         account.id.clone(),
@@ -450,6 +491,7 @@ impl AppState {
                         self.twitch_coordinator.clone(),
                         on_status,
                         Some(self.app_handle.clone()),
+                        Some(on_twitch_auth_failure),
                     );
 
                     self.twitch_watchers.lock().await.insert(session_key, watcher);
@@ -637,6 +679,16 @@ impl AppState {
                         },
                     );
 
+                    let this_kick_auth = Arc::clone(&this);
+                    let acc_id_kick_auth = account.id.clone();
+                    let on_kick_auth_failure: crate::kick::watcher::AuthFailureCallback = Arc::new(move |err| {
+                        let st = Arc::clone(&this_kick_auth);
+                        let aid = acc_id_kick_auth.clone();
+                        tauri::async_runtime::spawn(async move {
+                            st.handle_watcher_auth_failure(&aid, err).await;
+                        });
+                    });
+
                     let watcher = crate::kick::watcher::start_kick_watcher(
                         stream_id.to_string(),
                         account.id.clone(),
@@ -644,6 +696,7 @@ impl AppState {
                         channel_slug.to_string(),
                         self.kick_coordinator.clone(),
                         on_status,
+                        Some(on_kick_auth_failure),
                     );
 
                     self.kick_watchers.lock().await.insert(session_key, watcher);
@@ -854,6 +907,263 @@ impl AppState {
                         this.emit_status(&standby_status).await;
                     }
                 }
+            }
+        });
+    }
+
+    pub async fn get_accounts_health_summary(&self) -> AccountsHealthSummary {
+        let accounts = {
+            let cfg = self.config.lock().await;
+            cfg.accounts.clone()
+        };
+        let statuses = self.account_health.lock().await.clone();
+        let last_checked = *self.account_health_last_checked.lock().await;
+        aggregate_accounts_health(&accounts, &statuses, last_checked)
+    }
+
+    pub async fn emit_accounts_health(&self) -> AccountsHealthSummary {
+        let summary = self.get_accounts_health_summary().await;
+        let _ = self.app_handle.emit("accounts-health-updated", &summary);
+        summary
+    }
+
+    async fn maybe_update_account_username(&self, account_id: &str, authenticated_username: Option<&str>) {
+        let Some(auth_name) = authenticated_username.map(str::trim).filter(|s| !s.is_empty()) else {
+            return;
+        };
+        let mut cfg = self.config.lock().await;
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+            if acc.username.trim().is_empty() {
+                acc.username = auth_name.to_string();
+                let _ = self.config_store.save(&cfg);
+                drop(cfg);
+                let _ = self.app_handle.emit("accounts-config-synced", ());
+            }
+        }
+    }
+
+    pub async fn remove_account_health(&self, account_id: &str) {
+        self.account_health.lock().await.remove(account_id);
+        let _ = self.emit_accounts_health().await;
+    }
+
+    pub async fn verify_single_account(
+        self: &Arc<Self>,
+        account_id: &str,
+    ) -> Result<AccountHealthStatus, String> {
+        let account = {
+            let cfg = self.config.lock().await;
+            cfg.accounts
+                .iter()
+                .find(|a| a.id == account_id)
+                .cloned()
+                .ok_or_else(|| format!("Conta '{}' não encontrada", account_id))?
+        };
+
+        let now = Utc::now().timestamp();
+        {
+            let mut map = self.account_health.lock().await;
+            map.insert(
+                account.id.clone(),
+                AccountHealthStatus {
+                    account_id: account.id.clone(),
+                    platform: account.platform,
+                    label: account.label.clone(),
+                    username: account.username.clone(),
+                    state: AccountHealthState::Checking,
+                    authenticated_username: None,
+                    username_matches: None,
+                    has_redeem_session: match account.platform {
+                        Platform::Kick => {
+                            account.kick_session.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                                && account.session_token.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                        }
+                        Platform::Twitch => account
+                            .oauth_token
+                            .as_deref()
+                            .map(|s| !s.trim().is_empty())
+                            .unwrap_or(false),
+                    },
+                    http_status: None,
+                    message: "Verificando autenticação...".into(),
+                    checked_at: now,
+                    requires_reauth: false,
+                },
+            );
+        }
+        let _ = self.emit_accounts_health().await;
+
+        let status = match account.platform {
+            Platform::Kick => verify_kick_account(&account).await,
+            Platform::Twitch => verify_twitch_account(&self.http_client, &account).await,
+        };
+
+        self.maybe_update_account_username(&account.id, status.authenticated_username.as_deref())
+            .await;
+
+        {
+            let mut map = self.account_health.lock().await;
+            map.insert(account.id.clone(), status.clone());
+        }
+        *self.account_health_last_checked.lock().await = Utc::now().timestamp();
+        let _ = self.emit_accounts_health().await;
+
+        Ok(status)
+    }
+
+    pub async fn verify_all_accounts(self: &Arc<Self>) -> AccountsHealthSummary {
+        let _guard = self.verify_all_lock.lock().await;
+
+        let accounts = {
+            let cfg = self.config.lock().await;
+            cfg.accounts.clone()
+        };
+
+        let now = Utc::now().timestamp();
+        {
+            let mut map = self.account_health.lock().await;
+            let valid_ids: std::collections::HashSet<&str> =
+                accounts.iter().map(|a| a.id.as_str()).collect();
+            map.retain(|k, _| valid_ids.contains(k.as_str()));
+
+            for acc in &accounts {
+                map.entry(acc.id.clone()).and_modify(|existing| {
+                    existing.state = AccountHealthState::Checking;
+                    existing.message = "Verificando autenticação...".into();
+                }).or_insert_with(|| AccountHealthStatus {
+                    account_id: acc.id.clone(),
+                    platform: acc.platform,
+                    label: acc.label.clone(),
+                    username: acc.username.clone(),
+                    state: AccountHealthState::Checking,
+                    authenticated_username: None,
+                    username_matches: None,
+                    has_redeem_session: false,
+                    http_status: None,
+                    message: "Verificando autenticação...".into(),
+                    checked_at: now,
+                    requires_reauth: false,
+                });
+            }
+        }
+        let _ = self.emit_accounts_health().await;
+
+        let mut kick_index = 0usize;
+        for acc in &accounts {
+            if acc.platform == Platform::Kick {
+                if kick_index > 0 {
+                    tokio::time::sleep(Duration::from_millis(650)).await;
+                }
+                kick_index += 1;
+            }
+
+            let status = match acc.platform {
+                Platform::Kick => verify_kick_account(acc).await,
+                Platform::Twitch => verify_twitch_account(&self.http_client, acc).await,
+            };
+
+            self.maybe_update_account_username(&acc.id, status.authenticated_username.as_deref())
+                .await;
+
+            {
+                let mut map = self.account_health.lock().await;
+                map.insert(acc.id.clone(), status);
+            }
+            *self.account_health_last_checked.lock().await = Utc::now().timestamp();
+            let _ = self.emit_accounts_health().await;
+        }
+
+        self.emit_accounts_health().await
+    }
+
+    pub async fn sync_kick_cookies_from_webview(
+        &self,
+        account_id: &str,
+        profile_dir: &Path,
+        snapshots: &[StoredCookieSnapshot],
+    ) -> bool {
+        let mut updated = false;
+        {
+            let mut cfg = self.config.lock().await;
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+                if let Some(rot) = detect_kick_cookie_rotation(snapshots, acc) {
+                    if let Some(ks) = rot.kick_session {
+                        acc.kick_session = Some(ks);
+                    }
+                    if let Some(st) = rot.session_token {
+                        acc.session_token = Some(st);
+                    }
+                    if let Some(xs) = rot.xsrf_token {
+                        acc.xsrf_token = Some(xs);
+                    }
+                    let _ = self.config_store.save(&cfg);
+                    write_profile_sync_hash(profile_dir, &rot.updated_hash);
+                    updated = true;
+                }
+            }
+        }
+        if updated {
+            let _ = self.app_handle.emit("accounts-config-synced", ());
+        }
+        updated
+    }
+
+    pub async fn sync_twitch_auth_from_webview(
+        &self,
+        account_id: &str,
+        profile_dir: &Path,
+        snapshots: &[StoredCookieSnapshot],
+    ) -> bool {
+        let mut updated = false;
+        {
+            let mut cfg = self.config.lock().await;
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+                if let Some(new_tok) = detect_twitch_cookie_rotation(snapshots, acc) {
+                    acc.oauth_token = Some(new_tok.clone());
+                    let _ = self.config_store.save(&cfg);
+                    let hash = compute_twitch_credentials_hash(Some(&new_tok));
+                    write_profile_sync_hash(profile_dir, &hash);
+                    updated = true;
+                }
+            }
+        }
+        if updated {
+            let _ = self.app_handle.emit("accounts-config-synced", ());
+        }
+        updated
+    }
+
+    pub async fn handle_watcher_auth_failure(self: &Arc<Self>, account_id: &str, _reason: String) {
+        let now = Utc::now().timestamp();
+        let skip = {
+            let map = self.account_health.lock().await;
+            map.get(account_id).map_or(false, |st| {
+                now - st.checked_at < 30
+                    && matches!(
+                        st.state,
+                        AccountHealthState::Checking
+                            | AccountHealthState::Invalid
+                            | AccountHealthState::MissingCredentials
+                    )
+            })
+        };
+        if skip {
+            return;
+        }
+        let _ = self.verify_single_account(account_id).await;
+    }
+
+    pub fn start_account_health_loop(self: &Arc<Self>) {
+        let this = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            // Breve atraso inicial para permitir que a interface se conecte aos listeners Tauri
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            this.verify_all_accounts().await;
+
+            loop {
+                // Reverificação periódica silenciosa a cada 10 minutos
+                tokio::time::sleep(Duration::from_secs(600)).await;
+                this.verify_all_accounts().await;
             }
         });
     }

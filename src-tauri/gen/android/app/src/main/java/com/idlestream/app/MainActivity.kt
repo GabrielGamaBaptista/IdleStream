@@ -483,13 +483,13 @@ class MainActivity : TauriActivity() {
 
     fun notifyTwitchAuthSuccess(accountId: String, token: String) {
         runOnUiThread {
-            val safeToken = token.replace("'", "\\'")
-            val safeAccId = accountId.replace("'", "\\'")
-            android.util.Log.d("IdleStream", "notifyTwitchAuthSuccess accId=$safeAccId, webView=$mainWebView")
+            val safeToken = org.json.JSONObject.quote(token)
+            val safeAccId = org.json.JSONObject.quote(accountId)
+            android.util.Log.d("IdleStream", "notifyTwitchAuthSuccess accId=$accountId, webView=$mainWebView")
             val script = """
                 (function() {
-                    const accId = '$safeAccId';
-                    const tok = '$safeToken';
+                    const accId = $safeAccId;
+                    const tok = $safeToken;
                     if (typeof window.__onAndroidTwitchAuth === 'function') {
                         try { window.__onAndroidTwitchAuth(accId, tok); } catch(e) { console.error(e); }
                     }
@@ -504,17 +504,17 @@ class MainActivity : TauriActivity() {
 
     fun notifyKickAuthSuccess(accountId: String, kickSession: String, sessionToken: String, xsrfToken: String) {
         runOnUiThread {
-            val safeKickSession = kickSession.replace("'", "\\'")
-            val safeSessionToken = sessionToken.replace("'", "\\'")
-            val safeXsrfToken = xsrfToken.replace("'", "\\'")
-            val safeAccId = accountId.replace("'", "\\'")
-            android.util.Log.d("IdleStream", "notifyKickAuthSuccess accId=$safeAccId, webView=$mainWebView")
+            val safeKickSession = org.json.JSONObject.quote(kickSession)
+            val safeSessionToken = org.json.JSONObject.quote(sessionToken)
+            val safeXsrfToken = org.json.JSONObject.quote(xsrfToken)
+            val safeAccId = org.json.JSONObject.quote(accountId)
+            android.util.Log.d("IdleStream", "notifyKickAuthSuccess accId=$accountId, webView=$mainWebView")
             val script = """
                 (function() {
-                    const accId = '$safeAccId';
-                    const ks = '$safeKickSession';
-                    const st = '$safeSessionToken';
-                    const xs = '$safeXsrfToken';
+                    const accId = $safeAccId;
+                    const ks = $safeKickSession;
+                    const st = $safeSessionToken;
+                    const xs = $safeXsrfToken;
                     if (typeof window.__onAndroidKickAuth === 'function') {
                         try { window.__onAndroidKickAuth(accId, ks, st, xs); } catch(e) { console.error(e); }
                     }
@@ -526,6 +526,23 @@ class MainActivity : TauriActivity() {
             mainWebView?.evaluateJavascript(script) { res ->
                 android.util.Log.d("IdleStream", "notifyKickAuthSuccess evaluateJavascript result: $res")
             }
+        }
+    }
+
+    fun notifyKickSessionRotated(accountId: String, kickSession: String, sessionToken: String, xsrfToken: String) {
+        runOnUiThread {
+            val safeKickSession = org.json.JSONObject.quote(kickSession)
+            val safeSessionToken = org.json.JSONObject.quote(sessionToken)
+            val safeXsrfToken = org.json.JSONObject.quote(xsrfToken)
+            val safeAccId = org.json.JSONObject.quote(accountId)
+            val script = """
+                (function() {
+                    window.dispatchEvent(new CustomEvent('android-kick-session-synced', {
+                        detail: { accountId: $safeAccId, kickSession: $safeKickSession, sessionToken: $safeSessionToken, xsrfToken: $safeXsrfToken }
+                    }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script, null)
         }
     }
 
@@ -542,10 +559,10 @@ class MainActivity : TauriActivity() {
 
     fun notifyUpdateStatus(status: String, percent: Int) {
         runOnUiThread {
-            val safeStatus = status.replace("'", "\\'")
+            val safeStatus = org.json.JSONObject.quote(status)
             val script = """
                 (function() {
-                    window.dispatchEvent(new CustomEvent('android-update-status', { detail: { status: '$safeStatus', percent: $percent } }));
+                    window.dispatchEvent(new CustomEvent('android-update-status', { detail: { status: $safeStatus, percent: $percent } }));
                 })();
             """.trimIndent()
             mainWebView?.evaluateJavascript(script, null)
@@ -554,10 +571,10 @@ class MainActivity : TauriActivity() {
 
     fun notifyUpdateError(error: String) {
         runOnUiThread {
-            val safeError = error.replace("'", "\\'")
+            val safeError = org.json.JSONObject.quote(error)
             val script = """
                 (function() {
-                    window.dispatchEvent(new CustomEvent('android-update-error', { detail: { error: '$safeError' } }));
+                    window.dispatchEvent(new CustomEvent('android-update-error', { detail: { error: $safeError } }));
                 })();
             """.trimIndent()
             mainWebView?.evaluateJavascript(script, null)
@@ -566,8 +583,8 @@ class MainActivity : TauriActivity() {
 
     fun dispatchVoteEvent(eventName: String, jsonPayload: String) {
         runOnUiThread {
-            val safeEvent = eventName.replace("'", "\\'")
-            val script = "window.dispatchEvent(new CustomEvent('$safeEvent', { detail: $jsonPayload }));"
+            val safeEvent = org.json.JSONObject.quote(eventName)
+            val script = "window.dispatchEvent(new CustomEvent($safeEvent, { detail: $jsonPayload }));"
             mainWebView?.evaluateJavascript(script, null)
         }
     }

@@ -4,6 +4,8 @@ import { listen } from '@tauri-apps/api/event';
 import { Update } from '@tauri-apps/plugin-updater';
 import {
   Account,
+  AccountHealthStatus,
+  AccountsHealthSummary,
   AppConfig,
   AppSettings,
   GameSlotConfig,
@@ -58,6 +60,9 @@ interface AppState {
 
   config: AppConfig;
   statuses: Record<string, StreamRuntimeStatus>;
+  accountsHealth: AccountsHealthSummary | null;
+  isVerifyingAccounts: boolean;
+  verifyingAccountIds: Record<string, boolean>;
   activeTab: NavigationTab;
   platformFilter: 'all' | Platform;
   isAddStreamOpen: boolean;
@@ -83,6 +88,9 @@ interface AppState {
   installUpdate: () => Promise<void>;
   fetchConfig: () => Promise<void>;
   fetchStatuses: () => Promise<void>;
+  fetchAccountsHealth: () => Promise<void>;
+  verifyAllAccounts: () => Promise<AccountsHealthSummary | null>;
+  verifyAccount: (accountId: string) => Promise<AccountHealthStatus | null>;
 
   addAccount: (account: Account) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
@@ -111,7 +119,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.0.0',
+  appVersion: '4.0.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -135,6 +143,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     },
   },
   statuses: {},
+  accountsHealth: null,
+  isVerifyingAccounts: false,
+  verifyingAccountIds: {},
   activeTab: 'streams',
   platformFilter: 'all',
   isAddStreamOpen: false,
@@ -251,6 +262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchAppVersion();
       await get().fetchConfig();
       await get().fetchStatuses();
+      await get().fetchAccountsHealth();
 
       // Silent background update check upon startup
       get().checkForUpdates(false).catch(() => {});
@@ -262,6 +274,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             if (accountId && accountId !== 'temp_add_account') {
               await invoke('save_twitch_token', { accountId, token });
               await get().fetchConfig();
+              await get().fetchAccountsHealth();
             }
           } catch (e) {
             console.error('Falha ao salvar token Twitch:', e);
@@ -283,6 +296,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 xsrfToken: xsrfToken || null,
               });
               await get().fetchConfig();
+              await get().fetchAccountsHealth();
             }
           } catch (e) {
             console.error('Falha ao salvar credenciais Kick:', e);
@@ -303,6 +317,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           const { accountId, kickSession, sessionToken, xsrfToken } = e.detail || {};
           if (accountId && kickSession) {
             handleKickAuth(accountId, kickSession, sessionToken, xsrfToken);
+          }
+        });
+
+        window.addEventListener('android-kick-session-synced', (e: any) => {
+          const { accountId, kickSession, sessionToken, xsrfToken } = e.detail || {};
+          if (accountId && (kickSession || sessionToken)) {
+            handleKickAuth(accountId, kickSession || '', sessionToken || '', xsrfToken || '');
           }
         });
 
@@ -380,6 +401,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       });
 
+      // Verificador contínuo de saúde de sessões (8 contas Twitch + Kick)
+      await listen<AccountsHealthSummary>('accounts-health-updated', (event) => {
+        const summary = event.payload;
+        set({
+          accountsHealth: summary,
+          isVerifyingAccounts: summary.checking > 0,
+        });
+      });
+
+      await listen('accounts-config-synced', () => {
+        get().fetchConfig().catch(() => {});
+      });
+
       // Listen to backend stream status changes (event-driven, 0% CPU polling)
       await listen<StreamRuntimeStatus>('stream-status-update', (event) => {
         const status = event.payload;
@@ -432,19 +466,69 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchAccountsHealth: async () => {
+    try {
+      const summary = await invoke<AccountsHealthSummary>('get_accounts_health');
+      set({
+        accountsHealth: summary,
+        isVerifyingAccounts: summary.checking > 0,
+      });
+    } catch (err) {
+      console.error('get_accounts_health failed:', err);
+    }
+  },
+
+  verifyAllAccounts: async () => {
+    set({ isVerifyingAccounts: true });
+    try {
+      const summary = await invoke<AccountsHealthSummary>('verify_all_accounts');
+      set({ accountsHealth: summary, isVerifyingAccounts: false });
+      await get().fetchConfig();
+      return summary;
+    } catch (err) {
+      console.error('verify_all_accounts failed:', err);
+      set({ isVerifyingAccounts: false });
+      return null;
+    }
+  },
+
+  verifyAccount: async (accountId: string) => {
+    set((state) => ({
+      verifyingAccountIds: { ...state.verifyingAccountIds, [accountId]: true },
+    }));
+    try {
+      const status = await invoke<AccountHealthStatus>('verify_account', { accountId });
+      await get().fetchAccountsHealth();
+      await get().fetchConfig();
+      return status;
+    } catch (err) {
+      console.error('verify_account failed:', err);
+      return null;
+    } finally {
+      set((state) => {
+        const next = { ...state.verifyingAccountIds };
+        delete next[accountId];
+        return { verifyingAccountIds: next };
+      });
+    }
+  },
+
   addAccount: async (account) => {
     const updated = await invoke<AppConfig>('add_account', { account });
     set({ config: updated });
+    await get().fetchAccountsHealth();
   },
 
   removeAccount: async (accountId) => {
     const updated = await invoke<AppConfig>('remove_account', { accountId });
     set({ config: updated });
+    await get().fetchAccountsHealth();
   },
 
   startTwitchOAuth: async (accountId) => {
     const token = await invoke<string>('start_twitch_oauth', { accountId, clientId: null });
     await get().fetchConfig();
+    await get().fetchAccountsHealth();
     return token;
   },
 
@@ -455,6 +539,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveTwitchSession: async (accountId) => {
     const updated = await invoke<AppConfig>('save_twitch_session', { accountId });
     set({ config: updated });
+    await get().fetchAccountsHealth();
   },
 
   openKickLogin: async (accountId) => {
@@ -464,6 +549,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveKickSession: async (accountId) => {
     const updated = await invoke<AppConfig>('save_kick_session', { accountId });
     set({ config: updated });
+    await get().fetchAccountsHealth();
   },
 
   addStream: async (stream) => {

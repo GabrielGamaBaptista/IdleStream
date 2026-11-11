@@ -88,4 +88,48 @@ class StreamRedeemActivityTest {
         assertEquals("session_token", cookies[0].first)
         assertTrue(cookies[0].second.contains("session_token=only_session_token"))
     }
+
+    @Test
+    fun testKickCookiesIncludeMaxAgeAndHttpOnly() {
+        // TDD-10a: Cookies Android tambem devem declarar persistencia (Max-Age=90d) e HttpOnly em kick_session
+        val twitchCookie = StreamRedeemActivity.buildTwitchCookieString("oauth_abc")
+        assertTrue("Twitch auth-token deve ter Max-Age=7776000", twitchCookie.contains("Max-Age=7776000"))
+
+        val cookies = StreamRedeemActivity.buildKickCookies(
+            sessionToken = "123|abc",
+            kickSession = "ks_val",
+            xsrfToken = "xsrf_val"
+        )
+        val stCookie = cookies.first { it.first == "session_token" }.second
+        val ksCookie = cookies.first { it.first == "kick_session" }.second
+        assertTrue("session_token deve conter Max-Age=7776000", stCookie.contains("Max-Age=7776000"))
+        assertTrue("session_token deve preservar %7C no cookie", stCookie.contains("123%7Cabc"))
+        assertFalse("session_token nao deve ter HttpOnly", stCookie.contains("HttpOnly"))
+        assertTrue("kick_session deve conter Max-Age=7776000", ksCookie.contains("Max-Age=7776000"))
+        assertTrue("kick_session deve conter HttpOnly", ksCookie.contains("HttpOnly"))
+    }
+
+    @Test
+    fun testShouldSeedCookiesProfileFirst() {
+        // TDD-10b: Profile-First no Android - nao sobrescrever perfil valido se o hash do login nao mudou
+        val hashA = StreamRedeemActivity.computeCredentialsHash("kick", "ks1", "123|st1", "x1")
+        val existingRaw = "kick_session=ks_rotated; session_token=123%7Cst_rotated; XSRF-TOKEN=x1"
+        assertFalse(
+            "Nao deve sobrescrever cookies ja presentes no perfil quando hash coincide",
+            StreamRedeemActivity.shouldSeedProfileCookies("kick", existingRaw, hashA, hashA)
+        )
+        assertTrue(
+            "Deve seedar se hash mudou por novo login explicito",
+            StreamRedeemActivity.shouldSeedProfileCookies("kick", existingRaw, hashA, "new_hash")
+        )
+        assertTrue(
+            "Deve seedar se session_token estiver ausente no perfil",
+            StreamRedeemActivity.shouldSeedProfileCookies("kick", "kick_session=ks1", hashA, hashA)
+        )
+    }
+
+    @Test
+    fun testAutoClaimJsDoesNotTouchCookies() {
+        assertFalse(StreamRedeemActivity.AUTO_CLAIM_TWITCH_JS.contains("document.cookie"))
+    }
 }

@@ -1,11 +1,24 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Play, Square, Activity, Cpu, Radio, Sparkles, RefreshCw } from 'lucide-react';
+import {
+  Play,
+  Square,
+  Activity,
+  Cpu,
+  Radio,
+  Sparkles,
+  RefreshCw,
+  ShieldCheck,
+  ShieldAlert,
+} from 'lucide-react';
 
 export const Header: React.FC = () => {
   const {
     config,
     statuses,
+    accountsHealth,
+    isVerifyingAccounts,
+    setActiveTab,
     startAll,
     stopAll,
     appVersion,
@@ -17,6 +30,13 @@ export const Header: React.FC = () => {
     checkForUpdates,
     installUpdate,
   } = useAppStore();
+
+  const totalAccounts = accountsHealth?.total ?? config.accounts.length;
+  const healthyAccounts = accountsHealth?.healthy ?? 0;
+  const failingAccountsCount = accountsHealth?.failing ?? 0;
+  const warningAccountsCount = accountsHealth?.warning ?? 0;
+  const checkingAccounts =
+    isVerifyingAccounts || (accountsHealth?.checking ?? 0) > 0;
 
   const totalStreams = config.streams.length;
   const activeStreams = Object.values(statuses).filter(
@@ -135,6 +155,45 @@ export const Header: React.FC = () => {
               ~{totalRamMb} MB
             </span>
           </div>
+
+          <div className="w-px h-3.5 bg-neutral-800 shrink-0" />
+
+          {/* 8-Account Health Pill */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('accounts')}
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] md:text-xs font-semibold transition cursor-pointer shrink-0 ${
+              totalAccounts === 0
+                ? 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200'
+                : checkingAccounts
+                ? 'border-sky-800/60 bg-sky-950/50 text-sky-300'
+                : failingAccountsCount > 0
+                ? 'border-rose-700/80 bg-rose-950/70 text-rose-300 animate-pulse'
+                : warningAccountsCount > 0
+                ? 'border-amber-700/70 bg-amber-950/50 text-amber-300'
+                : healthyAccounts === totalAccounts
+                ? 'border-emerald-700/60 bg-emerald-950/50 text-emerald-300 hover:bg-emerald-950/80'
+                : 'border-neutral-700 bg-neutral-900 text-neutral-300'
+            }`}
+            title="Clique para abrir Contas e ver o estado de autenticação"
+          >
+            {checkingAccounts ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : failingAccountsCount > 0 || warningAccountsCount > 0 ? (
+              <ShieldAlert className="w-3.5 h-3.5" />
+            ) : (
+              <ShieldCheck className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {totalAccounts === 0
+                ? '0 Contas'
+                : checkingAccounts
+                ? `Verificando (${healthyAccounts}/${totalAccounts})`
+                : `${healthyAccounts}/${totalAccounts} Contas${
+                    failingAccountsCount > 0 ? ' ⚠' : healthyAccounts === totalAccounts ? ' OK' : ''
+                  }`}
+            </span>
+          </button>
         </div>
 
         {/* Global Controls on Desktop */}

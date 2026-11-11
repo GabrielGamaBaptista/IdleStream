@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod commands;
 pub mod config;
 pub mod games;
@@ -112,6 +113,9 @@ pub fn run() {
 
             // Start background vigilance loop (Auto-Live detection & standby recovery)
             app_state.start_vigilance_loop();
+
+            // Start account session health verifier (startup check + 10m background refresh)
+            app_state.start_account_health_loop();
 
             // Start background daily vote scheduler (24h 01m notification alerts)
             votes::notifier::start_vote_scheduler(app_state.clone());
@@ -264,6 +268,9 @@ pub fn run() {
             save_kick_session,
             save_twitch_token,
             save_kick_credentials_direct,
+            verify_all_accounts,
+            verify_account,
+            get_accounts_health,
             open_stream_redeem,
             get_app_version,
             update_game_slot,

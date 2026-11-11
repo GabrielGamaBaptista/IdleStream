@@ -1,10 +1,31 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Users, Plus, Radio, Globe, Trash2, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
+import {
+  Users,
+  Plus,
+  Radio,
+  Globe,
+  Trash2,
+  CheckCircle2,
+  AlertTriangle,
+  ExternalLink,
+  RefreshCw,
+  ShieldCheck,
+  ShieldAlert,
+} from 'lucide-react';
+import {
+  findDuplicateAuthenticatedUsernames,
+  getAccountHealthStatus,
+} from '../utils/accountHealth';
 
 export const AccountManager: React.FC = () => {
   const {
     config,
+    accountsHealth,
+    isVerifyingAccounts,
+    verifyingAccountIds,
+    verifyAllAccounts,
+    verifyAccount,
     removeAccount,
     openKickLogin,
     saveKickSession,
@@ -15,6 +36,9 @@ export const AccountManager: React.FC = () => {
   } = useAppStore();
 
   const isAndroid = typeof window !== 'undefined' && Boolean(window.AndroidBridge);
+  const duplicates = findDuplicateAuthenticatedUsernames(accountsHealth);
+  const totalCount = accountsHealth?.total ?? config.accounts.length;
+  const healthyCount = accountsHealth?.healthy ?? 0;
 
   const handleTwitchAuth = async (accountId: string, accountLabel?: string) => {
     if (window.AndroidBridge && typeof window.AndroidBridge.openTwitchLogin === 'function') {
@@ -54,16 +78,36 @@ export const AccountManager: React.FC = () => {
         <div>
           <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Gerenciamento de Contas</h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Cadastre suas contas da Twitch e Kick com sessões isoladas.
+            Cadastre suas contas da Twitch e Kick com sessões isoladas e verificação contínua.
           </p>
         </div>
-        <button
-          onClick={() => setAddAccountOpen(true)}
-          className="self-start sm:self-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-600/20 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nova Conta</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {config.accounts.length > 0 && (
+            <button
+              type="button"
+              onClick={() => verifyAllAccounts()}
+              disabled={isVerifyingAccounts}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-100 border border-neutral-700 text-xs font-semibold transition cursor-pointer disabled:opacity-60"
+              title="Testar imediatamente se todas as contas estão logadas e funcionais nas APIs da Twitch e Kick"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isVerifyingAccounts ? 'animate-spin text-sky-400' : 'text-emerald-400'}`}
+              />
+              <span>
+                {isVerifyingAccounts
+                  ? `Verificando (${healthyCount}/${totalCount})...`
+                  : `Verificar Todas (${healthyCount}/${totalCount})`}
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => setAddAccountOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-600/20 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nova Conta</span>
+          </button>
+        </div>
       </div>
 
       {/* Accounts List */}
@@ -89,11 +133,24 @@ export const AccountManager: React.FC = () => {
           {config.accounts.map((account) => {
             const isTwitch = account.platform === 'twitch';
             const hasToken = isTwitch && !!account.oauth_token;
+            const health = getAccountHealthStatus(accountsHealth, account.id);
+            const isSingleChecking =
+              Boolean(verifyingAccountIds[account.id]) || health?.state === 'checking';
+            const authUserLower = health?.authenticated_username?.trim().toLowerCase();
+            const isDuplicate = Boolean(
+              authUserLower && duplicates[authUserLower] && duplicates[authUserLower].includes(account.id)
+            );
 
             return (
               <div
                 key={account.id}
-                className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-4 flex flex-col justify-between hover:border-neutral-700 transition"
+                className={`bg-neutral-900/60 border rounded-xl p-4 flex flex-col justify-between transition ${
+                  health?.state === 'invalid' || health?.state === 'missing_credentials'
+                    ? 'border-rose-800/70 hover:border-rose-700'
+                    : isDuplicate
+                    ? 'border-amber-700/70 hover:border-amber-600'
+                    : 'border-neutral-800 hover:border-neutral-700'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between">
@@ -108,33 +165,82 @@ export const AccountManager: React.FC = () => {
                       {isTwitch ? 'Twitch' : 'Kick'}
                     </span>
 
-                    <button
-                      onClick={() => {
-                        if (confirm(`Remover conta "${account.label}"? Suas streams associadas também serão removidas.`)) {
-                          removeAccount(account.id);
-                        }
-                      }}
-                      className="text-neutral-500 hover:text-rose-400 transition cursor-pointer p-1"
-                      title="Excluir conta"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => verifyAccount(account.id)}
+                        disabled={isSingleChecking || isVerifyingAccounts}
+                        className="text-neutral-500 hover:text-sky-400 transition cursor-pointer p-1 disabled:opacity-50"
+                        title="Verificar sessão desta conta agora"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSingleChecking ? 'animate-spin text-sky-400' : ''}`} />
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (confirm(`Remover conta "${account.label}"? Suas streams associadas também serão removidas.`)) {
+                            removeAccount(account.id);
+                          }
+                        }}
+                        className="text-neutral-500 hover:text-rose-400 transition cursor-pointer p-1"
+                        title="Excluir conta"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <h3 className="text-base font-bold text-white mt-3 truncate">
                     {account.label}
                   </h3>
                   <p className="text-xs text-neutral-400 font-mono mt-0.5 truncate">
-                    @{account.username}
+                    @{account.username || health?.authenticated_username || 'sem_username'}
                   </p>
 
-                  {/* Auth status pill */}
-                  <div className="mt-3">
-                    {isTwitch ? (
+                  {/* Auth & Real-Time API Health Status */}
+                  <div className="mt-3 space-y-1.5">
+                    {isSingleChecking ? (
+                      <div className="flex items-center gap-1.5 text-xs text-sky-400">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        <span>Verificando sessão na API...</span>
+                      </div>
+                    ) : health ? (
+                      <>
+                        {health.state === 'healthy' ? (
+                          <div className="flex items-start gap-1.5 text-xs text-emerald-400">
+                            <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{health.message}</span>
+                          </div>
+                        ) : health.state === 'invalid' || health.state === 'missing_credentials' ? (
+                          <div className="flex items-start gap-1.5 text-xs text-rose-400">
+                            <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{health.message}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-1.5 text-xs text-amber-400">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{health.message}</span>
+                          </div>
+                        )}
+
+                        {health.username_matches === false && health.authenticated_username && (
+                          <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded px-2 py-1">
+                            Conta autenticada como <strong>@{health.authenticated_username}</strong>{' '}
+                            (cadastro diz @{account.username}).
+                          </div>
+                        )}
+
+                        {isDuplicate && health.authenticated_username && (
+                          <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/50 rounded px-2 py-1">
+                            Duplicada: @{health.authenticated_username} também está logada em outro slot!
+                          </div>
+                        )}
+                      </>
+                    ) : isTwitch ? (
                       hasToken ? (
                         <div className="flex items-center gap-1.5 text-xs text-purple-400">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Sessão & Cookies autenticados</span>
+                          <span>Sessão & Cookies configurados</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-amber-400">
@@ -145,7 +251,7 @@ export const AccountManager: React.FC = () => {
                     ) : (account.kick_session || account.session_token) ? (
                       <div className="flex items-center gap-1.5 text-xs text-emerald-400">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Sessão & Cookies autenticados</span>
+                        <span>Sessão & Cookies configurados</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5 text-xs text-amber-400">

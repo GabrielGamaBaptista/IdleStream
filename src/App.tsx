@@ -13,19 +13,31 @@ import { BottomNav } from './components/BottomNav';
 import { BatteryBanner } from './components/BatteryBanner';
 import { GameWorkspace } from './components/games/GameWorkspace';
 import { VoteWorkspace } from './components/votes/VoteWorkspace';
-import { Tv, Plus } from 'lucide-react';
+import { Tv, Plus, ShieldAlert, RefreshCw } from 'lucide-react';
 import { StreamConfig } from './types';
+import {
+  findDuplicateAuthenticatedUsernames,
+  getFailingAccounts,
+} from './utils/accountHealth';
 
 export default function App() {
   const {
     init,
     activeTab,
+    setActiveTab,
     config,
+    accountsHealth,
+    isVerifyingAccounts,
+    verifyAllAccounts,
     platformFilter,
     setPlatformFilter,
     setAddStreamOpen,
     isImmersiveMode,
   } = useAppStore();
+
+  const failingAccounts = getFailingAccounts(accountsHealth);
+  const duplicateUsernames = findDuplicateAuthenticatedUsernames(accountsHealth);
+  const duplicateEntries = Object.entries(duplicateUsernames);
 
   const [editingStream, setEditingStream] = useState<StreamConfig | null>(null);
 
@@ -60,6 +72,62 @@ export default function App() {
               : 'overflow-y-auto p-4 md:p-6 pb-20 md:pb-6'
           }`}
         >
+          {/* Alerta global se alguma das 8 contas estiver desconectada ou duplicada */}
+          {(failingAccounts.length > 0 || duplicateEntries.length > 0) &&
+            activeTab !== 'games' &&
+            activeTab !== 'votes' && (
+              <div className="mb-5 rounded-xl border border-rose-800/80 bg-rose-950/40 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md shadow-rose-950/30">
+                <div className="flex items-start gap-2.5">
+                  <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    {failingAccounts.length > 0 && (
+                      <p className="font-semibold text-rose-200">
+                        {failingAccounts.length} conta{failingAccounts.length > 1 ? 's' : ''}{' '}
+                        desconectada{failingAccounts.length > 1 ? 's' : ''} ou com sessão
+                        incompleta:{' '}
+                        <span className="font-mono text-rose-300">
+                          {failingAccounts
+                            .map((a) => `${a.label} (${a.platform.toUpperCase()})`)
+                            .join(', ')}
+                        </span>
+                      </p>
+                    )}
+                    {duplicateEntries.length > 0 && (
+                      <p className="text-amber-300 mt-0.5 font-medium">
+                        Contas duplicadas detectadas na mesma plataforma:{' '}
+                        {duplicateEntries.map(([u, ids]) => `@${u} (${ids.length}x)`).join(', ')}
+                      </p>
+                    )}
+                    <p className="text-rose-300/80 mt-0.5">
+                      Reconecte antes de resgatar pontos para evitar pedidos de login inesperados.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => verifyAllAccounts()}
+                    disabled={isVerifyingAccounts}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 text-xs font-medium transition cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${isVerifyingAccounts ? 'animate-spin' : ''}`}
+                    />
+                    <span>Reverificar</span>
+                  </button>
+                  {activeTab !== 'accounts' && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('accounts')}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition cursor-pointer"
+                    >
+                      Ir para Contas
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
           {activeTab === 'games' && <GameWorkspace />}
 
           {activeTab === 'votes' && <VoteWorkspace />}

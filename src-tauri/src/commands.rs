@@ -1,9 +1,17 @@
+use crate::accounts::models::{AccountHealthStatus, AccountsHealthSummary};
+#[cfg(desktop)]
+use crate::accounts::session_sync::{
+    compute_kick_credentials_hash, compute_twitch_credentials_hash, write_profile_sync_hash,
+};
 use crate::config::{Account, AppConfig, StreamConfig, StreamRuntimeStatus};
 use crate::kick::KickManager;
 use crate::state::AppState;
+#[cfg(not(target_os = "android"))]
 use crate::twitch::run_oauth_flow;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State};
+#[cfg(desktop)]
+use tauri::Manager;
+use tauri::{AppHandle, State};
 
 type StateHandle<'a> = State<'a, Arc<AppState>>;
 
@@ -37,41 +45,53 @@ pub async fn save_config(state: StateHandle<'_>, config: AppConfig) -> Result<()
 
 #[tauri::command]
 pub async fn add_account(state: StateHandle<'_>, account: Account) -> Result<AppConfig, String> {
-    let mut cfg = state.config.lock().await;
-    cfg.accounts.retain(|a| a.id != account.id);
-    cfg.accounts.push(account);
-    state.config_store.save(&cfg)?;
-    Ok(cfg.clone())
+    let account_id = account.id.clone();
+    let out_cfg = {
+        let mut cfg = state.config.lock().await;
+        cfg.accounts.retain(|a| a.id != account.id);
+        cfg.accounts.push(account);
+        state.config_store.save(&cfg)?;
+        cfg.clone()
+    };
+    let state_arc = state.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = state_arc.verify_single_account(&account_id).await;
+    });
+    Ok(out_cfg)
 }
 
 #[tauri::command]
 pub async fn remove_account(state: StateHandle<'_>, account_id: String) -> Result<AppConfig, String> {
-    let mut cfg = state.config.lock().await;
-    cfg.accounts.retain(|a| a.id != account_id);
+    let out_cfg = {
+        let mut cfg = state.config.lock().await;
+        cfg.accounts.retain(|a| a.id != account_id);
 
-    let mut empty_stream_ids = Vec::new();
-    for stream in &mut cfg.streams {
-        if stream.account_ids.contains(&account_id) {
-            state.stop_account_in_stream(&stream.id, &account_id).await;
-            stream.account_ids.retain(|id| id != &account_id);
-            if stream.selected_account_id.as_deref() == Some(&account_id) {
-                stream.selected_account_id = stream.account_ids.first().cloned();
-            }
-            if stream.account_ids.is_empty() {
-                empty_stream_ids.push(stream.id.clone());
+        let mut empty_stream_ids = Vec::new();
+        for stream in &mut cfg.streams {
+            if stream.account_ids.contains(&account_id) {
+                state.stop_account_in_stream(&stream.id, &account_id).await;
+                stream.account_ids.retain(|id| id != &account_id);
+                if stream.selected_account_id.as_deref() == Some(&account_id) {
+                    stream.selected_account_id = stream.account_ids.first().cloned();
+                }
+                if stream.account_ids.is_empty() {
+                    empty_stream_ids.push(stream.id.clone());
+                }
             }
         }
-    }
 
-    for sid in empty_stream_ids {
-        state.stop_stream(&sid).await;
-        cfg.streams.retain(|s| s.id != sid);
-        let mut statuses = state.statuses.lock().await;
-        statuses.remove(&sid);
-    }
+        for sid in empty_stream_ids {
+            state.stop_stream(&sid).await;
+            cfg.streams.retain(|s| s.id != sid);
+            let mut statuses = state.statuses.lock().await;
+            statuses.remove(&sid);
+        }
 
-    state.config_store.save(&cfg)?;
-    Ok(cfg.clone())
+        state.config_store.save(&cfg)?;
+        cfg.clone()
+    };
+    state.remove_account_health(&account_id).await;
+    Ok(out_cfg)
 }
 
 #[tauri::command]
@@ -281,11 +301,16 @@ pub async fn start_twitch_oauth(
             .await
             .map_err(|e| e.to_string())??;
 
-        let mut cfg = state.config.lock().await;
-        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
-            acc.oauth_token = Some(token.clone());
-            state.config_store.save(&cfg)?;
+        {
+            let mut cfg = state.config.lock().await;
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+                acc.oauth_token = Some(token.clone());
+                state.config_store.save(&cfg)?;
+            }
         }
+
+        let state_arc = state.inner().clone();
+        let _ = state_arc.verify_single_account(&account_id).await;
 
         Ok(token)
     }
@@ -315,24 +340,44 @@ pub async fn save_kick_session(
     state: StateHandle<'_>,
     account_id: String,
 ) -> Result<AppConfig, String> {
-    let creds = KickManager::extract_cookies_native(&app, &account_id)?;
+    let creds = KickManager::extract_cookies_native(&app, &account_id).await?;
 
-    let mut cfg = state.config.lock().await;
-    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
-        acc.kick_session = Some(creds.kick_session);
-        acc.xsrf_token = creds.xsrf_token;
-        if let Some(st) = creds.session_token {
-            acc.session_token = Some(st);
+    #[cfg(desktop)]
+    let sync_hash = compute_kick_credentials_hash(
+        Some(&creds.kick_session),
+        creds.session_token.as_deref(),
+        creds.xsrf_token.as_deref(),
+    );
+
+    {
+        let mut cfg = state.config.lock().await;
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+            acc.kick_session = Some(creds.kick_session);
+            acc.xsrf_token = creds.xsrf_token;
+            if let Some(st) = creds.session_token {
+                acc.session_token = Some(st);
+            }
+            state.config_store.save(&cfg)?;
         }
-        state.config_store.save(&cfg)?;
     }
 
-    // Fecha a janela de login após salvar a sessão com sucesso
-    let label = format!("kick_login_{}", account_id);
-    if let Some(win) = app.get_webview_window(&label) {
-        let _ = win.destroy();
+    #[cfg(desktop)]
+    {
+        let profile_dir = KickManager::get_profile_dir(&app, &account_id);
+        write_profile_sync_hash(&profile_dir, &sync_hash);
+
+        // Fecha a janela de login graciosamente (sem destroy()) para WebView2 persistir cookies SQLite em disco
+        let label = format!("kick_login_{}", account_id);
+        if let Some(win) = app.get_webview_window(&label) {
+            let _ = win.close();
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
     }
 
+    let state_arc = state.inner().clone();
+    let _ = state_arc.verify_single_account(&account_id).await;
+
+    let cfg = state.config.lock().await;
     Ok(cfg.clone())
 }
 
@@ -342,11 +387,17 @@ pub async fn save_twitch_token(
     account_id: String,
     token: String,
 ) -> Result<AppConfig, String> {
-    let mut cfg = state.config.lock().await;
-    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
-        acc.oauth_token = Some(token);
-        state.config_store.save(&cfg)?;
+    {
+        let mut cfg = state.config.lock().await;
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+            acc.oauth_token = Some(token);
+            state.config_store.save(&cfg)?;
+        }
     }
+    let state_arc = state.inner().clone();
+    let _ = state_arc.verify_single_account(&account_id).await;
+
+    let cfg = state.config.lock().await;
     Ok(cfg.clone())
 }
 
@@ -374,19 +425,36 @@ pub async fn save_twitch_session(
     state: StateHandle<'_>,
     account_id: String,
 ) -> Result<AppConfig, String> {
-    let creds = crate::twitch::webview::TwitchWebManager::extract_cookies_native(&app, &account_id)?;
+    let creds =
+        crate::twitch::webview::TwitchWebManager::extract_cookies_native(&app, &account_id).await?;
 
-    let mut cfg = state.config.lock().await;
-    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
-        acc.oauth_token = Some(creds.auth_token);
-        state.config_store.save(&cfg)?;
+    #[cfg(desktop)]
+    let sync_hash = compute_twitch_credentials_hash(Some(&creds.auth_token));
+
+    {
+        let mut cfg = state.config.lock().await;
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+            acc.oauth_token = Some(creds.auth_token);
+            state.config_store.save(&cfg)?;
+        }
     }
 
-    let label = format!("twitch_login_{}", account_id);
-    if let Some(win) = app.get_webview_window(&label) {
-        let _ = win.destroy();
+    #[cfg(desktop)]
+    {
+        let profile_dir = crate::twitch::webview::TwitchWebManager::get_profile_dir(&app, &account_id);
+        write_profile_sync_hash(&profile_dir, &sync_hash);
+
+        let label = format!("twitch_login_{}", account_id);
+        if let Some(win) = app.get_webview_window(&label) {
+            let _ = win.close();
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
     }
 
+    let state_arc = state.inner().clone();
+    let _ = state_arc.verify_single_account(&account_id).await;
+
+    let cfg = state.config.lock().await;
     Ok(cfg.clone())
 }
 
@@ -407,22 +475,49 @@ pub async fn save_kick_credentials_direct(
     session_token: Option<String>,
     xsrf_token: Option<String>,
 ) -> Result<AppConfig, String> {
-    let mut cfg = state.config.lock().await;
-    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
-        acc.kick_session = Some(kick_session);
-        if let Some(st) = session_token {
-            if !st.is_empty() {
-                acc.session_token = Some(st);
+    {
+        let mut cfg = state.config.lock().await;
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account_id) {
+            acc.kick_session = Some(kick_session);
+            if let Some(st) = session_token {
+                if !st.is_empty() {
+                    acc.session_token = Some(st);
+                }
             }
-        }
-        if let Some(xt) = xsrf_token {
-            if !xt.is_empty() {
-                acc.xsrf_token = Some(xt);
+            if let Some(xt) = xsrf_token {
+                if !xt.is_empty() {
+                    acc.xsrf_token = Some(xt);
+                }
             }
+            state.config_store.save(&cfg)?;
         }
-        state.config_store.save(&cfg)?;
     }
+
+    let state_arc = state.inner().clone();
+    let _ = state_arc.verify_single_account(&account_id).await;
+
+    let cfg = state.config.lock().await;
     Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn verify_all_accounts(state: StateHandle<'_>) -> Result<AccountsHealthSummary, String> {
+    let state_arc = state.inner().clone();
+    Ok(state_arc.verify_all_accounts().await)
+}
+
+#[tauri::command]
+pub async fn verify_account(
+    state: StateHandle<'_>,
+    account_id: String,
+) -> Result<AccountHealthStatus, String> {
+    let state_arc = state.inner().clone();
+    state_arc.verify_single_account(&account_id).await
+}
+
+#[tauri::command]
+pub async fn get_accounts_health(state: StateHandle<'_>) -> Result<AccountsHealthSummary, String> {
+    Ok(state.get_accounts_health_summary().await)
 }
 
 #[tauri::command]
@@ -458,7 +553,8 @@ pub async fn open_stream_redeem(
                     &account.username,
                     &channel_slug,
                     account.oauth_token.as_deref(),
-                )?;
+                )
+                .await?;
             }
             crate::config::Platform::Kick => {
                 crate::kick::webview::KickManager::open_redeem_window(
@@ -470,7 +566,8 @@ pub async fn open_stream_redeem(
                     account.session_token.as_deref(),
                     account.kick_session.as_deref(),
                     account.xsrf_token.as_deref(),
-                )?;
+                )
+                .await?;
             }
         }
     }

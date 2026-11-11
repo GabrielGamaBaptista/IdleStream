@@ -188,6 +188,10 @@ class TwitchLoginActivity : AppCompatActivity() {
             val token = extractParam(url, "access_token")
             if (!token.isNullOrEmpty()) {
                 isCompleted = true
+                getSharedPreferences("idlestream_redeem_prefs", MODE_PRIVATE)
+                    .edit()
+                    .remove("sync_hash_twitch_$accountId")
+                    .apply()
                 MainActivity.instance?.notifyTwitchAuthSuccess(accountId, token)
                 Toast.makeText(this, "Conta Twitch autenticada com sucesso!", Toast.LENGTH_SHORT).show()
                 SessionResetHelper.clearSession(this, webView) {
@@ -212,6 +216,10 @@ class TwitchLoginActivity : AppCompatActivity() {
 
         if (!token.isNullOrEmpty()) {
             isCompleted = true
+            getSharedPreferences("idlestream_redeem_prefs", MODE_PRIVATE)
+                .edit()
+                .remove("sync_hash_twitch_$accountId")
+                .apply()
             android.util.Log.i("IdleStream", "Twitch auth-token cookie capturado com sucesso para accountId: $accountId")
             MainActivity.instance?.notifyTwitchAuthSuccess(accountId, token)
             Toast.makeText(this, "Sessão da Twitch salva com sucesso!", Toast.LENGTH_SHORT).show()

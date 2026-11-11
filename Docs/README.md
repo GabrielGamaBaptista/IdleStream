@@ -18,9 +18,10 @@ wiki_links:
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
   - "[[09-sistema-de-votos]]"
+  - "[[10-sessoes-resgates-e-verificador]]"
 status: "completed"
-version: "4.0.0"
-last_updated: "2026-11-10"
+version: "4.0.1"
+last_updated: "2026-11-11"
 summary: "Índice Mestre (Map of Content) da documentação do IdleStream. Mapeia a arquitetura de sistemas, matriz cruzada de código para documento, grafos de dependência e glossário técnico para desenvolvedores e agentes de IA."
 ---
 
@@ -37,7 +38,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 | Componente | Especificação de Engenharia | Detalhes de Implementação |
 | :--- | :--- | :--- |
-| **Versão Corrente** | `4.0.0` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
+| **Versão Corrente** | `4.0.1` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
 | **Framework Host** | **Tauri v2** (`@tauri-apps/cli ^2.0`, `@tauri-apps/api ^2.0`) | Modelo multi-janela, Child Webviews nativas (`wry`), IPC binário e JSON |
 | **Runtime Rust Core** | **Rust 2021 Edition** | Assíncrono com `tokio 1.0` (Full), `tokio-tungstenite 0.24`, `futures-util 0.3` |
 | **Camada HTTP / Web** | **Reqwest 0.12** (`rustls-tls`), `tiny_http 0.12` | Subprocesso `curl.exe` (Windows) e OkHttp Bridge (Android) para bypass TLS |
@@ -51,7 +52,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 ## 2. Índice Interativo Obsidian (MOC)
 
-A documentação divide-se em 10 documentos técnicos especializados e este índice mestre:
+A documentação divide-se em 11 documentos técnicos especializados e este índice mestre:
 
 | Documento | Título Formal | Escopo Técnico Resumido | Código-Fonte Referenciado | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -65,6 +66,7 @@ A documentação divide-se em 10 documentos técnicos especializados e este índ
 | **[[07-multiplataforma-android]]** | Multiplataforma, JNI & Android Build | Foreground Service, Wakelock, VoteWebViewManager, AlarmManager, bridges Kotlin e pipeline `build-android.ps1`. | `src-tauri/gen/android/`<br/>`scripts/build-android.ps1` | **Concluído** |
 | **[[08-operacao-e-scripts]]** | Operação, Suíte de Testes & Release | Esteira de testes automatizados (`scripts/*.ts`), assinatura Minisign, atualização via GitHub Releases e diagnóstico de falhas. | `scripts/`<br/>`RELEASE_GUIDE.md` | **Concluído** |
 | **[[09-sistema-de-votos]]** | Sistema de Votos Diários TopIdle | WebView interativa sob demanda (0 MB em repouso), whitelist TopIdle/OAuth/CAPTCHA, reuso Google e alertas de 24h 01m. | `src-tauri/src/votes/`<br/>`src/components/votes/` | **Concluído** |
+| **[[10-sessoes-resgates-e-verificador]]** | Sessões Persistentes & Verificador de Contas | Estratégia Profile-First (cookies nativos `Max-Age=90d` + `HttpOnly`), sync-back de rotação e verificador contínuo das 8 contas Twitch/Kick. | `src-tauri/src/accounts/`<br/>`src/utils/accountHealth.ts` | **Concluído** |
 
 ---
 
@@ -78,8 +80,10 @@ C:\Projetos\Chatter\
 │   ├── src\
 │   │   ├── main.rs, lib.rs                 ──> [[01-arquitetura]]
 │   │   ├── commands.rs                     ──> [[01-arquitetura]], [[05-backend-core]]
-│   │   ├── state.rs                        ──> [[01-arquitetura]], [[05-backend-core]]
+│   │   ├── state.rs                        ──> [[01-arquitetura]], [[05-backend-core]], [[10-sessoes-resgates-e-verificador]]
 │   │   ├── live_check.rs                   ──> [[05-backend-core]]
+│   │   ├── accounts\                       ──> [[10-sessoes-resgates-e-verificador]]
+│   │   │   ├── mod.rs, models.rs, session_sync.rs, verifier.rs, tests.rs
 │   │   ├── config\                         ──> [[05-backend-core]]
 │   │   │   ├── mod.rs, models.rs, store.rs
 │   │   ├── twitch\                         ──> [[02-twitch-engine]]
@@ -122,6 +126,7 @@ Esta matriz orienta diretamente novos desenvolvedores ou agentes de IA sobre **q
 | **Ajustar Kick (Bypass TLS, Pusher ou Pontos)** | 1. `kick/http.rs` (`kick_http_request`)<br/>2. `kick/pusher.rs` (`KickAccountSession`)<br/>3. `kick/watcher.rs` (loops de 10s e 120s)<br/>4. `kick/auth.rs` (`authenticate_pusher_channel`) | 1. `src/components/AddAccountModal.tsx`<br/>2. `src/stores/appStore.ts` (`saveKickSession`) | **[[03-kick-engine]]** |
 | **Adicionar Jogos ou Alterar Motor Anti-Sleep** | 1. `games/manager.rs` (`start_game_slot`, `apply_layout`)<br/>2. `games/anti_sleep.js` (rAF dispatcher, áudio `IsAudible`, GC)<br/>3. `games/hunt_extension.js` (tabelas PokeIdle) | 1. `src/components/games/GameWorkspace.tsx`<br/>2. `src/services/gamePlatformService.ts` | **[[04-games-engine]]** |
 | **Ajustar Votos Diários TopIdle & Notificações** | 1. `votes/policy.rs` & `votes/manager.rs`<br/>2. `votes/notifier.rs` (24h 01m scheduler)<br/>3. `VoteWebViewManager.kt` & `VoteAlarmReceiver.kt` | 1. `src/components/votes/VoteWorkspace.tsx`<br/>2. `src/services/votePlatformService.ts`<br/>3. `scripts/test-votes.ts` | **[[09-sistema-de-votos]]** |
+| **Ajustar Persistência em Resgates & Saúde das 8 Contas** | 1. `accounts/session_sync.rs` & `accounts/verifier.rs`<br/>2. `kick/webview.rs`, `twitch/webview.rs` (`Profile-First`)<br/>3. `StreamRedeemActivity.kt` & `state.rs` | 1. `src/utils/accountHealth.ts`<br/>2. `src/components/Header.tsx`, `AccountManager.tsx`, `StreamCard.tsx`<br/>3. `scripts/test-accounts-session.ts` | **[[10-sessoes-resgates-e-verificador]]** |
 | **Criar Novo Comando IPC (Rust $\leftrightarrow$ React)** | 1. `commands.rs` ou `games/commands.rs` (`#[tauri::command]`)<br/>2. `lib.rs` (adicionar em `tauri::generate_handler![...]`) | 1. `src/stores/appStore.ts` (`invoke('nome_comando', ...)`) | **[[01-arquitetura]]**<br/>**[[05-backend-core]]** |
 | **Modificar Telas, Modais ou Estado da UI** | N/A (Consome comandos IPC existentes) | 1. `src/stores/appStore.ts` (estado / actions)<br/>2. `src/App.tsx` (roteamento e modais)<br/>3. `src/components/` (componentes atômicos) | **[[06-frontend]]** |
 | **Alterar Notificação ou Fundo no Android** | 1. `IdleStreamForegroundService.kt` (notificação e locks)<br/>2. `KickHttpBridge.kt` & `MainActivity.kt` (JNI / JS Bridge)<br/>3. `kick/http.rs` (`update_android_notification`) | 1. `src/services/gamePlatformService.ts`<br/>2. `src/components/BatteryBanner.tsx` | **[[07-multiplataforma-android]]** |
