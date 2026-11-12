@@ -19,7 +19,7 @@ wiki_links:
   - "[[09-sistema-de-votos]]"
   - "[[10-sessoes-resgates-e-verificador]]"
 status: "completed"
-version: "4.1.1"
+version: "4.1.2"
 last_updated: "2026-11-12"
 summary: "Manual de engenharia de operações do IdleStream: catálogo completo de scripts de testes e benchmarks, procedimentos de assinatura digital com Minisign, protocolo de release multiplataforma e guia de troubleshooting."
 ---

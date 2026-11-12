@@ -1,6 +1,5 @@
 package com.idlestream.app
 
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,7 +14,6 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.os.SystemClock
 import android.webkit.CookieManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -41,6 +39,7 @@ class IdleStreamForegroundService : Service() {
 
         const val PREFS_RUNTIME = "idlestream_runtime_state"
         private const val KEY_FARMING_ACTIVE = "farming_active"
+        private const val KEY_FARMING_STARTED_AT_MS = "farming_started_at_ms"
 
         @Volatile
         var instance: IdleStreamForegroundService? = null
@@ -73,19 +72,43 @@ class IdleStreamForegroundService : Service() {
             }
         }
 
-        fun setFarmingActive(context: Context, active: Boolean) {
+        fun getFarmingStartedAtMs(context: Context): Long {
+            return try {
+                context.applicationContext
+                    .getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
+                    .getLong(KEY_FARMING_STARTED_AT_MS, 0L)
+            } catch (_: Throwable) {
+                0L
+            }
+        }
+
+        fun setFarmingActive(context: Context, active: Boolean, commitSync: Boolean = false) {
             try {
                 val appCtx = context.applicationContext
                 val prefs = appCtx.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
                 val prev = prefs.getBoolean(KEY_FARMING_ACTIVE, false)
-                prefs.edit().putBoolean(KEY_FARMING_ACTIVE, active).apply()
+                val editor = prefs.edit().putBoolean(KEY_FARMING_ACTIVE, active)
                 if (active) {
                     isStoppingByUser = false
+                    if (!prev || prefs.getLong(KEY_FARMING_STARTED_AT_MS, 0L) <= 0L) {
+                        editor.putLong(KEY_FARMING_STARTED_AT_MS, System.currentTimeMillis())
+                    }
+                    if (commitSync || !prev) {
+                        editor.commit()
+                    } else {
+                        editor.apply()
+                    }
                     if (!prev) {
                         LifecycleLogger.log(appCtx, "FARMING_ACTIVE", "Persistindo estado de farm ativo + watchdog")
+                        ServiceWatchdogReceiver.scheduleNext(appCtx)
                     }
-                    ServiceWatchdogReceiver.scheduleNext(appCtx)
                 } else {
+                    editor.remove(KEY_FARMING_STARTED_AT_MS)
+                    if (commitSync) {
+                        editor.commit()
+                    } else {
+                        editor.apply()
+                    }
                     if (prev) {
                         LifecycleLogger.log(appCtx, "FARMING_INACTIVE", "Farm encerrado; watchdog desarmado")
                     }
@@ -109,7 +132,7 @@ class IdleStreamForegroundService : Service() {
 
         fun stop(context: Context) {
             isStoppingByUser = true
-            setFarmingActive(context, false)
+            setFarmingActive(context, false, commitSync = true)
             val intent = Intent(context, IdleStreamForegroundService::class.java).apply {
                 action = ACTION_STOP
             }
@@ -161,6 +184,19 @@ class IdleStreamForegroundService : Service() {
 
         fun tryAutoRecoverMainActivityOrNotify(context: Context, reason: String) {
             val appCtx = context.applicationContext
+            if (isStoppingByUser || !isFarmingActive(appCtx)) {
+                return
+            }
+            if (LifecycleLogger.wasLastExitManualSince(appCtx, getFarmingStartedAtMs(appCtx))) {
+                LifecycleLogger.log(
+                    appCtx,
+                    "REVIVE_BLOCKED_MANUAL_EXIT",
+                    "Auto-recuperação cancelada porque o usuário encerrou o app manualmente (reason=$reason)"
+                )
+                setFarmingActive(appCtx, false, commitSync = true)
+                return
+            }
+
             val now = System.currentTimeMillis()
             if (now - lastRecoveryAttemptMs < 25_000L) {
                 return
@@ -355,11 +391,34 @@ class IdleStreamForegroundService : Service() {
                     CookieManager.getInstance().flush()
                 } catch (_: Throwable) {}
             }
-            if (isFarmingActive(this) && !isStoppingByUser && MainActivity.instance == null) {
-                LifecycleLogger.log(this, "SUPERVISOR_CHECK", "MainActivity == null enquanto farm ativo; tentando auto-recuperar")
-                tryAutoRecoverMainActivityOrNotify(this, "supervisor")
-            }
         } catch (_: Throwable) {}
+    }
+
+    private fun performManualShutdown(source: String, removeTask: Boolean) {
+        LifecycleLogger.log(this, "MANUAL_STOP", "source=$source -> encerramento manual sem auto-reabertura")
+        isStoppingByUser = true
+        setFarmingActive(this, false, commitSync = true)
+        clearRecoveryNotification(this)
+        try {
+            (application as? IdleStreamApplication)?.gameSlotManager?.destroy(clearPersistence = true)
+        } catch (_: Throwable) {}
+        releaseLocks()
+        isRunning = false
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Throwable) {}
+        stopSelf()
+        if (removeTask) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    MainActivity.instance?.finishAndRemoveTask()
+                } else {
+                    MainActivity.instance?.finish()
+                }
+            } catch (_: Throwable) {
+                MainActivity.instance?.finish()
+            }
+        }
     }
 
     private fun ensureForeground() {
@@ -388,45 +447,48 @@ class IdleStreamForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            LifecycleLogger.log(this, "SERVICE_STOP_ACTION", "Parada explícita recebida via ACTION_STOP")
-            isStoppingByUser = true
-            setFarmingActive(this, false)
-            releaseLocks()
-            isRunning = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            MainActivity.instance?.finish()
+            performManualShutdown("notification_stop", removeTask = true)
             return START_NOT_STICKY
+        }
+
+        if (intent == null) {
+            // Reinício via START_STICKY após encerramento do processo: só reabre se NÃO tiver sido fechamento manual do usuário
+            val farmingWasActive = isFarmingActive(this)
+            val manualExit = LifecycleLogger.wasLastExitManualSince(this, getFarmingStartedAtMs(this))
+            LifecycleLogger.log(
+                this,
+                "SERVICE_STICKY_RESTART",
+                "intent=null farmingWasActive=$farmingWasActive manualExit=$manualExit mainActivity=${MainActivity.instance != null}"
+            )
+            ensureForeground()
+            if (!farmingWasActive || manualExit || isStoppingByUser) {
+                performManualShutdown(
+                    if (manualExit) "sticky_blocked_manual_exit" else "sticky_inactive",
+                    removeTask = false
+                )
+                return START_NOT_STICKY
+            }
+            acquireLocks()
+            ServiceWatchdogReceiver.scheduleNext(this)
+            if (MainActivity.instance == null) {
+                if (!BatteryOptimizationHelper.canDrawOverlays(this)) {
+                    currentTitle = "IdleStream interrompido pelo sistema"
+                    currentText = "Toque aqui para retomar suas lives e jogos automaticamente"
+                    ensureForeground()
+                }
+                tryAutoRecoverMainActivityOrNotify(this, "sticky_restart")
+            }
+            return START_STICKY
         }
 
         isStoppingByUser = false
         acquireLocks()
 
-        when (intent?.action) {
+        when (intent.action) {
             ACTION_UPDATE -> {
                 intent.getStringExtra(EXTRA_TITLE)?.let { currentTitle = it }
                 intent.getStringExtra(EXTRA_TEXT)?.let { currentText = it }
                 ensureForeground()
-            }
-            null -> {
-                // Reinício via START_STICKY após encerramento do processo pelo sistema operacional
-                val farmingWasActive = isFarmingActive(this)
-                LifecycleLogger.log(
-                    this,
-                    "SERVICE_STICKY_RESTART",
-                    "intent=null farmingWasActive=$farmingWasActive mainActivity=${MainActivity.instance != null}"
-                )
-                if (farmingWasActive && MainActivity.instance == null && !BatteryOptimizationHelper.canDrawOverlays(this)) {
-                    currentTitle = "IdleStream interrompido pelo sistema"
-                    currentText = "Toque aqui para retomar suas lives e jogos automaticamente"
-                }
-                ensureForeground()
-                if (farmingWasActive) {
-                    ServiceWatchdogReceiver.scheduleNext(this)
-                    if (MainActivity.instance == null) {
-                        tryAutoRecoverMainActivityOrNotify(this, "sticky_restart")
-                    }
-                }
             }
             else -> {
                 ensureForeground()
@@ -441,47 +503,8 @@ class IdleStreamForegroundService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        val farming = isFarmingActive(this)
-        LifecycleLogger.log(this, "TASK_REMOVED", "farmingActive=$farming stoppingByUser=$isStoppingByUser")
-        if (farming && !isStoppingByUser) {
-            ServiceWatchdogReceiver.scheduleImmediateRecovery(this)
-            tryRelaunchMainActivity()
-        }
-    }
-
-    private fun tryRelaunchMainActivity() {
-        try {
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                putExtra("background_recovery", true)
-            } ?: return
-
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                9999,
-                launchIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-            if (alarmManager != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        SystemClock.elapsedRealtime() + 1000,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.set(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        SystemClock.elapsedRealtime() + 1000,
-                        pendingIntent
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        // Remover o app dos Apps Recentes é um fechamento MANUAL do usuário: nunca reabrir automaticamente.
+        performManualShutdown("task_removed", removeTask = false)
     }
 
     private fun createNotificationChannel() {
@@ -610,10 +633,11 @@ class IdleStreamForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        val manualExit = LifecycleLogger.wasLastExitManualSince(this, getFarmingStartedAtMs(this))
         LifecycleLogger.log(
             this,
             "SERVICE_DESTROY",
-            "stoppingByUser=$isStoppingByUser farmingActive=${isFarmingActive(this)}"
+            "stoppingByUser=$isStoppingByUser farmingActive=${isFarmingActive(this)} manualExit=$manualExit"
         )
         stopSupervisor()
         unregisterScreenReceiver()
@@ -622,17 +646,18 @@ class IdleStreamForegroundService : Service() {
         }
         isRunning = false
         releaseLocks()
-        if (isFarmingActive(this) && !isStoppingByUser) {
-            ServiceWatchdogReceiver.scheduleImmediateRecovery(this)
+        if (isFarmingActive(this) && !isStoppingByUser && !manualExit) {
+            ServiceWatchdogReceiver.scheduleNext(this, 10_000L)
         }
         super.onDestroy()
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        LifecycleLogger.log(this, "SERVICE_TIMEOUT", "fgsType=$fgsType startId=$startId")
+        val manualExit = LifecycleLogger.wasLastExitManualSince(this, getFarmingStartedAtMs(this))
+        LifecycleLogger.log(this, "SERVICE_TIMEOUT", "fgsType=$fgsType startId=$startId manualExit=$manualExit")
         android.util.Log.w("IdleStream", "Foreground service onTimeout called for fgsType=$fgsType, startId=$startId")
-        if (isFarmingActive(this) && !isStoppingByUser) {
-            ServiceWatchdogReceiver.scheduleImmediateRecovery(this)
+        if (isFarmingActive(this) && !isStoppingByUser && !manualExit) {
+            ServiceWatchdogReceiver.scheduleNext(this, 10_000L)
         }
         try {
             super.onTimeout(startId, fgsType)

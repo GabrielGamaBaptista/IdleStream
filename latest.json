@@ -1,11 +1,11 @@
 {
-  "version": "4.1.1",
-  "notes": "IdleStream v4.1.1 — Blindagem definitiva contra reset e suspensão em segundo plano/tela bloqueada (Android e Core): desacoplamento do GameSlotManager para o nível Application, modo econômico automático de 1 FPS + liberação de GPU (LAYER_TYPE_NONE) ao desligar a tela ou após 10s em segundo plano, persistência atômica da sessão ativa (lives, jogos, aba e configurações) com retomada automática, recuperação de crashes do Chromium Renderer (onRenderProcessGone), watchdog AlarmManager de 5 minutos, auto-recuperação opcional em fundo, checklist OEM e diagnóstico detalhado via ApplicationExitInfo.",
-  "pub_date": "2026-11-12T12:28:00Z",
+  "version": "4.1.2",
+  "notes": "IdleStream v4.1.2 — Correção crítica no Android: fechamento manual (deslizar dos Apps Recentes ou botão Parar) encerra o app permanentemente sem reabertura automática, usando ApplicationExitInfo para distinguir saída manual de morte involuntária pelo sistema/garbage collector das fabricantes (inatividade/LMK/OEM).",
+  "pub_date": "2026-11-12T14:20:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VnlmdllXUFl1K3dVZ3ZUNm1KVk5EeUhJWHFBUkU3UUtVSVBwZW1EazZRRGFka1U3cUxGZFJwbjh6S3FDYkNpdktUNlNuZVBUbGlCSUUvMmUveXJSK2dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDg2NDE3CWZpbGU6SWRsZVN0cmVhbV80LjEuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4xLjEKMmhQSHdlNmlSMXlNM1ZKR253amg5N2p1a1NscnI2WEZQM1pzR0UrWjNONGF3b1BPaXdHUUU2dnVETnpYNWU3d3RxVXFJRlFkT3daNVpzQlFGZ1ZHQmc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.1.1/IdleStream_4.1.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VndCcnIvRUovRmZ6SjBBdEQ2UDhOSFV5dUpXNTU4bDRyclhMVnYzM2NJU1BUd0xCTE1kWUMvUVlhY09sUVFQbEsvekg1NmtyWWxxTHlqK0c1dzdwa1FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDkzMTM0CWZpbGU6SWRsZVN0cmVhbV80LjEuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4xLjIKNUs2VEg3VmhKOWh5Ui8xeFhaSFh2RDhieGhCZzlWMTNLYlZvUFFZQkczWHN1YkU2S2dxeFNaTkRzcXJOZzErZVlQSVFIK244V0VWZWt4M2dTNWRvREE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.1.2/IdleStream_4.1.2_x64-setup.exe"
     }
   }
 }

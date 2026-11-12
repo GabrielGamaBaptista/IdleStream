@@ -20,7 +20,7 @@ wiki_links:
   - "[[09-sistema-de-votos]]"
   - "[[10-sessoes-resgates-e-verificador]]"
 status: "completed"
-version: "4.1.1"
+version: "4.1.2"
 last_updated: "2026-11-12"
 summary: "Índice Mestre (Map of Content) da documentação do IdleStream. Mapeia a arquitetura de sistemas, matriz cruzada de código para documento, grafos de dependência e glossário técnico para desenvolvedores e agentes de IA."
 ---
@@ -38,7 +38,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 | Componente | Especificação de Engenharia | Detalhes de Implementação |
 | :--- | :--- | :--- |
-| **Versão Corrente** | `4.1.1` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
+| **Versão Corrente** | `4.1.2` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
 | **Framework Host** | **Tauri v2** (`@tauri-apps/cli ^2.0`, `@tauri-apps/api ^2.0`) | Modelo multi-janela, Child Webviews nativas (`wry`), IPC binário e JSON |
 | **Runtime Rust Core** | **Rust 2021 Edition** | Assíncrono com `tokio 1.0` (Full), `tokio-tungstenite 0.24`, `futures-util 0.3` |
 | **Camada HTTP / Web** | **Reqwest 0.12** (`rustls-tls`), `tiny_http 0.12` | Subprocesso `curl.exe` (Windows) e OkHttp Bridge (Android) para bypass TLS |

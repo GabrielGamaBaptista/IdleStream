@@ -19,20 +19,31 @@ class ServiceWatchdogReceiver : BroadcastReceiver() {
         if (context == null) return
         val appCtx = context.applicationContext
 
-        if (!IdleStreamForegroundService.isFarmingActive(appCtx)) {
-            LifecycleLogger.log(appCtx, "WATCHDOG_SKIP", "Farming não está ativo; watchdog cancelado")
+        if (!IdleStreamForegroundService.isFarmingActive(appCtx) || IdleStreamForegroundService.isStoppingByUser) {
+            LifecycleLogger.log(appCtx, "WATCHDOG_SKIP", "Farming inativo ou encerrado pelo usuário; watchdog cancelado")
             cancel(appCtx)
             return
         }
 
-        // Reagenda o próximo pulso de 5 minutos antes de tudo
+        if (LifecycleLogger.wasLastExitManualSince(appCtx, IdleStreamForegroundService.getFarmingStartedAtMs(appCtx))) {
+            LifecycleLogger.log(
+                appCtx,
+                "WATCHDOG_SKIP_MANUAL_EXIT",
+                "Último encerramento foi manual (Recents/Forçar Parada); desarmando watchdog sem reabrir"
+            )
+            IdleStreamForegroundService.setFarmingActive(appCtx, false, commitSync = true)
+            cancel(appCtx)
+            return
+        }
+
+        // Reagenda o próximo pulso de 3 minutos antes de tudo
         scheduleNext(appCtx, INTERVAL_MS)
 
         if (!IdleStreamForegroundService.isRunning) {
             LifecycleLogger.log(
                 appCtx,
                 "WATCHDOG_REVIVE",
-                "ForegroundService estava parado com farm ativo! Reiniciando serviço..."
+                "ForegroundService estava parado após morte involuntária com farm ativo! Reiniciando serviço..."
             )
             IdleStreamForegroundService.start(appCtx)
 
@@ -47,7 +58,7 @@ class ServiceWatchdogReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_WATCHDOG = "com.idlestream.app.ACTION_SERVICE_WATCHDOG"
         private const val REQ_CODE = 202699
-        private const val INTERVAL_MS = 5 * 60 * 1000L
+        private const val INTERVAL_MS = 3 * 60 * 1000L
 
         fun scheduleNext(context: Context, delayMs: Long = INTERVAL_MS) {
             try {

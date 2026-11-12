@@ -14,13 +14,23 @@ class BootReceiver : BroadcastReceiver() {
             action == "android.intent.action.QUICKBOOT_POWERON"
         ) {
             val farmingActive = IdleStreamForegroundService.isFarmingActive(context)
-            LifecycleLogger.log(context, "BOOT_RECEIVER", "action=$action farmingActive=$farmingActive")
+            val manualExit = LifecycleLogger.wasLastExitManualSince(
+                context,
+                IdleStreamForegroundService.getFarmingStartedAtMs(context)
+            )
+            LifecycleLogger.log(context, "BOOT_RECEIVER", "action=$action farmingActive=$farmingActive manualExit=$manualExit")
 
-            if (farmingActive) {
+            if (farmingActive && manualExit) {
+                IdleStreamForegroundService.setFarmingActive(context, false, commitSync = true)
+            } else if (farmingActive) {
                 IdleStreamForegroundService.start(context)
                 ServiceWatchdogReceiver.scheduleNext(context)
                 if (MainActivity.instance == null) {
-                    IdleStreamForegroundService.tryAutoRecoverMainActivityOrNotify(context, "boot_$action")
+                    if (action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+                        IdleStreamForegroundService.tryAutoRecoverMainActivityOrNotify(context, "boot_$action")
+                    } else {
+                        IdleStreamForegroundService.showRecoveryNotification(context, "boot_$action")
+                    }
                 }
             }
 

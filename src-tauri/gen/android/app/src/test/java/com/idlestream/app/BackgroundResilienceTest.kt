@@ -61,4 +61,42 @@ class BackgroundResilienceTest {
         )
         assertTrue(patched.contains("prompt=select_account"))
     }
+
+    @Test
+    fun testManualExitDetectionVsInvoluntaryOemKill() {
+        // 1=EXIT_SELF, 8=PERMISSION_CHANGE, 10=USER_REQUESTED, 11=USER_STOPPED -> fechamento manual (não reabrir)
+        assertTrue(LifecycleLogger.isManualExitReason(10, "remove task"))
+        assertTrue(LifecycleLogger.isManualExitReason(11, null))
+        assertTrue(LifecycleLogger.isManualExitReason(1, "user stopped"))
+        assertTrue(LifecycleLogger.isManualExitReason(8, null))
+        assertTrue(LifecycleLogger.isManualExitReason(13, "remove task by recents"))
+
+        // 3=LOW_MEMORY, 9=EXCESSIVE_RESOURCE_USAGE, 12=DEPENDENCY_DIED, 13=OTHER(OEM), 14=FREEZER, 4=CRASH
+        // -> morte involuntária / garbage collector (DEVE reabrir se farm estiver ativo)
+        assertFalse(LifecycleLogger.isManualExitReason(3, "lowmemorykiller"))
+        assertFalse(LifecycleLogger.isManualExitReason(9, "miui powerkeeper background stop"))
+        assertFalse(LifecycleLogger.isManualExitReason(12, "webview renderer died"))
+        assertFalse(LifecycleLogger.isManualExitReason(13, "killed by Samsung freecess"))
+        assertFalse(LifecycleLogger.isManualExitReason(14, "frozen empty"))
+        assertFalse(LifecycleLogger.isManualExitReason(4, "crash"))
+
+        // Janela temporal: só bloqueia reabertura se a saída manual ocorreu após início da sessão atual
+        val sessionStart = 1_000_000L
+        assertFalse(
+            LifecycleLogger.shouldTreatExitAsManualSince(
+                reason = 10,
+                description = "remove task",
+                exitTimestampMs = sessionStart - 60_000L,
+                sessionStartedAtMs = sessionStart
+            )
+        )
+        assertTrue(
+            LifecycleLogger.shouldTreatExitAsManualSince(
+                reason = 10,
+                description = "remove task",
+                exitTimestampMs = sessionStart + 30_000L,
+                sessionStartedAtMs = sessionStart
+            )
+        )
+    }
 }

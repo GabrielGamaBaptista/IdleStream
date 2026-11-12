@@ -344,7 +344,7 @@ class GameSlotManager(private val app: Application) {
             app.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
                 .edit()
                 .remove(KEY_DESIRED_SLOTS)
-                .apply()
+                .commit()
         } catch (_: Throwable) {}
     }
 

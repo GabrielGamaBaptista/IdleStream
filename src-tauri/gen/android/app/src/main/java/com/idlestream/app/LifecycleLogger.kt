@@ -99,6 +99,52 @@ object LifecycleLogger {
         }
     }
 
+    private const val REASON_FREEZER_COMPAT = 14
+
+    fun isManualExitReason(reason: Int, description: String?): Boolean {
+        val descLower = description?.lowercase(Locale.US) ?: ""
+        if (descLower.contains("remove task")) {
+            return true
+        }
+        return when (reason) {
+            // 1 = REASON_EXIT_SELF, 8 = REASON_PERMISSION_CHANGE, 10 = REASON_USER_REQUESTED, 11 = REASON_USER_STOPPED
+            1, 8, 10, 11 -> true
+            else -> false
+        }
+    }
+
+    fun shouldTreatExitAsManualSince(
+        reason: Int,
+        description: String?,
+        exitTimestampMs: Long,
+        sessionStartedAtMs: Long
+    ): Boolean {
+        if (!isManualExitReason(reason, description)) {
+            return false
+        }
+        if (sessionStartedAtMs > 0L && exitTimestampMs < sessionStartedAtMs - 5_000L) {
+            return false
+        }
+        return true
+    }
+
+    fun wasLastExitManualSince(context: Context, sessionStartedAtMs: Long): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+            val latest = am.getHistoricalProcessExitReasons(context.packageName, 0, 1).firstOrNull()
+                ?: return false
+            shouldTreatExitAsManualSince(
+                reason = latest.reason,
+                description = latest.description,
+                exitTimestampMs = latest.timestamp,
+                sessionStartedAtMs = sessionStartedAtMs
+            )
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun exitReasonToString(reason: Int): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return reason.toString()
         return when (reason) {
@@ -114,6 +160,7 @@ object LifecycleLogger {
             android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
             android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
             android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED (WebView Renderer)"
+            REASON_FREEZER_COMPAT -> "FREEZER (Android 14+)"
             android.app.ApplicationExitInfo.REASON_OTHER -> "OTHER (OEM/Sistema)"
             else -> "REASON_$reason"
         }

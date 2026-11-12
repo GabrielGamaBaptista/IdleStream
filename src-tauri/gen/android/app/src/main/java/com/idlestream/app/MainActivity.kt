@@ -411,6 +411,8 @@ class MainActivity : TauriActivity() {
 
         val isBackgroundRecovery = intent?.getBooleanExtra("background_recovery", false) == true
         val recoveryReason = intent?.getStringExtra("recovery_reason") ?: ""
+        intent?.removeExtra("background_recovery")
+        intent?.removeExtra("recovery_reason")
         LifecycleLogger.log(
             this,
             "ACTIVITY_CREATE",
@@ -493,6 +495,7 @@ class MainActivity : TauriActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         IdleStreamForegroundService.clearRecoveryNotification(this)
         android.util.Log.d("IdleStream", "onNewIntent action=${intent.action}")
         when (intent.action) {
@@ -589,9 +592,6 @@ class MainActivity : TauriActivity() {
             instance = null
         }
         isForeground = false
-        if (!stoppingByUser && !isChangingConfigurations && IdleStreamForegroundService.isFarmingActive(this)) {
-            ServiceWatchdogReceiver.scheduleImmediateRecovery(this)
-        }
         super.onDestroy()
     }
 

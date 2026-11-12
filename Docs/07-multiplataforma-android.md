@@ -22,7 +22,7 @@ wiki_links:
   - "[[08-operacao-e-scripts]]"
   - "[[09-sistema-de-votos]]"
 status: "completed"
-version: "4.1.1"
+version: "4.1.2"
 last_updated: "2026-11-12"
 summary: "Engenharia profunda do ecossistema Android: persistência nativa de sessões PokeIdle em SharedPreferences, pontes JNI e JavaScript, Foreground Service com WakeLock, rastreamento de toques anti-sleep e pipeline NDK/Gradle."
 ---
