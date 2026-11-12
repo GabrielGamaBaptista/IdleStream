@@ -10,17 +10,19 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
     <application
+        android:name=".IdleStreamApplication"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.idlestream"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density|fontScale|layoutDirection"
             android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"
             android:windowSoftInputMode="adjustResize"
@@ -78,6 +80,10 @@
 
         <receiver
             android:name=".VoteAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".ServiceWatchdogReceiver"
             android:exported="false" />
 
         <provider

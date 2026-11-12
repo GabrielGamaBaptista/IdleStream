@@ -1,9 +1,14 @@
 package com.idlestream.app
 
 import android.annotation.SuppressLint
+import android.app.Application
 import android.content.Context
+import android.content.MutableContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
@@ -14,8 +19,10 @@ import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Layout especial que repassa eventos de toque para a WebView principal subjacente
@@ -39,18 +46,10 @@ class PassThroughFrameLayout(context: Context) : FrameLayout(context) {
 /**
  * WebView blindada para execução ininterrupta 24/7 de slots de jogos em segundo plano
  * e com tela desligada.
- *
- * Fundamentos:
- * 1. AwContents.onWindowVisibilityChanged: Forçar View.VISIBLE impede que o Chromium
- *    entre no estado PageVisibilityState::kHidden, mantendo requestAnimationFrame,
- *    WebWorkers (HackTimer.js do PokeIdle) e timers de combate ativos.
- * 2. setRendererPriorityPolicy: No Android 8+, impede que o Low Memory Killer
- *    rebaixe a prioridade do renderizador para WAIVED quando fora da tela.
- * 3. onPause / pauseTimers: Neutraliza a pausa nativa que o sistema operacional tenta impor.
  */
 class PersistentWebView(context: Context) : WebView(context) {
     init {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)
             } catch (e: Throwable) {
@@ -85,12 +84,10 @@ class PersistentWebView(context: Context) : WebView(context) {
 
 /**
  * Bridge Javascript nativa exposta para cada slot de jogo ("IdleStreamSlotBridge").
- * Responsável pela persistência atômica da sessão do PokeIdle em SharedPreferences,
- * garantindo sobrevivência do login através de fechamentos completos do app no Android,
- * e reporte de eventos de toque/interação para o monitor de inatividade (anti-sleep).
+ * Usa Application/GameSlotManager (sem referência forte para MainActivity) evitando vazamentos.
  */
-class GameSlotBridge(private val slotId: String, private val activity: MainActivity) {
-    private val prefs = activity.getSharedPreferences("idlestream_game_sessions", Context.MODE_PRIVATE)
+class GameSlotBridge(private val slotId: String, private val app: Application, private val manager: GameSlotManager) {
+    private val prefs = app.getSharedPreferences("idlestream_game_sessions", Context.MODE_PRIVATE)
 
     @JavascriptInterface
     fun saveSession(sessionJson: String) {
@@ -98,7 +95,7 @@ class GameSlotBridge(private val slotId: String, private val activity: MainActiv
         try {
             prefs.edit().putString("slot_${slotId}_sessao", sessionJson).apply()
             CookieManager.getInstance().flush()
-            activity.recordUserActivity()
+            manager.reportUserActivity()
             Log.d("GameSlotBridge", "Sessão salva com sucesso no slot $slotId (${sessionJson.length} bytes)")
         } catch (e: Throwable) {
             Log.e("GameSlotBridge", "Erro ao salvar sessão no slot $slotId: ${e.message}")
@@ -128,18 +125,21 @@ class GameSlotBridge(private val slotId: String, private val activity: MainActiv
 
     @JavascriptInterface
     fun reportActivity() {
-        activity.recordUserActivity()
+        manager.reportUserActivity()
     }
 }
 
 /**
  * Gerenciador nativo de WebViews filhas para slots de jogos no Android.
- * Permite que até 4 contas rodem simultaneamente em hardware nativo sem limitações
- * de iframe ou bloqueio por X-Frame-Options: DENY.
+ * Pertence à IdleStreamApplication (nível de processo) para sobreviver à recriação/destruição
+ * da MainActivity sem encerrar os jogos ou perder sessões ativas.
  */
-class GameSlotManager(private val activity: MainActivity) {
+class GameSlotManager(private val app: Application) {
     companion object {
         private const val TAG = "GameSlotManager"
+        private const val PREFS_RUNTIME = IdleStreamForegroundService.PREFS_RUNTIME
+        private const val KEY_DESIRED_SLOTS = "desired_game_slots_json"
+        private const val KEY_FPS_TIER = "game_fps_tier"
 
         fun isGoogleAuthUrl(url: String?): Boolean {
             if (url.isNullOrBlank()) return false
@@ -195,29 +195,96 @@ class GameSlotManager(private val activity: MainActivity) {
         }
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val containerContext = MutableContextWrapper(app)
     private var container: PassThroughFrameLayout? = null
+    private val slotContexts = ConcurrentHashMap<String, MutableContextWrapper>()
     private val slotWebViews = ConcurrentHashMap<String, WebView>()
     private val activeSlots = ConcurrentHashMap<String, String>() // slotId -> url
-    private var currentFps = 30
-    private var isEcoMode = true
+    private val slotZooms = ConcurrentHashMap<String, Double>()
+    private val slotVisibleMap = ConcurrentHashMap<String, Boolean>()
+    private val slotHiddenJsState = ConcurrentHashMap<String, Boolean>()
+
+    @Volatile
+    private var currentActivity: MainActivity? = null
+
+    @Volatile
+    private var currentFps: Int = try {
+        app.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE).getInt(KEY_FPS_TIER, 30)
+    } catch (_: Throwable) {
+        30
+    }
+
+    @Volatile
+    private var isLowPowerBackground: Boolean = false
+
     private var watchdogExecutor: java.util.concurrent.ScheduledExecutorService? = null
+    private val watchdogTick = AtomicInteger(0)
+
+    private fun runOnMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            block()
+        } else {
+            mainHandler.post(block)
+        }
+    }
+
+    fun reportUserActivity() {
+        MainActivity.instance?.recordUserActivity()
+    }
+
+    fun attachToActivity(activity: MainActivity) {
+        currentActivity = activity
+        runOnMain {
+            containerContext.baseContext = activity
+            slotContexts.values.forEach { it.baseContext = activity }
+            ensureContainer()
+        }
+    }
+
+    fun detachFromActivity(activity: MainActivity) {
+        if (currentActivity === activity) {
+            currentActivity = null
+        }
+        try {
+            CookieManager.getInstance().flush()
+        } catch (_: Throwable) {}
+        runOnMain {
+            container?.let { fl ->
+                (fl.parent as? ViewGroup)?.removeView(fl)
+            }
+            if (currentActivity == null) {
+                containerContext.baseContext = app
+                slotContexts.values.forEach { it.baseContext = app }
+            }
+        }
+    }
 
     fun startWatchdog() {
         if (watchdogExecutor != null && !watchdogExecutor!!.isShutdown) return
         watchdogExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
         watchdogExecutor?.scheduleWithFixedDelay({
             if (activeSlots.isEmpty()) return@scheduleWithFixedDelay
-            activity.runOnUiThread {
+            val tick = watchdogTick.incrementAndGet()
+            // Em segundo plano/tela desligada reduz o pulso nativo para a cada ~10s (economia de CPU),
+            // mantendo em 2s quando o app está em primeiro plano ativo.
+            if (isLowPowerBackground && (tick % 5 != 0)) {
+                return@scheduleWithFixedDelay
+            }
+            mainHandler.post {
                 for (wv in slotWebViews.values) {
                     try {
                         wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                         wv.resumeTimers()
-                        wv.evaluateJavascript("if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }", null)
+                        wv.evaluateJavascript(
+                            "if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }",
+                            null
+                        )
                     } catch (_: Throwable) {}
                 }
             }
-        }, 1500, 1500, java.util.concurrent.TimeUnit.MILLISECONDS)
-        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 1500ms com blindagem de visibilidade)")
+        }, 2000, 2000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 2s foreground / 10s background)")
     }
 
     fun stopWatchdog() {
@@ -228,12 +295,14 @@ class GameSlotManager(private val activity: MainActivity) {
     }
 
     fun ensureContainer() {
-        if (container != null) return
-        activity.runOnUiThread {
-            if (container != null) return@runOnUiThread
-            val root = activity.findViewById<ViewGroup>(android.R.id.content)
-            if (root != null) {
-                val fl = PassThroughFrameLayout(activity).apply {
+        runOnMain {
+            val activity = currentActivity ?: MainActivity.instance ?: return@runOnMain
+            val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return@runOnMain
+
+            var fl = container
+            if (fl == null) {
+                containerContext.baseContext = activity
+                fl = PassThroughFrameLayout(containerContext).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -242,25 +311,92 @@ class GameSlotManager(private val activity: MainActivity) {
                     isClickable = false
                     isFocusable = false
                 }
-                root.addView(fl)
                 container = fl
-                Log.d(TAG, "GameSlotManager container anexado com sucesso.")
             }
+
+            if (fl.parent !== root) {
+                (fl.parent as? ViewGroup)?.removeView(fl)
+                root.addView(fl)
+                Log.d(TAG, "GameSlotManager container anexado à MainActivity.")
+            }
+        }
+    }
+
+    private fun persistDesiredSlots() {
+        try {
+            val root = JSONObject()
+            for ((id, url) in activeSlots) {
+                val entry = JSONObject().apply {
+                    put("url", url)
+                    put("zoom", slotZooms[id] ?: 1.0)
+                }
+                root.put(id, entry)
+            }
+            app.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_DESIRED_SLOTS, root.toString())
+                .apply()
+        } catch (_: Throwable) {}
+    }
+
+    fun clearPersistedSlots() {
+        try {
+            app.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_DESIRED_SLOTS)
+                .apply()
+        } catch (_: Throwable) {}
+    }
+
+    fun restorePersistedSlots() {
+        try {
+            val raw = app.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
+                .getString(KEY_DESIRED_SLOTS, null) ?: return
+            if (raw.isBlank() || raw == "{}") return
+            val obj = JSONObject(raw)
+            val keys = obj.keys()
+            var restoredCount = 0
+            while (keys.hasNext()) {
+                val slotId = keys.next()
+                if (slotWebViews.containsKey(slotId)) continue
+                val entry = obj.optJSONObject(slotId) ?: continue
+                val url = entry.optString("url", "").ifBlank { "https://pokeidle.io/app" }
+                val zoom = entry.optDouble("zoom", 1.0)
+                startSlot(slotId, url, zoom)
+                restoredCount++
+            }
+            if (restoredCount > 0) {
+                LifecycleLogger.log(app, "SLOTS_AUTO_RESTORED", "restored=$restoredCount")
+            }
+        } catch (e: Throwable) {
+            LifecycleLogger.log(app, "SLOTS_RESTORE_ERR", e.message ?: "unknown")
         }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun startSlot(slotId: String, url: String, zoom: Double = 1.0) {
+        val previousUrl = activeSlots[slotId]
         activeSlots[slotId] = url
-        activity.runOnUiThread {
+        slotZooms[slotId] = zoom
+        persistDesiredSlots()
+
+        runOnMain {
             ensureContainer()
-            val parent = container ?: return@runOnUiThread
+            val parent = container
 
             var webView = slotWebViews[slotId]
+            val createdNow = webView == null
             if (webView == null) {
-                webView = PersistentWebView(activity).apply {
-                    layoutParams = FrameLayout.LayoutParams(0, 0)
-                    visibility = View.GONE
+                val wvCtx = MutableContextWrapper(currentActivity ?: MainActivity.instance ?: app)
+                slotContexts[slotId] = wvCtx
+
+                webView = PersistentWebView(wvCtx).apply {
+                    layoutParams = FrameLayout.LayoutParams(1, 1).apply {
+                        leftMargin = -100
+                        topMargin = -100
+                    }
+                    visibility = View.VISIBLE
+                    alpha = 0f
                     setBackgroundColor(Color.parseColor("#0a0a0a"))
 
                     settings.apply {
@@ -288,7 +424,7 @@ class GameSlotManager(private val activity: MainActivity) {
                         .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
 
                     // Registra a bridge nativa para persistência atômica da sessão do PokeIdle e monitor de atividade
-                    addJavascriptInterface(GameSlotBridge(slotId, activity), "IdleStreamSlotBridge")
+                    addJavascriptInterface(GameSlotBridge(slotId, app, this@GameSlotManager), "IdleStreamSlotBridge")
 
                     // Isolamento NATIVO de Cookies e Sessões via Multi-Profile (AndroidX WebKit)
                     val profileName = "slot_$slotId"
@@ -313,7 +449,10 @@ class GameSlotManager(private val activity: MainActivity) {
                         cookieManager.setAcceptThirdPartyCookies(this, true)
                     }
 
-                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    setLayerType(
+                        if (isLowPowerBackground) View.LAYER_TYPE_NONE else View.LAYER_TYPE_HARDWARE,
+                        null
+                    )
 
                     val isolationScript = getStorageIsolationScript(slotId)
                     val antiSleepScript = loadAssetScript("games/anti_sleep.js")
@@ -346,7 +485,7 @@ class GameSlotManager(private val activity: MainActivity) {
                                 combinedStartScript,
                                 Collections.singleton("*")
                             )
-                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso (isolamento + anti_sleep + hunt_extension) para $slotId")
+                            Log.d(TAG, "addDocumentStartJavaScript configurado com sucesso para $slotId")
                         } catch (e: Throwable) {
                             Log.w(TAG, "Falha ao registrar addDocumentStartJavaScript: ${e.message}")
                         }
@@ -355,7 +494,6 @@ class GameSlotManager(private val activity: MainActivity) {
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, pageUrl: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, pageUrl, favicon)
-                            // Força prompt=select_account para permitir selecionar contas Google diferentes
                             if (pageUrl != null && isGoogleAuthUrl(pageUrl)) {
                                 val modifiedUrl = ensureSelectAccountPrompt(pageUrl)
                                 if (modifiedUrl != pageUrl) {
@@ -395,21 +533,64 @@ class GameSlotManager(private val activity: MainActivity) {
                             super.onPageFinished(view, pageUrl)
                             injectEngineScripts(slotId, view, pageUrl)
                         }
+
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: RenderProcessGoneDetail?
+                        ): Boolean {
+                            val didCrash = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                detail?.didCrash() ?: false
+                            } else {
+                                false
+                            }
+                            val prio = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                detail?.rendererPriorityAtExit() ?: -1
+                            } else {
+                                -1
+                            }
+                            LifecycleLogger.log(
+                                app,
+                                "WEBVIEW_SLOT_RENDER_GONE",
+                                "slot=$slotId didCrash=$didCrash rendererPriority=$prio"
+                            )
+                            val targetUrl = activeSlots[slotId]
+                            val targetZoom = slotZooms[slotId] ?: 1.0
+                            val removed = slotWebViews.remove(slotId)
+                            slotContexts.remove(slotId)
+                            slotHiddenJsState.remove(slotId)
+                            if (removed != null) {
+                                try {
+                                    container?.removeView(removed)
+                                    removed.destroy()
+                                } catch (_: Throwable) {}
+                            }
+                            if (targetUrl != null) {
+                                mainHandler.postDelayed({
+                                    if (activeSlots.containsKey(slotId)) {
+                                        startSlot(slotId, targetUrl, targetZoom)
+                                    }
+                                }, 1500L)
+                            }
+                            return true
+                        }
                     }
 
                     webChromeClient = WebChromeClient()
                 }
-                parent.addView(webView)
+                parent?.addView(webView)
                 slotWebViews[slotId] = webView
             }
 
-            activeSlots[slotId] = url
             startWatchdog()
             if (zoom != 1.0) {
                 setSlotZoom(slotId, zoom)
             }
-            webView.loadUrl(url)
-            Log.d(TAG, "Slot $slotId iniciado com URL: $url")
+            if (createdNow || previousUrl != url) {
+                webView.loadUrl(url)
+                Log.d(TAG, "Slot $slotId iniciado com URL: $url")
+            } else {
+                Log.d(TAG, "Slot $slotId já ativo com URL atual, mantendo instância viva")
+            }
         }
     }
 
@@ -565,8 +746,15 @@ class GameSlotManager(private val activity: MainActivity) {
         val antiSleepScript = loadAssetScript("games/anti_sleep.js")
         if (antiSleepScript.isNotEmpty()) {
             view.evaluateJavascript(antiSleepScript) {
-                val initEcoScript = "if (typeof window.__setIdleStreamFps === 'function') { window.__setIdleStreamFps($currentFps); }"
+                val shouldBeHidden = isLowPowerBackground || (slotVisibleMap[slotId] == false)
+                val initEcoScript = buildString {
+                    append("if (typeof window.__setIdleStreamFps === 'function') { window.__setIdleStreamFps($currentFps); }")
+                    if (shouldBeHidden) {
+                        append("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }")
+                    }
+                }
                 view.evaluateJavascript(initEcoScript, null)
+                slotHiddenJsState[slotId] = shouldBeHidden
             }
         }
 
@@ -594,7 +782,7 @@ class GameSlotManager(private val activity: MainActivity) {
 
     private fun loadAssetScript(path: String): String {
         return try {
-            activity.assets.open(path).bufferedReader().use { it.readText() }
+            app.assets.open(path).bufferedReader().use { it.readText() }
         } catch (e: Throwable) {
             Log.w(TAG, "Asset de script não encontrado: $path (${e.message})")
             ""
@@ -603,7 +791,12 @@ class GameSlotManager(private val activity: MainActivity) {
 
     fun stopSlot(slotId: String) {
         activeSlots.remove(slotId)
-        activity.runOnUiThread {
+        slotZooms.remove(slotId)
+        slotVisibleMap.remove(slotId)
+        slotHiddenJsState.remove(slotId)
+        persistDesiredSlots()
+        runOnMain {
+            slotContexts.remove(slotId)
             val wv = slotWebViews.remove(slotId)
             if (wv != null) {
                 container?.removeView(wv)
@@ -615,14 +808,18 @@ class GameSlotManager(private val activity: MainActivity) {
     }
 
     fun reloadSlot(slotId: String) {
-        activity.runOnUiThread {
+        runOnMain {
             slotWebViews[slotId]?.reload()
         }
     }
 
     fun setSlotZoom(slotId: String, zoom: Double) {
-        activity.runOnUiThread {
-            val wv = slotWebViews[slotId] ?: return@runOnUiThread
+        slotZooms[slotId] = zoom
+        if (activeSlots.containsKey(slotId)) {
+            persistDesiredSlots()
+        }
+        runOnMain {
+            val wv = slotWebViews[slotId] ?: return@runOnMain
             val pct = (zoom * 100).toInt()
             wv.setInitialScale(pct)
             wv.evaluateJavascript("document.body.style.zoom = '${zoom}';", null)
@@ -631,9 +828,14 @@ class GameSlotManager(private val activity: MainActivity) {
 
     fun setFps(fps: Int) {
         currentFps = fps
-        isEcoMode = fps < 60
+        try {
+            app.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_FPS_TIER, fps)
+                .apply()
+        } catch (_: Throwable) {}
         val script = "if (typeof window.__setIdleStreamFps === 'function') { window.__setIdleStreamFps($fps); }"
-        activity.runOnUiThread {
+        runOnMain {
             slotWebViews.values.forEach { it.evaluateJavascript(script, null) }
         }
     }
@@ -644,7 +846,7 @@ class GameSlotManager(private val activity: MainActivity) {
             false -> "if (typeof window.__togglePokeIdleUltra === 'function') { window.__togglePokeIdleUltra(false); }"
             null -> "if (typeof window.__togglePokeIdleUltra === 'function') { window.__togglePokeIdleUltra(); }"
         }
-        activity.runOnUiThread {
+        runOnMain {
             if (slotId != null) {
                 slotWebViews[slotId]?.evaluateJavascript(script, null)
             } else {
@@ -653,12 +855,70 @@ class GameSlotManager(private val activity: MainActivity) {
         }
     }
 
+    private fun applySlotHiddenJsState(slotId: String, wv: WebView, hidden: Boolean) {
+        val prev = slotHiddenJsState[slotId]
+        if (prev == hidden) return
+        slotHiddenJsState[slotId] = hidden
+        wv.evaluateJavascript(
+            "if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden($hidden); }",
+            null
+        )
+    }
+
+    fun setLowPowerBackgroundMode(enabled: Boolean, reason: String) {
+        val changed = isLowPowerBackground != enabled
+        isLowPowerBackground = enabled
+        if (changed) {
+            LifecycleLogger.log(
+                app,
+                "GAME_LOW_POWER_MODE",
+                "enabled=$enabled reason=$reason activeSlots=${slotWebViews.size}"
+            )
+        }
+        runOnMain {
+            for ((slotId, wv) in slotWebViews) {
+                try {
+                    if (enabled) {
+                        wv.setLayerType(View.LAYER_TYPE_NONE, null)
+                        applySlotHiddenJsState(slotId, wv, true)
+                    } else {
+                        val isVisibleUi = slotVisibleMap[slotId] ?: true
+                        if (isVisibleUi) {
+                            wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                            applySlotHiddenJsState(slotId, wv, false)
+                        } else {
+                            wv.setLayerType(View.LAYER_TYPE_NONE, null)
+                            applySlotHiddenJsState(slotId, wv, true)
+                        }
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    fun onLowMemoryPressure() {
+        runOnMain {
+            try {
+                CookieManager.getInstance().flush()
+            } catch (_: Throwable) {}
+            for (wv in slotWebViews.values) {
+                try {
+                    wv.clearCache(false) // apenas memória/disco seguro sem apagar cookies/localStorage
+                    wv.evaluateJavascript("if (typeof window.gc === 'function') { try { window.gc(); } catch(_) {} }", null)
+                } catch (_: Throwable) {}
+            }
+        }
+        if (!MainActivity.isForeground) {
+            setLowPowerBackgroundMode(true, "low_memory")
+        }
+    }
+
     fun updateBounds(jsonBounds: String) {
-        activity.runOnUiThread {
+        runOnMain {
             ensureContainer()
             try {
                 val array = JSONArray(jsonBounds)
-                val density = activity.resources.displayMetrics.density
+                val density = app.resources.displayMetrics.density
 
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
@@ -673,8 +933,7 @@ class GameSlotManager(private val activity: MainActivity) {
                     val wv = slotWebViews[slotId] ?: continue
 
                     if (!visible || width <= 5 || height <= 5) {
-                        // Não usamos View.GONE pois ele faz o Chromium congelar o pipeline de execução e timers da aba.
-                        // Em vez disso, posicionamos a WebView com 1x1 px fora da viewport e alpha 0f
+                        slotVisibleMap[slotId] = false
                         val lp = FrameLayout.LayoutParams(1, 1).apply {
                             leftMargin = -100
                             topMargin = -100
@@ -682,7 +941,10 @@ class GameSlotManager(private val activity: MainActivity) {
                         wv.layoutParams = lp
                         wv.visibility = View.VISIBLE
                         wv.alpha = 0f
+                        wv.setLayerType(View.LAYER_TYPE_NONE, null)
+                        applySlotHiddenJsState(slotId, wv, true)
                     } else {
+                        slotVisibleMap[slotId] = true
                         val pxX = (x * density).toInt()
                         val pxY = (y * density).toInt()
                         val pxW = (width * density).toInt()
@@ -695,6 +957,13 @@ class GameSlotManager(private val activity: MainActivity) {
                         wv.layoutParams = lp
                         wv.visibility = View.VISIBLE
                         wv.alpha = 1f
+                        if (isLowPowerBackground) {
+                            wv.setLayerType(View.LAYER_TYPE_NONE, null)
+                            applySlotHiddenJsState(slotId, wv, true)
+                        } else {
+                            wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                            applySlotHiddenJsState(slotId, wv, false)
+                        }
                     }
                 }
             } catch (e: Throwable) {
@@ -704,8 +973,9 @@ class GameSlotManager(private val activity: MainActivity) {
     }
 
     fun hideAll() {
-        activity.runOnUiThread {
-            slotWebViews.values.forEach { wv ->
+        runOnMain {
+            for ((slotId, wv) in slotWebViews) {
+                slotVisibleMap[slotId] = false
                 val lp = FrameLayout.LayoutParams(1, 1).apply {
                     leftMargin = -100
                     topMargin = -100
@@ -713,18 +983,25 @@ class GameSlotManager(private val activity: MainActivity) {
                 wv.layoutParams = lp
                 wv.visibility = View.VISIBLE
                 wv.alpha = 0f
+                wv.setLayerType(View.LAYER_TYPE_NONE, null)
+                applySlotHiddenJsState(slotId, wv, true)
             }
         }
     }
 
     fun resumeAllTimers() {
-        startWatchdog()
-        activity.runOnUiThread {
+        if (activeSlots.isNotEmpty()) {
+            startWatchdog()
+        }
+        runOnMain {
             slotWebViews.values.forEach { wv ->
                 try {
                     wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                     wv.resumeTimers()
-                    wv.evaluateJavascript("if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }", null)
+                    wv.evaluateJavascript(
+                        "if (typeof window.__idlestreamHeartbeat === 'function') { window.__idlestreamHeartbeat(); }",
+                        null
+                    )
                 } catch (_: Throwable) {}
             }
         }
@@ -734,9 +1011,12 @@ class GameSlotManager(private val activity: MainActivity) {
         return activeSlots.keys().toList()
     }
 
-    fun destroy() {
+    fun destroy(clearPersistence: Boolean = true) {
         stopWatchdog()
-        activity.runOnUiThread {
+        if (clearPersistence) {
+            clearPersistedSlots()
+        }
+        runOnMain {
             try {
                 CookieManager.getInstance().flush()
             } catch (_: Throwable) {}
@@ -745,6 +1025,10 @@ class GameSlotManager(private val activity: MainActivity) {
                 wv.destroy()
             }
             slotWebViews.clear()
+            slotContexts.clear()
+            slotZooms.clear()
+            slotVisibleMap.clear()
+            slotHiddenJsState.clear()
             activeSlots.clear()
             container?.removeAllViews()
         }

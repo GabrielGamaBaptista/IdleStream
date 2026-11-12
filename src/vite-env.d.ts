@@ -3,6 +3,12 @@
 interface AndroidBridge {
   isBatteryOptimizationIgnored(): boolean;
   requestIgnoreBatteryOptimization(): void;
+  openAppSettings?(): void;
+  canDrawOverlays?(): boolean;
+  requestOverlayPermission?(): void;
+  hasNotificationPermission?(): boolean;
+  getOemGuidanceJson?(): string;
+  setFarmingActive?(active: boolean): void;
   startForegroundService(): void;
   stopForegroundService(): void;
   updateNotification(title: string, text: string): void;
@@ -21,6 +27,7 @@ interface AndroidBridge {
     xsrfToken: string
   ): void;
   getCrashLog?(): string;
+  getDiagnosticReport?(): string;
   clearCrashLog?(): boolean;
   canInstallPackages?(): boolean;
   requestInstallPermission?(): void;

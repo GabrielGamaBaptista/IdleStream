@@ -7,7 +7,7 @@ use crate::accounts::session_sync::{
 };
 use crate::accounts::verifier::{verify_kick_account, verify_twitch_account};
 use crate::config::{
-    AppConfig, ConfigStore, Platform, StatusKind, StreamRuntimeStatus,
+    AppConfig, ConfigStore, Platform, RuntimeSessionState, StatusKind, StreamRuntimeStatus,
 };
 use crate::live_check::{check_kick_live, check_twitch_live};
 use crate::twitch::{TwitchSession, TwitchSessionConfig};
@@ -19,8 +19,21 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
+pub fn compute_streams_to_restore(config: &AppConfig, runtime: &RuntimeSessionState) -> Vec<String> {
+    let mut ids = Vec::new();
+    for stream in &config.streams {
+        if stream.auto_start || runtime.desired_active_stream_ids.contains(&stream.id) {
+            if !ids.contains(&stream.id) {
+                ids.push(stream.id.clone());
+            }
+        }
+    }
+    ids
+}
+
 pub struct AppState {
     pub config: Mutex<AppConfig>,
+    pub runtime_state: Mutex<RuntimeSessionState>,
     pub config_store: ConfigStore,
     pub twitch_sessions: Mutex<HashMap<String, TwitchSession>>,
     pub twitch_watchers: Mutex<HashMap<String, crate::twitch::watcher::TwitchWatcherHandle>>,
@@ -39,6 +52,7 @@ impl AppState {
     pub fn new(app_handle: AppHandle) -> Self {
         let config_store = ConfigStore::new(&app_handle);
         let config = config_store.load();
+        let runtime_state = config_store.load_runtime_state();
 
         let mut statuses = HashMap::new();
         for stream in &config.streams {
@@ -65,6 +79,7 @@ impl AppState {
 
         Self {
             config: Mutex::new(config),
+            runtime_state: Mutex::new(runtime_state),
             config_store,
             twitch_sessions: Mutex::new(HashMap::new()),
             twitch_watchers: Mutex::new(HashMap::new()),
@@ -165,6 +180,51 @@ impl AppState {
         map.values().cloned().collect()
     }
 
+    pub async fn mark_stream_desired_active(&self, stream_id: &str, active: bool) {
+        let mut rt = self.runtime_state.lock().await;
+        let changed = if active {
+            if !rt.desired_active_stream_ids.iter().any(|id| id == stream_id) {
+                rt.desired_active_stream_ids.push(stream_id.to_string());
+                true
+            } else {
+                false
+            }
+        } else {
+            let before = rt.desired_active_stream_ids.len();
+            rt.desired_active_stream_ids.retain(|id| id != stream_id);
+            rt.desired_active_stream_ids.len() != before
+        };
+        if changed {
+            let _ = self.config_store.save_runtime_state(&rt);
+        }
+    }
+
+    pub async fn get_runtime_state(&self) -> RuntimeSessionState {
+        self.runtime_state.lock().await.clone()
+    }
+
+    pub async fn set_runtime_ui_state(
+        &self,
+        last_active_tab: Option<String>,
+        desired_active_game_slots: Option<Vec<String>>,
+    ) -> Result<RuntimeSessionState, String> {
+        let mut rt = self.runtime_state.lock().await;
+        if let Some(tab) = last_active_tab {
+            rt.last_active_tab = Some(tab);
+        }
+        if let Some(slots) = desired_active_game_slots {
+            rt.desired_active_game_slots = slots;
+        }
+        self.config_store.save_runtime_state(&rt)?;
+        Ok(rt.clone())
+    }
+
+    pub async fn get_streams_to_restore(&self) -> Vec<String> {
+        let cfg = self.config.lock().await;
+        let rt = self.runtime_state.lock().await;
+        compute_streams_to_restore(&cfg, &rt)
+    }
+
     pub async fn start_stream(self: &Arc<Self>, stream_id: &str) -> Result<(), String> {
         let (stream, accounts, settings) = {
             let cfg = self.config.lock().await;
@@ -188,6 +248,9 @@ impl AppState {
 
             (stream, accounts, cfg.settings.clone())
         };
+
+        // Persiste intenção ativa imediatamente para auto-retomada após recriação/reinício
+        self.mark_stream_desired_active(stream_id, true).await;
 
         // 1. Check live status if auto_live_only is enabled
         let is_live = match stream.platform {
@@ -708,6 +771,8 @@ impl AppState {
     }
 
     pub async fn stop_stream(&self, stream_id: &str) {
+        self.mark_stream_desired_active(stream_id, false).await;
+
         {
             let prefix = format!("{}:", stream_id);
             let mut sessions = self.twitch_sessions.lock().await;
@@ -798,9 +863,16 @@ impl AppState {
     pub fn start_vigilance_loop(self: &Arc<Self>) {
         let this = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
+            let mut first_pass = true;
             loop {
-                // Intervalo de vigília: 300 segundos (5 minutos) para economia extrema de bateria e dados
-                tokio::time::sleep(Duration::from_secs(300)).await;
+                // Primeira verificação rápida após 15s (recuperação ágil após reinício), depois a cada 300s (5 min)
+                let delay = if first_pass {
+                    first_pass = false;
+                    Duration::from_secs(15)
+                } else {
+                    Duration::from_secs(300)
+                };
+                tokio::time::sleep(delay).await;
 
                 let streams = {
                     let cfg = this.config.lock().await;
@@ -1166,5 +1238,44 @@ impl AppState {
                 this.verify_all_accounts().await;
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{AppConfig, Platform, RuntimeSessionState, StreamConfig};
+
+    fn make_stream(id: &str, auto_start: bool) -> StreamConfig {
+        StreamConfig {
+            id: id.into(),
+            platform: Platform::Twitch,
+            channel_slug: format!("chan_{}", id),
+            account_ids: vec!["acc-1".into()],
+            selected_account_id: Some("acc-1".into()),
+            auto_start,
+            account_id: None,
+        }
+    }
+
+    #[test]
+    fn test_compute_streams_to_restore_unions_autostart_and_desired_without_dups() {
+        let mut cfg = AppConfig::default();
+        cfg.streams.push(make_stream("s-auto", true));
+        cfg.streams.push(make_stream("s-manual-active", false));
+        cfg.streams.push(make_stream("s-stopped", false));
+
+        let rt = RuntimeSessionState {
+            desired_active_stream_ids: vec![
+                "s-auto".into(),
+                "s-manual-active".into(),
+                "s-deleted-stale".into(),
+            ],
+            desired_active_game_slots: vec!["slot-1".into()],
+            last_active_tab: Some("games".into()),
+        };
+
+        let result = compute_streams_to_restore(&cfg, &rt);
+        assert_eq!(result, vec!["s-auto", "s-manual-active"]);
     }
 }

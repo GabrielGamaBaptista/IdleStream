@@ -3,10 +3,20 @@ package com.idlestream.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -14,12 +24,29 @@ import androidx.core.content.ContextCompat
 class MainActivity : TauriActivity() {
 
     companion object {
+        @Volatile
         var instance: MainActivity? = null
+
+        @Volatile
+        var isForeground: Boolean = false
     }
 
     private var mainWebView: WebView? = null
-    val gameSlotManager by lazy { GameSlotManager(this) }
+    val gameSlotManager: GameSlotManager
+        get() = (application as IdleStreamApplication).gameSlotManager
     val voteWebViewManager by lazy { VoteWebViewManager(this) }
+
+    private val backgroundHandler = Handler(Looper.getMainLooper())
+    private val backgroundLowPowerRunnable = Runnable {
+        if (!isForeground) {
+            LifecycleLogger.log(
+                this,
+                "BACKGROUND_10S",
+                "10s em segundo plano -> ativando modo 1 FPS + liberando layer GPU nos jogos"
+            )
+            gameSlotManager.setLowPowerBackgroundMode(true, "background_10s")
+        }
+    }
 
     @Volatile
     var pendingOpenTab: String? = null
@@ -56,6 +83,45 @@ class MainActivity : TauriActivity() {
         fun requestIgnoreBatteryOptimization() {
             activity.runOnUiThread {
                 BatteryOptimizationHelper.requestIgnoreBatteryOptimization(activity)
+            }
+        }
+
+        @JavascriptInterface
+        fun openAppSettings() {
+            activity.runOnUiThread {
+                BatteryOptimizationHelper.openAppBatterySettings(activity)
+            }
+        }
+
+        @JavascriptInterface
+        fun canDrawOverlays(): Boolean {
+            return BatteryOptimizationHelper.canDrawOverlays(activity)
+        }
+
+        @JavascriptInterface
+        fun requestOverlayPermission() {
+            activity.runOnUiThread {
+                BatteryOptimizationHelper.requestOverlayPermission(activity)
+            }
+        }
+
+        @JavascriptInterface
+        fun hasNotificationPermission(): Boolean {
+            return BatteryOptimizationHelper.hasNotificationPermission(activity)
+        }
+
+        @JavascriptInterface
+        fun getOemGuidanceJson(): String {
+            return BatteryOptimizationHelper.getOemBatteryGuidanceJson(activity)
+        }
+
+        @JavascriptInterface
+        fun setFarmingActive(active: Boolean) {
+            IdleStreamForegroundService.setFarmingActive(activity, active)
+            if (active && !IdleStreamForegroundService.isRunning) {
+                activity.runOnUiThread {
+                    IdleStreamForegroundService.start(activity)
+                }
             }
         }
 
@@ -147,10 +213,18 @@ class MainActivity : TauriActivity() {
         }
 
         @JavascriptInterface
+        fun getDiagnosticReport(): String {
+            return LifecycleLogger.buildDiagnosticReport(activity)
+        }
+
+        @JavascriptInterface
         fun clearCrashLog(): Boolean {
             return try {
                 val f = java.io.File(activity.filesDir, "crash.log")
-                if (f.exists()) f.delete() else true
+                val okCrash = if (f.exists()) f.delete() else true
+                val p = java.io.File(activity.filesDir, "panic.log")
+                val okPanic = if (p.exists()) p.delete() else true
+                okCrash && okPanic
             } catch (e: Throwable) {
                 false
             }
@@ -335,11 +409,24 @@ class MainActivity : TauriActivity() {
         instance = this
         enableEdgeToEdge()
 
+        val isBackgroundRecovery = intent?.getBooleanExtra("background_recovery", false) == true
+        val recoveryReason = intent?.getStringExtra("recovery_reason") ?: ""
+        LifecycleLogger.log(
+            this,
+            "ACTIVITY_CREATE",
+            "savedState=${savedInstanceState != null} bgRecovery=$isBackgroundRecovery reason=$recoveryReason"
+        )
+
         // Capturador global de exceções não tratadas para diagnóstico imediato
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             android.util.Log.e("IdleStreamCrash", "FATAL UNCAUGHT EXCEPTION in thread ${thread.name}: ${throwable.message}", throwable)
             try {
+                LifecycleLogger.log(
+                    this,
+                    "UNCAUGHT_EXCEPTION",
+                    "thread=${thread.name} err=${throwable.javaClass.name}: ${throwable.message}"
+                )
                 val crashFile = java.io.File(filesDir, "crash.log")
                 val sw = java.io.StringWriter()
                 throwable.printStackTrace(java.io.PrintWriter(sw))
@@ -354,8 +441,13 @@ class MainActivity : TauriActivity() {
         super.onCreate(savedInstanceState)
         KickHttpBridge.ensureRegistered()
         VoteNotificationHelper.ensureChannel(this)
+        IdleStreamForegroundService.clearRecoveryNotification(this)
         pendingOpenTab = intent?.getStringExtra("open_tab")
         pendingVoteAccountId = intent?.getStringExtra("vote_account_id")
+
+        // Anexa o GameSlotManager de nível de processo à Activity atual e restaura slots persistidos
+        gameSlotManager.attachToActivity(this)
+        gameSlotManager.restorePersistedSlots()
 
         // Solicita permissão de notificação no Android 13+ (API 33+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -377,16 +469,20 @@ class MainActivity : TauriActivity() {
             android.util.Log.e("IdleStream", "Error initiating IdleStreamForegroundService: ${e.message}", e)
         }
 
-        // Previne destruição ao pressionar o botão Voltar: move para segundo plano preservando Rust
+        // Previne destruição ao pressionar o botão Voltar: move para segundo plano preservando Rust e WebViews
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 moveTaskToBack(true)
             }
         })
 
-        // Se ainda não estiver isento de otimização de bateria, solicita ao usuário
-        if (!BatteryOptimizationHelper.isBatteryOptimizationIgnored(this)) {
+        // Se ainda não estiver isento de otimização de bateria, solicita ao usuário (exceto em recuperação silenciosa)
+        if (!isBackgroundRecovery && !BatteryOptimizationHelper.isBatteryOptimizationIgnored(this)) {
             BatteryOptimizationHelper.requestIgnoreBatteryOptimization(this)
+        }
+
+        if (isBackgroundRecovery) {
+            moveTaskToBack(true)
         }
     }
 
@@ -397,6 +493,7 @@ class MainActivity : TauriActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        IdleStreamForegroundService.clearRecoveryNotification(this)
         android.util.Log.d("IdleStream", "onNewIntent action=${intent.action}")
         when (intent.action) {
             "com.idlestream.TEST_TWITCH_AUTH" -> {
@@ -421,11 +518,25 @@ class MainActivity : TauriActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        isForeground = true
+        backgroundHandler.removeCallbacks(backgroundLowPowerRunnable)
+        IdleStreamForegroundService.clearRecoveryNotification(this)
+        try {
+            gameSlotManager.attachToActivity(this)
+            gameSlotManager.setLowPowerBackgroundMode(false, "foreground_start")
+        } catch (_: Throwable) {}
+    }
+
     override fun onResume() {
         super.onResume()
+        isForeground = true
+        backgroundHandler.removeCallbacks(backgroundLowPowerRunnable)
         try {
             mainWebView?.onResume()
             mainWebView?.resumeTimers()
+            gameSlotManager.setLowPowerBackgroundMode(false, "foreground_resume")
             gameSlotManager.resumeAllTimers()
         } catch (_: Throwable) {}
     }
@@ -445,6 +556,10 @@ class MainActivity : TauriActivity() {
 
     override fun onStop() {
         super.onStop()
+        isForeground = false
+        backgroundHandler.removeCallbacks(backgroundLowPowerRunnable)
+        backgroundHandler.postDelayed(backgroundLowPowerRunnable, 10_000L)
+        LifecycleLogger.log(this, "ACTIVITY_STOP", "Segundo plano detectado; modo 1 FPS em 10s se permanecer oculto")
         try {
             android.webkit.CookieManager.getInstance().flush()
             mainWebView?.onResume()
@@ -454,14 +569,28 @@ class MainActivity : TauriActivity() {
     }
 
     override fun onDestroy() {
+        val stoppingByUser = IdleStreamForegroundService.isStoppingByUser
+        LifecycleLogger.log(
+            this,
+            "ACTIVITY_DESTROY",
+            "finishing=$isFinishing changingConfig=$isChangingConfigurations stoppingByUser=$stoppingByUser"
+        )
+        backgroundHandler.removeCallbacks(backgroundLowPowerRunnable)
         try {
             voteWebViewManager.destroy()
         } catch (_: Throwable) {}
         try {
-            gameSlotManager.destroy()
+            gameSlotManager.detachFromActivity(this)
+            if (stoppingByUser) {
+                gameSlotManager.destroy(clearPersistence = true)
+            }
         } catch (_: Throwable) {}
         if (instance == this) {
             instance = null
+        }
+        isForeground = false
+        if (!stoppingByUser && !isChangingConfigurations && IdleStreamForegroundService.isFarmingActive(this)) {
+            ServiceWatchdogReceiver.scheduleImmediateRecovery(this)
         }
         super.onDestroy()
     }
@@ -477,8 +606,109 @@ class MainActivity : TauriActivity() {
             } catch (e: Throwable) {
                 android.util.Log.w("IdleStream", "Falha ao definir prioridade de renderizador na mainWebView: ${e.message}")
             }
+            wrapMainWebViewClientForCrashResilience(webView)
         }
         android.util.Log.d("IdleStream", "onWebViewCreate initialized with $webView")
+    }
+
+    private fun wrapMainWebViewClientForCrashResilience(webView: WebView) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val delegate: WebViewClient = try {
+            webView.webViewClient
+        } catch (_: Throwable) {
+            return
+        }
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                return if (view != null && request != null) {
+                    delegate.shouldInterceptRequest(view, request)
+                } else {
+                    super.shouldInterceptRequest(view, request)
+                }
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                return if (view != null && request != null) {
+                    delegate.shouldOverrideUrlLoading(view, request)
+                } else {
+                    super.shouldOverrideUrlLoading(view, request)
+                }
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                if (view != null && url != null) {
+                    delegate.onPageStarted(view, url, favicon)
+                } else {
+                    super.onPageStarted(view, url, favicon)
+                }
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                if (view != null && url != null) {
+                    delegate.onPageFinished(view, url)
+                } else {
+                    super.onPageFinished(view, url)
+                }
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                if (view != null && request != null && error != null) {
+                    delegate.onReceivedError(view, request, error)
+                } else {
+                    super.onReceivedError(view, request, error)
+                }
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                delegate.onReceivedHttpError(view, request, errorResponse)
+            }
+
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: SslErrorHandler?,
+                error: SslError?
+            ) {
+                delegate.onReceivedSslError(view, handler, error)
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                delegate.doUpdateVisitedHistory(view, url, isReload)
+            }
+
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: RenderProcessGoneDetail?
+            ): Boolean {
+                val didCrash = detail?.didCrash() ?: false
+                val prio = detail?.rendererPriorityAtExit() ?: -1
+                LifecycleLogger.log(
+                    this@MainActivity,
+                    "WEBVIEW_MAIN_RENDER_GONE",
+                    "didCrash=$didCrash rendererPriority=$prio -> recriando UI com processo Rust/Jogos intactos"
+                )
+                backgroundHandler.postDelayed({
+                    if (!isFinishing && !isDestroyed) {
+                        recreate()
+                    }
+                }, 400L)
+                return true
+            }
+        }
     }
 
     fun notifyTwitchAuthSuccess(accountId: String, token: String) {

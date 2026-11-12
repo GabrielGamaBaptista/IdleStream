@@ -10,7 +10,10 @@ pub mod votes;
 
 use commands::*;
 use state::AppState;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
+
+static PANIC_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
@@ -52,7 +55,11 @@ pub fn run() {
         eprintln!("{}", msg);
         #[cfg(target_os = "android")]
         {
-            let _ = std::fs::write("/data/user/0/com.idlestream.app/files/panic.log", &msg);
+            if let Some(p) = PANIC_LOG_PATH.get() {
+                let _ = std::fs::write(p, &msg);
+            } else {
+                let _ = std::fs::write("/data/user/0/com.idlestream.app/files/panic.log", &msg);
+            }
         }
     }));
 
@@ -102,6 +109,10 @@ pub fn run() {
     builder
         .setup(|app| {
             let app_handle = app.handle().clone();
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&data_dir);
+                let _ = PANIC_LOG_PATH.set(data_dir.join("panic.log"));
+            }
             let app_state = Arc::new(AppState::new(app_handle.clone()));
             app.manage(app_state.clone());
 
@@ -221,26 +232,18 @@ pub fn run() {
                 }
             }
 
-            // Auto-start streams marked with auto_start
+            // Auto-start streams marked with auto_start OR persisted as desired active before restart
             let auto_start_state = app_state.clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                let auto_ids: Vec<String> = {
-                    let cfg = auto_start_state.config.lock().await;
-                    eprintln!("[AutoStart] Found {} total streams, checking auto_start...", cfg.streams.len());
-                    cfg.streams
-                        .iter()
-                        .filter(|s| s.auto_start)
-                        .map(|s| s.id.clone())
-                        .collect()
-                };
-                eprintln!("[AutoStart] Starting {} auto-start streams: {:?}", auto_ids.len(), auto_ids);
+                tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                let auto_ids = auto_start_state.get_streams_to_restore().await;
+                eprintln!("[AutoStart] Restoring {} streams (auto_start + active session): {:?}", auto_ids.len(), auto_ids);
                 for (idx, sid) in auto_ids.into_iter().enumerate() {
                     if idx > 0 {
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     }
                     let res = auto_start_state.start_stream(&sid).await;
-                    eprintln!("[AutoStart] Stream {} start result: {:?}", sid, res);
+                    eprintln!("[AutoStart] Stream {} restore result: {:?}", sid, res);
                 }
             });
 
@@ -248,6 +251,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_runtime_state,
+            set_runtime_ui_state,
             save_config,
             add_account,
             remove_account,

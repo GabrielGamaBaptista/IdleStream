@@ -1,10 +1,11 @@
-use super::models::{Account, AppConfig, AppSettings, StreamConfig};
+use super::models::{Account, AppConfig, AppSettings, RuntimeSessionState, StreamConfig};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 pub struct ConfigStore {
     file_path: PathBuf,
+    runtime_file_path: PathBuf,
 }
 
 impl ConfigStore {
@@ -20,12 +21,17 @@ impl ConfigStore {
 
         Self {
             file_path: dir.join("config.json"),
+            runtime_file_path: dir.join("runtime_state.json"),
         }
     }
 
     #[cfg(test)]
     pub fn new_with_path(file_path: PathBuf) -> Self {
-        Self { file_path }
+        let runtime_file_path = file_path.with_file_name("runtime_state.json");
+        Self {
+            file_path,
+            runtime_file_path,
+        }
     }
 
     pub fn load(&self) -> AppConfig {
@@ -110,9 +116,41 @@ impl ConfigStore {
         }
     }
 
+    fn write_atomic(path: &PathBuf, content: &str) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+        }
+        let tmp_path = path.with_extension("json.tmp");
+        fs::write(&tmp_path, content).map_err(|e| e.to_string())?;
+        fs::rename(&tmp_path, path).map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            e.to_string()
+        })
+    }
+
     pub fn save(&self, config: &AppConfig) -> Result<(), String> {
         let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-        fs::write(&self.file_path, json).map_err(|e| e.to_string())
+        Self::write_atomic(&self.file_path, &json)
+    }
+
+    pub fn load_runtime_state(&self) -> RuntimeSessionState {
+        if !self.runtime_file_path.exists() {
+            return RuntimeSessionState::default();
+        }
+        match fs::read_to_string(&self.runtime_file_path) {
+            Ok(content) => {
+                let clean = content.trim_start_matches('\u{feff}');
+                serde_json::from_str::<RuntimeSessionState>(clean).unwrap_or_default()
+            }
+            Err(_) => RuntimeSessionState::default(),
+        }
+    }
+
+    pub fn save_runtime_state(&self, state: &RuntimeSessionState) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+        Self::write_atomic(&self.runtime_file_path, &json)
     }
 }
 
@@ -274,6 +312,34 @@ mod tests {
         assert_eq!(reloaded.streams[0].account_ids.len(), 2);
         assert_eq!(reloaded.streams[0].account_ids, vec!["acc-1", "acc-2"]);
         assert_eq!(reloaded.streams[0].selected_account_id, Some("acc-1".into()));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_runtime_state_persistence_and_atomic_save() {
+        let temp_dir = std::env::temp_dir().join(format!("chatter_test_runtime_{}", uuid::Uuid::new_v4()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let config_file = temp_dir.join("config.json");
+
+        let store = ConfigStore::new_with_path(config_file);
+        let empty = store.load_runtime_state();
+        assert!(empty.desired_active_stream_ids.is_empty());
+        assert!(empty.desired_active_game_slots.is_empty());
+        assert_eq!(empty.last_active_tab, None);
+
+        let rt = RuntimeSessionState {
+            desired_active_stream_ids: vec!["s-1".into(), "s-2".into()],
+            desired_active_game_slots: vec!["slot-1".into(), "slot-3".into()],
+            last_active_tab: Some("games".into()),
+        };
+        store.save_runtime_state(&rt).expect("Save runtime state should succeed");
+
+        // Ensure temp file was cleaned up / renamed cleanly
+        assert!(!temp_dir.join("runtime_state.json.tmp").exists());
+
+        let reloaded = store.load_runtime_state();
+        assert_eq!(reloaded, rt);
 
         let _ = fs::remove_dir_all(temp_dir);
     }

@@ -112,6 +112,12 @@ export interface AppConfig {
   vote_accounts?: VoteAccountConfig[];
 }
 
+export interface RuntimeSessionState {
+  desired_active_stream_ids: string[];
+  desired_active_game_slots: string[];
+  last_active_tab?: string | null;
+}
+
 export type StatusKind = 'disconnected' | 'standby' | 'connecting' | 'connected' | 'error';
 
 export type {

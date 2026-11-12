@@ -10,6 +10,7 @@ import {
   AppSettings,
   GameSlotConfig,
   Platform,
+  RuntimeSessionState,
   StreamConfig,
   StreamRuntimeStatus,
   VoteAccountConfig,
@@ -18,6 +19,39 @@ import {
 import { checkForAppUpdates, installAppUpdate, UnifiedUpdateResult } from '../services/updaterService';
 import { gamePlatformService } from '../services/gamePlatformService';
 import { votePlatformService } from '../services/votePlatformService';
+
+const VALID_TABS = ['streams', 'games', 'votes', 'accounts', 'settings'] as const;
+const ACTIVE_TAB_STORAGE_KEY = '__idlestream_active_tab__';
+const FPS_TIER_STORAGE_KEY = '__idlestream_fps_tier__';
+const ULTRA_MODE_STORAGE_KEY = '__idlestream_pokeidle_ultra__';
+
+function isValidNavigationTab(value: unknown): value is NavigationTab {
+  return typeof value === 'string' && (VALID_TABS as readonly string[]).includes(value);
+}
+
+function getInitialActiveTab(): NavigationTab {
+  try {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+      if (isValidNavigationTab(saved)) return saved;
+    }
+  } catch (_) {}
+  return 'streams';
+}
+
+async function syncAndroidFarmingState(statuses: Record<string, StreamRuntimeStatus>) {
+  try {
+    const hasActiveStream = Object.values(statuses).some(
+      (s) => s.status === 'connected' || s.status === 'standby' || s.status === 'connecting'
+    );
+    if (hasActiveStream) {
+      gamePlatformService.syncFarmingActive(true);
+      return;
+    }
+    const activeGames = await gamePlatformService.getActiveSlots().catch(() => []);
+    gamePlatformService.syncFarmingActive(activeGames.length > 0);
+  } catch (_) {}
+}
 
 function playGentleVoteChime() {
   try {
@@ -119,7 +153,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.0.1',
+  appVersion: '4.1.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -146,7 +180,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   accountsHealth: null,
   isVerifyingAccounts: false,
   verifyingAccountIds: {},
-  activeTab: 'streams',
+  activeTab: getInitialActiveTab(),
   platformFilter: 'all',
   isAddStreamOpen: false,
   isAddAccountOpen: false,
@@ -157,6 +191,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingVoteOpenAccountId: null,
 
   setActiveTab: (tab) => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, tab);
+      }
+    } catch (_) {}
+    invoke('set_runtime_ui_state', {
+      lastActiveTab: tab,
+      desiredActiveGameSlots: null,
+    }).catch(() => {});
+
     if (tab !== 'games') {
       gamePlatformService.hideAll().catch(() => {});
       // Se mudar de aba enquanto estiver em modo imersivo, restaurar menus normais
@@ -263,6 +307,57 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchConfig();
       await get().fetchStatuses();
       await get().fetchAccountsHealth();
+
+      const runtimeState = await invoke<RuntimeSessionState>('get_runtime_state').catch(() => null);
+      if (runtimeState?.last_active_tab && isValidNavigationTab(runtimeState.last_active_tab)) {
+        set({ activeTab: runtimeState.last_active_tab });
+        try {
+          localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, runtimeState.last_active_tab);
+        } catch (_) {}
+      }
+
+      // Restaurar tier de FPS salvo nos jogos (ex: 60 / 30 / 10 FPS)
+      try {
+        const savedFps = Number(localStorage.getItem(FPS_TIER_STORAGE_KEY));
+        if (savedFps === 10 || savedFps === 30 || savedFps === 60) {
+          gamePlatformService.setFps(savedFps).catch(() => {});
+        }
+      } catch (_) {}
+
+      // Auto-retomar slots de jogos com auto_start OU que estavam ativos antes do reinício
+      try {
+        const cfgSlots = get().config.game_slots || [];
+        const desiredGameIds = new Set<string>(runtimeState?.desired_active_game_slots || []);
+        for (const s of cfgSlots) {
+          if (s.auto_start) {
+            desiredGameIds.add(s.id);
+          }
+        }
+        const alreadyRunning = await gamePlatformService.getActiveSlots().catch(() => [] as string[]);
+        const toStart = cfgSlots.filter((s) => desiredGameIds.has(s.id) && !alreadyRunning.includes(s.id));
+
+        for (const slot of toStart) {
+          await gamePlatformService
+            .startSlot(slot.id, (slot.url || '').trim() || 'https://pokeidle.io/app', slot.zoom ?? 1.0)
+            .catch((e) => console.warn(`Falha ao restaurar slot ${slot.id}:`, e));
+        }
+
+        const totalActiveGames = alreadyRunning.length + toStart.length;
+        if (totalActiveGames > 0) {
+          if (get().activeTab !== 'games') {
+            gamePlatformService.hideAll().catch(() => {});
+          }
+          if (localStorage.getItem(ULTRA_MODE_STORAGE_KEY) === 'true') {
+            setTimeout(() => {
+              gamePlatformService.togglePokeIdleUltra(undefined, true).catch(() => {});
+            }, 2500);
+          }
+        }
+      } catch (e) {
+        console.warn('Falha ao restaurar slots de jogos:', e);
+      }
+
+      syncAndroidFarmingState(get().statuses).catch(() => {});
 
       // Silent background update check upon startup
       get().checkForUpdates(false).catch(() => {});
@@ -433,6 +528,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               window.AndroidBridge.updateNotification(title, text);
             } catch (ignored) {}
           }
+          syncAndroidFarmingState(nextStatuses).catch(() => {});
           return { statuses: nextStatuses };
         });
       });
@@ -461,6 +557,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         map[s.stream_id] = s;
       });
       set({ statuses: map });
+      syncAndroidFarmingState(map).catch(() => {});
     } catch (err) {
       console.error('get_all_stream_statuses failed:', err);
     }

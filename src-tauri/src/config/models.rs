@@ -282,6 +282,14 @@ pub struct AppConfig {
     pub vote_accounts: Vec<VoteAccountConfig>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RuntimeSessionState {
+    pub desired_active_stream_ids: Vec<String>,
+    pub desired_active_game_slots: Vec<String>,
+    pub last_active_tab: Option<String>,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {

@@ -3,7 +3,7 @@ use crate::accounts::models::{AccountHealthStatus, AccountsHealthSummary};
 use crate::accounts::session_sync::{
     compute_kick_credentials_hash, compute_twitch_credentials_hash, write_profile_sync_hash,
 };
-use crate::config::{Account, AppConfig, StreamConfig, StreamRuntimeStatus};
+use crate::config::{Account, AppConfig, RuntimeSessionState, StreamConfig, StreamRuntimeStatus};
 use crate::kick::KickManager;
 use crate::state::AppState;
 #[cfg(not(target_os = "android"))]
@@ -19,6 +19,22 @@ type StateHandle<'a> = State<'a, Arc<AppState>>;
 pub async fn get_config(state: StateHandle<'_>) -> Result<AppConfig, String> {
     let cfg = state.config.lock().await;
     Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn get_runtime_state(state: StateHandle<'_>) -> Result<RuntimeSessionState, String> {
+    Ok(state.get_runtime_state().await)
+}
+
+#[tauri::command]
+pub async fn set_runtime_ui_state(
+    state: StateHandle<'_>,
+    last_active_tab: Option<String>,
+    desired_active_game_slots: Option<Vec<String>>,
+) -> Result<RuntimeSessionState, String> {
+    state
+        .set_runtime_ui_state(last_active_tab, desired_active_game_slots)
+        .await
 }
 
 #[tauri::command]

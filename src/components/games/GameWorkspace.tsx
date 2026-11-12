@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
 import { GameSlotConfig, SlotBounds } from '../../types';
@@ -27,10 +28,33 @@ export const GameWorkspace: React.FC = () => {
   const gameSlots = config.game_slots || [];
 
   const [activeSlots, setActiveSlots] = useState<string[]>([]);
-  const [layoutMode, setLayoutMode] = useState<'grid' | 'focus' | 'sidebar'>('grid');
-  const [focusedSlotId, setFocusedSlotId] = useState<string>('slot-1');
-  const [fpsTier, setFpsTier] = useState<'60' | '30' | '10'>('30');
-  const [isPokeIdleUltra, setIsPokeIdleUltra] = useState<boolean>(false);
+  const [layoutMode, setLayoutMode] = useState<'grid' | 'focus' | 'sidebar'>(() => {
+    try {
+      const saved = localStorage.getItem('__idlestream_games_layout__');
+      if (saved === 'grid' || saved === 'focus' || saved === 'sidebar') return saved;
+    } catch (_) {}
+    return 'grid';
+  });
+  const [focusedSlotId, setFocusedSlotId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('__idlestream_games_focused_slot__');
+      if (saved) return saved;
+    } catch (_) {}
+    return 'slot-1';
+  });
+  const [fpsTier, setFpsTier] = useState<'60' | '30' | '10'>(() => {
+    try {
+      const saved = localStorage.getItem('__idlestream_fps_tier__');
+      if (saved === '60' || saved === '30' || saved === '10') return saved;
+    } catch (_) {}
+    return '30';
+  });
+  const [isPokeIdleUltra, setIsPokeIdleUltra] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('__idlestream_pokeidle_ultra__') === 'true';
+    } catch (_) {}
+    return false;
+  });
   const [editingSlot, setEditingSlot] = useState<GameSlotConfig | null>(null);
   const [slotZooms, setSlotZooms] = useState<Record<string, number>>({});
   const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
@@ -147,14 +171,44 @@ export const GameWorkspace: React.FC = () => {
   }, [layoutMode]);
 
   // Atualizar lista de slots ativos do backend / bridge
+  const { statuses } = useAppStore();
+
+  const persistActiveGameSlots = useCallback(
+    (slots: string[]) => {
+      invoke('set_runtime_ui_state', {
+        lastActiveTab: null,
+        desiredActiveGameSlots: slots,
+      }).catch(() => {});
+      const hasActiveStream = Object.values(statuses).some(
+        (s) => s.status === 'connected' || s.status === 'standby' || s.status === 'connecting'
+      );
+      gamePlatformService.syncFarmingActive(slots.length > 0 || hasActiveStream);
+    },
+    [statuses]
+  );
+
   const refreshActiveSlots = useCallback(async () => {
     try {
       const active = await gamePlatformService.getActiveSlots();
       setActiveSlots(active);
+      return active;
     } catch (e) {
       console.warn('Erro ao buscar slots ativos:', e);
+      return null;
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('__idlestream_games_layout__', layoutMode);
+    } catch (_) {}
+  }, [layoutMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('__idlestream_games_focused_slot__', focusedSlotId);
+    } catch (_) {}
+  }, [focusedSlotId]);
 
   useEffect(() => {
     refreshActiveSlots();
@@ -162,17 +216,31 @@ export const GameWorkspace: React.FC = () => {
     return () => clearInterval(interval);
   }, [refreshActiveSlots]);
 
-  // Carregar status do modo econômico do backend
+  // Carregar status do modo econômico do backend apenas se ainda não houver preferência salva
   useEffect(() => {
-    gamePlatformService.getEcoMode()
-      .then((enabled) => {
-        setFpsTier(enabled ? '30' : '60');
-      })
-      .catch((e) => console.warn('Erro ao obter status eco_mode:', e));
+    let hasSavedFps = false;
+    try {
+      const saved = localStorage.getItem('__idlestream_fps_tier__');
+      hasSavedFps = saved === '60' || saved === '30' || saved === '10';
+    } catch (_) {}
+
+    if (hasSavedFps) {
+      gamePlatformService.setFps(Number(fpsTier)).catch(() => {});
+    } else {
+      gamePlatformService
+        .getEcoMode()
+        .then((enabled) => {
+          setFpsTier(enabled ? '30' : '60');
+        })
+        .catch((e) => console.warn('Erro ao obter status eco_mode:', e));
+    }
   }, []);
 
   const handleSetFpsTier = async (tier: '60' | '30' | '10') => {
     setFpsTier(tier);
+    try {
+      localStorage.setItem('__idlestream_fps_tier__', tier);
+    } catch (_) {}
     try {
       await gamePlatformService.setFps(Number(tier));
     } catch (e) {
@@ -183,6 +251,9 @@ export const GameWorkspace: React.FC = () => {
   const handleToggleGlobalUltra = async () => {
     const nextState = !isPokeIdleUltra;
     setIsPokeIdleUltra(nextState);
+    try {
+      localStorage.setItem('__idlestream_pokeidle_ultra__', String(nextState));
+    } catch (_) {}
     try {
       await gamePlatformService.togglePokeIdleUltra(undefined, nextState);
     } catch (e) {
@@ -284,6 +355,7 @@ export const GameWorkspace: React.FC = () => {
     const handleSync = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
+        refreshActiveSlots().catch(() => {});
         syncBounds();
       }, 60);
     };
@@ -355,7 +427,8 @@ export const GameWorkspace: React.FC = () => {
 
   const handleStartSlot = async (slotId: string, url: string) => {
     try {
-      setActiveSlots((prev) => (prev.includes(slotId) ? prev : [...prev, slotId]));
+      const nextSlots = activeSlots.includes(slotId) ? activeSlots : [...activeSlots, slotId];
+      setActiveSlots(nextSlots);
       const slot = gameSlots.find((s) => s.id === slotId);
       const zoom = slotZooms[slotId] ?? slot?.zoom ?? 1.0;
       await gamePlatformService.startSlot(
@@ -363,20 +436,25 @@ export const GameWorkspace: React.FC = () => {
         url.trim() || 'https://pokeidle.io/app',
         zoom
       );
-      await refreshActiveSlots();
+      const refreshed = await refreshActiveSlots();
+      persistActiveGameSlots(refreshed ?? nextSlots);
       setTimeout(syncBounds, 150);
       setTimeout(syncBounds, 400);
     } catch (e) {
-      setActiveSlots((prev) => prev.filter((id) => id !== slotId));
+      const fallback = activeSlots.filter((id) => id !== slotId);
+      setActiveSlots(fallback);
+      persistActiveGameSlots(fallback);
       alert(`Erro ao iniciar jogo no slot ${slotId}: ${e}`);
     }
   };
 
   const handleStopSlot = async (slotId: string) => {
     try {
-      setActiveSlots((prev) => prev.filter((id) => id !== slotId));
+      const nextSlots = activeSlots.filter((id) => id !== slotId);
+      setActiveSlots(nextSlots);
       await gamePlatformService.stopSlot(slotId);
-      await refreshActiveSlots();
+      const refreshed = await refreshActiveSlots();
+      persistActiveGameSlots(refreshed ?? nextSlots);
       setTimeout(syncBounds, 100);
     } catch (e) {
       console.error('Erro ao parar slot:', e);
@@ -810,6 +888,21 @@ export const GameWorkspace: React.FC = () => {
                 />
                 <label htmlFor="enable_hunt_extension" className="text-xs text-neutral-300 cursor-pointer select-none">
                   Ativar extensão <span className="font-semibold text-emerald-400">/hunt for PokeIdle</span> (rotas de XP/ouro)
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="game_slot_auto_start"
+                  checked={editingSlot.auto_start ?? false}
+                  onChange={(e) =>
+                    setEditingSlot({ ...editingSlot, auto_start: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded border-neutral-700 bg-neutral-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="game_slot_auto_start" className="text-xs text-neutral-300 cursor-pointer select-none">
+                  Iniciar este slot automaticamente ao abrir o app
                 </label>
               </div>
 

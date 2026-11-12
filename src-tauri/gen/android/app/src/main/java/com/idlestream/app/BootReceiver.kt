@@ -13,8 +13,17 @@ class BootReceiver : BroadcastReceiver() {
             action == Intent.ACTION_MY_PACKAGE_REPLACED ||
             action == "android.intent.action.QUICKBOOT_POWERON"
         ) {
-            // Inicia o Foreground Service em segundo plano após reinicialização do dispositivo
-            IdleStreamForegroundService.start(context)
+            val farmingActive = IdleStreamForegroundService.isFarmingActive(context)
+            LifecycleLogger.log(context, "BOOT_RECEIVER", "action=$action farmingActive=$farmingActive")
+
+            if (farmingActive) {
+                IdleStreamForegroundService.start(context)
+                ServiceWatchdogReceiver.scheduleNext(context)
+                if (MainActivity.instance == null) {
+                    IdleStreamForegroundService.tryAutoRecoverMainActivityOrNotify(context, "boot_$action")
+                }
+            }
+
             // Reagenda os alarmes de votação (24h 01m) e dispara notificações pendentes vencidas
             VoteAlarmScheduler.rescheduleAllFromStorage(context, fireImmediatelyIfOverdue = true)
         }

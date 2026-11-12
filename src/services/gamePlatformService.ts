@@ -155,4 +155,11 @@ export const gamePlatformService = {
       return 0;
     }
   },
+
+  syncFarmingActive(active: boolean): void {
+    if (typeof window === 'undefined') return;
+    try {
+      window.AndroidBridge?.setFarmingActive?.(active);
+    } catch (_) {}
+  },
 };
