@@ -18,6 +18,7 @@ wiki_links:
   - "[[07-multiplataforma-android]]"
   - "[[09-sistema-de-votos]]"
   - "[[10-sessoes-resgates-e-verificador]]"
+  - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
 version: "4.1.2"
 last_updated: "2026-11-12"
@@ -136,13 +137,12 @@ Toda release no GitHub **DEVE** conter exatamente estes 5 artefatos anexados:
   - Erros de runtime e saídas de comando são registrados em `stderr` no console de desenvolvimento.
   - O DevTools do WebView principal pode ser aberto com `F12` ou botão direito inspecionar em builds com devtools habilitado.
 - **Android**:
-  - Em falhas críticas (pânico do Rust), o handler `std::panic::set_hook` grava automaticamente o stack trace em:
-    ```text
-    /data/user/0/com.idlestream.app/files/panic.log
-    ```
-  - Logs em tempo real de JNI e Foreground Service podem ser inspecionados via ADB:
+  - Em falhas críticas (pânico do Rust), o handler `std::panic::set_hook` grava automaticamente o stack trace em `filesDir/panic.log` (`/data/user/0/com.idlestream.app/files/panic.log`).
+  - Eventos de ciclo de vida e histórico real de encerramento (`ApplicationExitInfo` no Android 11+, `lifecycle.log`, status de WakeLock/WifiLock/Overlay e `crash.log`) são consolidados por `LifecycleLogger.buildDiagnosticReport()` e podem ser copiados diretamente na aba **Configurações → Diagnóstico**.
+  - A suíte JUnit Android (`.\gradlew.bat testArm64DebugUnitTest` em `src-tauri/gen/android`) valida resiliência OEM/saída manual (`BackgroundResilienceTest`), cookies de resgate (`StreamRedeemActivityTest`) e política de URLs de votos (`VoteUrlPolicyTest`).
+  - Logs em tempo real de JNI, ciclo de vida e Foreground Service podem ser inspecionados via ADB:
     ```shell
-    adb logcat -s IdleStream:* KickHttp:* Rust:*
+    adb logcat -s IdleStream:* IdleStreamLifecycle:* KickHttp:* Rust:*
     ```
 
 ---

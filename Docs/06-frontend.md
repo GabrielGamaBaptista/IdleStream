@@ -22,9 +22,10 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[07-multiplataforma-android]]"
   - "[[09-sistema-de-votos]]"
+  - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
-version: "4.0.0"
-last_updated: "2026-11-10"
+version: "4.1.2"
+last_updated: "2026-11-12"
 summary: "Especificação completa da interface visual do IdleStream: arquitetura da store global com Zustand 5, ciclo de inicialização init(), catálogo detalhado de componentes React 19 e camada de serviços híbridos Desktop/Mobile."
 ---
 
@@ -77,7 +78,7 @@ sequenceDiagram
     Store->>UI: isInitialized = true (Exibe interface)
 ```
 
-1. **Leitura de Versão e Configuração**: Lê `appVersion` e popula a árvore `config` e `statuses`.
+1. **Leitura de Versão, Configuração e Estado de Sessão**: Lê `appVersion`, popula `config` e `statuses`, e consulta `get_runtime_state` para restaurar a última aba (`activeTab`), `game_fps_tier`, layout, `pokeidle_ultra` e retomar `auto_start ∪ desired_active_game_slots` (pulando slots já vivos nativamente no `GameSlotManager`).
 2. **Registro do Listener Reativo**: Registra o listener no canal `stream-status-update`. Qualquer atualização de pontos ou mudança de estado de live é injetada diretamente no dicionário `statuses[stream_id]`, renderizando os cartões de live sem necessidade de polling HTTP.
 3. **Verificação Silenciosa de Atualização**: Dispara em background uma checagem de novas releases via `checkForAppUpdates()`.
 
@@ -141,8 +142,8 @@ O componente atômico mais complexo do sistema:
 
 #### `BatteryBanner.tsx`
 Componente exclusivo do ambiente mobile Android:
-- Consulta `window.AndroidBridge.isBatteryOptimizationIgnored()`.
-- Se o dispositivo mantiver o app sob restrição de bateria do fabricante (Samsung, Xiaomi, etc.), exibe um banner orientando o usuário a conceder isenção em um clique (`requestIgnoreBatteryOptimization()`) para evitar interrupções de conexão em segundo plano.
+- Consulta `isBatteryOptimizationIgnored()`, `hasNotificationPermission()`, `canDrawOverlays()` e `getOemGuidanceJson()`.
+- Alerta caso as notificações (`POST_NOTIFICATIONS`) estejam bloqueadas, oferece atalhos diretos para isenção de bateria (`requestIgnoreBatteryOptimization()`), **Config. App** (`openAppSettings()`) e botão opcional **Permitir Auto-Recuperação** (`SYSTEM_ALERT_WINDOW`), além de exibir um checklist expansível específico por fabricante (Xiaomi/HyperOS, Samsung/OneUI, Motorola, Realme/Oppo).
 
 ---
 

@@ -19,6 +19,7 @@ wiki_links:
   - "[[08-operacao-e-scripts]]"
   - "[[09-sistema-de-votos]]"
   - "[[10-sessoes-resgates-e-verificador]]"
+  - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
 version: "4.1.2"
 last_updated: "2026-11-12"
@@ -52,7 +53,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 ## 2. Índice Interativo Obsidian (MOC)
 
-A documentação divide-se em 11 documentos técnicos especializados e este índice mestre:
+A documentação divide-se em 12 documentos técnicos especializados e este índice mestre:
 
 | Documento | Título Formal | Escopo Técnico Resumido | Código-Fonte Referenciado | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -67,6 +68,7 @@ A documentação divide-se em 11 documentos técnicos especializados e este índ
 | **[[08-operacao-e-scripts]]** | Operação, Suíte de Testes & Release | Esteira de testes automatizados (`scripts/*.ts`), assinatura Minisign, atualização via GitHub Releases e diagnóstico de falhas. | `scripts/`<br/>`RELEASE_GUIDE.md` | **Concluído** |
 | **[[09-sistema-de-votos]]** | Sistema de Votos Diários TopIdle | WebView interativa sob demanda (0 MB em repouso), whitelist TopIdle/OAuth/CAPTCHA, reuso Google e alertas de 24h 01m. | `src-tauri/src/votes/`<br/>`src/components/votes/` | **Concluído** |
 | **[[10-sessoes-resgates-e-verificador]]** | Sessões Persistentes & Verificador de Contas | Estratégia Profile-First (cookies nativos `Max-Age=90d` + `HttpOnly`), sync-back de rotação e verificador contínuo das 8 contas Twitch/Kick. | `src-tauri/src/accounts/`<br/>`src/utils/accountHealth.ts` | **Concluído** |
+| **[[11-resiliencia-segundo-plano]]** | Resiliência em Segundo Plano & Modo 1 FPS | `IdleStreamApplication`, modo 1 FPS (tela desligada / 10s fundo), `runtime_state.json`, `onRenderProcessGone` e saída manual vs kill OEM (`ApplicationExitInfo`). | `IdleStreamForegroundService.kt`<br/>`LifecycleLogger.kt`, `config/store.rs` | **Concluído** |
 
 ---
 
@@ -84,7 +86,7 @@ C:\Projetos\Chatter\
 │   │   ├── live_check.rs                   ──> [[05-backend-core]]
 │   │   ├── accounts\                       ──> [[10-sessoes-resgates-e-verificador]]
 │   │   │   ├── mod.rs, models.rs, session_sync.rs, verifier.rs, tests.rs
-│   │   ├── config\                         ──> [[05-backend-core]]
+│   │   ├── config\                         ──> [[05-backend-core]], [[11-resiliencia-segundo-plano]]
 │   │   │   ├── mod.rs, models.rs, store.rs
 │   │   ├── twitch\                         ──> [[02-twitch-engine]]
 │   │   │   ├── irc.rs, gql.rs, spade.rs, coordinator.rs, watcher.rs, webview.rs, auth.rs, models.rs
@@ -94,9 +96,11 @@ C:\Projetos\Chatter\
 │   │   │   ├── manager.rs, commands.rs, anti_sleep.js, hunt_extension.js
 │   │   └── votes\                          ──> [[09-sistema-de-votos]]
 │   │       ├── manager.rs, policy.rs, notifier.rs, commands.rs, vote_observer.js
-│   └── gen\android\                        ──> [[07-multiplataforma-android]], [[09-sistema-de-votos]]
+│   └── gen\android\                        ──> [[07-multiplataforma-android]], [[09-sistema-de-votos]], [[11-resiliencia-segundo-plano]]
 │       └── app\src\main\java\com\idlestream\app\
-│           ├── MainActivity.kt, IdleStreamForegroundService.kt, KickHttpBridge.kt, GameSlotManager.kt
+│           ├── IdleStreamApplication.kt, MainActivity.kt, IdleStreamForegroundService.kt
+│           ├── ServiceWatchdogReceiver.kt, BootReceiver.kt, LifecycleLogger.kt
+│           ├── KickHttpBridge.kt, GameSlotManager.kt, BatteryOptimizationHelper.kt
 │           └── VoteUrlPolicy.kt, VoteWebViewManager.kt, VoteNotificationHelper.kt, VoteAlarmReceiver.kt
 ├── src\
 │   ├── main.tsx, App.tsx, App.css          ──> [[06-frontend]]
@@ -129,7 +133,7 @@ Esta matriz orienta diretamente novos desenvolvedores ou agentes de IA sobre **q
 | **Ajustar Persistência em Resgates & Saúde das 8 Contas** | 1. `accounts/session_sync.rs` & `accounts/verifier.rs`<br/>2. `kick/webview.rs`, `twitch/webview.rs` (`Profile-First`)<br/>3. `StreamRedeemActivity.kt` & `state.rs` | 1. `src/utils/accountHealth.ts`<br/>2. `src/components/Header.tsx`, `AccountManager.tsx`, `StreamCard.tsx`<br/>3. `scripts/test-accounts-session.ts` | **[[10-sessoes-resgates-e-verificador]]** |
 | **Criar Novo Comando IPC (Rust $\leftrightarrow$ React)** | 1. `commands.rs` ou `games/commands.rs` (`#[tauri::command]`)<br/>2. `lib.rs` (adicionar em `tauri::generate_handler![...]`) | 1. `src/stores/appStore.ts` (`invoke('nome_comando', ...)`) | **[[01-arquitetura]]**<br/>**[[05-backend-core]]** |
 | **Modificar Telas, Modais ou Estado da UI** | N/A (Consome comandos IPC existentes) | 1. `src/stores/appStore.ts` (estado / actions)<br/>2. `src/App.tsx` (roteamento e modais)<br/>3. `src/components/` (componentes atômicos) | **[[06-frontend]]** |
-| **Alterar Notificação ou Fundo no Android** | 1. `IdleStreamForegroundService.kt` (notificação e locks)<br/>2. `KickHttpBridge.kt` & `MainActivity.kt` (JNI / JS Bridge)<br/>3. `kick/http.rs` (`update_android_notification`) | 1. `src/services/gamePlatformService.ts`<br/>2. `src/components/BatteryBanner.tsx` | **[[07-multiplataforma-android]]** |
+| **Alterar Notificação, Modo 1 FPS ou Fundo no Android** | 1. `IdleStreamForegroundService.kt` (locks, `SCREEN_OFF`, `onTaskRemoved`)<br/>2. `GameSlotManager.kt` (`setLowPowerBackgroundMode`) & `MainActivity.kt` (timer 10s)<br/>3. `ServiceWatchdogReceiver.kt` & `LifecycleLogger.kt` (`ApplicationExitInfo`)<br/>4. `IdleStreamApplication.kt` | 1. `src/services/gamePlatformService.ts`<br/>2. `src/components/BatteryBanner.tsx`<br/>3. `src/stores/appStore.ts` (`runtime_state`) | **[[07-multiplataforma-android]]**<br/>**[[11-resiliencia-segundo-plano]]** |
 | **Compilar, Assinar e Publicar Release** | 1. `scripts/build-android.ps1` (APK)<br/>2. `scripts/sign-release.ps1` (Assinatura Minisign)<br/>3. `latest.json` (Manifesto do auto-updater) | 1. `src/services/updaterService.ts`<br/>2. `RELEASE_GUIDE.md` | **[[08-operacao-e-scripts]]** |
 
 ---

@@ -4,13 +4,19 @@ title: "Multiplataforma, Interoperabilidade JNI, Android Foreground Service e Pi
 category: "mobile"
 tags: [idlestream, android, jni, foreground-service, wakelock, battery-optimization, ndk, gradle]
 related_code:
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/IdleStreamApplication.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/MainActivity.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/GameSlotManager.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/IdleStreamForegroundService.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/ServiceWatchdogReceiver.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/BootReceiver.kt"
+  - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/LifecycleLogger.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/KickHttpBridge.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/BatteryOptimizationHelper.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/VoteWebViewManager.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/VoteNotificationHelper.kt"
   - "src-tauri/gen/android/app/src/main/java/com/idlestream/app/VoteAlarmReceiver.kt"
+  - "src-tauri/gen/android/app/src/test/java/com/idlestream/app/BackgroundResilienceTest.kt"
   - "scripts/build-android.ps1"
 wiki_links:
   - "[[README]]"
@@ -21,6 +27,7 @@ wiki_links:
   - "[[06-frontend]]"
   - "[[08-operacao-e-scripts]]"
   - "[[09-sistema-de-votos]]"
+  - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
 version: "4.1.2"
 last_updated: "2026-11-12"
@@ -83,10 +90,11 @@ flowchart TB
 
 ### 2.1 Interface JavaScript Injetada (`window.AndroidBridge`)
 Disponibilizada no WebView via `@JavascriptInterface` na classe `MainActivity.kt`:
-- **Isenção de Bateria**: `isBatteryOptimizationIgnored()` e `requestIgnoreBatteryOptimization()`.
-- **Serviço de Segundo Plano**: `startForegroundService()`, `stopForegroundService()`, `updateNotification(title, text)`.
-- **Slots de Jogos**: `startGameSlot()`, `stopGameSlot()`, `updateGameSlotBounds()`, `setGameSlotFps()`.
+- **Isenção de Bateria, Sobreposição & OEM**: `isBatteryOptimizationIgnored()`, `requestIgnoreBatteryOptimization()`, `openAppSettings()`, `canDrawOverlays()`, `requestOverlayPermission()`, `hasNotificationPermission()` e `getOemGuidanceJson()`.
+- **Serviço de Segundo Plano & Farm Ativo**: `startForegroundService()`, `stopForegroundService()`, `setFarmingActive(active)`, `updateNotification(title, text)`.
+- **Slots de Jogos (Nível de Processo)**: `startGameSlot()`, `stopGameSlot()`, `reloadGameSlot()`, `updateGameSlotBounds()`, `setGameSlotZoom()`, `setGameSlotFps()`, `togglePokeIdleUltra()`, `hideAllGameSlots()`, `getActiveGameSlots()`. O `GameSlotManager` reside em `IdleStreamApplication` (nível de processo) com `MutableContextWrapper` e isolamento de crash (`onRenderProcessGone`), mantendo os jogos vivos mesmo se a `MainActivity` for recriada.
 - **Votos TopIdle & Alarmes**: `openVoteWebView()`, `closeVoteWebView()`, `updateVoteWebViewBounds()`, `reloadVoteWebView()`, `clearVoteTopIdleSession()`, `syncVoteAlarms()`, `sendVoteTestNotification()` e `consumePendingOpenTab()`.
+- **Diagnóstico & Atualização**: `getDiagnosticReport()`, `getCrashLog()`, `clearCrashLog()`, `canInstallPackages()`, `requestInstallPermission()`, `downloadAndInstallApk()`.
 - **Login OAuth Seguro**: `openTwitchLogin(accountId, label)` e `openKickLogin(accountId, label)` abrem activities separadas, evitando poluição de cookies no WebView principal.
 
 ### 2.2 Callback JNI Rust $\leftrightarrow$ OkHttp (`KickHttpBridge.kt` & `kick/http.rs`)
@@ -131,29 +139,30 @@ stateDiagram-v2
     state ServicoIniciado {
         [*] --> SetupNotification: NotificationCompat.Builder
         SetupNotification --> AdquireLocks: WakeLock + WifiLock
-        AdquireLocks --> MonitorandoAtivo: FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        AdquireLocks --> MonitorandoAtivo: FOREGROUND_SERVICE_TYPE_SPECIAL_USE
     }
 
     MonitorandoAtivo --> AtualizaNotificacao: Rust emite novo status/pontos
     AtualizaNotificacao --> MonitorandoAtivo
 
-    MonitorandoAtivo --> [*]: Context.stopService()
+    MonitorandoAtivo --> [*]: ACTION_STOP ou onTaskRemoved (Manual)
 ```
 
-### 3.1 Mecanismos de Proteção Ativos:
-1. **Notificação Persistente em Primeiro Plano**:
-   - Registrada no canal `idlestream_vigilance_channel` com prioridade `PRIORITY_LOW` (sem som intrusivo, mas imune a descarte).
-   - Tipada como `ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC`, atendendo às exigências rigorosas do Android 14+.
-   - Exibe em tempo real o contador de lives ativas e o saldo acumulado de pontos.
-2. **Partial WakeLock (`PowerManager.PARTIAL_WAKE_LOCK`)**:
-   - Mantém a CPU do processador rodando em frequência mínima mesmo com a tela bloqueada, impedindo a suspensão do loop de eventos do Tokio.
-3. **High-Performance WifiLock (`WifiManager.WIFI_MODE_FULL_HIGH_PERF`)**:
-   - Impede que o driver de Wi-Fi do smartphone entre em economia de energia e derrube os sockets de chat.
+### 3.1 Mecanismos de Proteção Ativos (`v4.1.1` / `v4.1.2`):
+1. **Notificação Persistente & Contrato `START_STICKY`**:
+   - Registrada no canal `idlestream_vigilance_channel` com `startForeground(...)` garantido em todas as ações não-parada (incluindo `ACTION_UPDATE` e reinicializações `START_STICKY` com `intent == null`) usando `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` (Android 14+).
+   - Supervisor periódico (30s) mantém `WakeLock`/`WifiLock` e chama `CookieManager.getInstance().flush()`.
+2. **Modo 1 FPS + Liberação de GPU na Tela Apagada e após 10s em Fundo**:
+   - Listener dinâmico para `ACTION_SCREEN_OFF` (imediato) e timer de **10 segundos** em `MainActivity.onStop()` alternam os WebViews de jogos para **1 FPS** + `View.LAYER_TYPE_NONE`, mantendo WebSockets, `HackTimer` e `/hunt` ativos.
+3. **Partial WakeLock (`PowerManager.PARTIAL_WAKE_LOCK`) e `WifiLock`**:
+   - Mantêm CPU e Wi-Fi (`WIFI_MODE_FULL_LOW_LATENCY` no Android 10+) ativos mesmo com tela bloqueada.
+4. **Watchdog de 3 Minutos vs. Fechamento Manual**:
+   - [`ServiceWatchdogReceiver`](file:///C:/Projetos/Chatter/src-tauri/gen/android/app/src/main/java/com/idlestream/app/ServiceWatchdogReceiver.kt) (`AlarmManager.setAndAllowWhileIdle`) verifica a cada 3 minutos se o serviço caiu involuntariamente (LMK/OEM) com `farming_active == true`.
+   - Fechamentos manuais (`onTaskRemoved` nos Apps Recentes, botão **"Parar"** ou `ApplicationExitInfo` com `REASON_USER_REQUESTED` / `REASON_USER_STOPPED` / `REASON_EXIT_SELF`) executam `performManualShutdown()`, gravam `farming_active = false` com `.commit()` e desarmam qualquer auto-reabertura. (Veja detalhes completos em **[[11-resiliencia-segundo-plano]]**.)
 
 ### 3.2 Bypass das Otimizações Agressivas de Bateria OEM
-Fabricantes como Xiaomi (MIUI/HyperOS), Samsung (OneUI) e Huawei implementam "Battery Killers" proprietários.
-- A classe `BatteryOptimizationHelper` verifica se o app está na lista de exceções do *Doze Mode* (`powerManager.isIgnoringBatteryOptimizations`).
-- Se não estiver, dispara o intent `Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, solicitando isenção permanente em um clique.
+Fabricantes como Xiaomi (MIUI/HyperOS), Samsung (OneUI), Motorola e Realme/Oppo implementam "Battery Killers" proprietários.
+- `BatteryOptimizationHelper` verifica isenção do *Doze Mode*, permissão `POST_NOTIFICATIONS`, permissão opcional de auto-recuperação em segundo plano (`SYSTEM_ALERT_WINDOW`) e fornece o checklist específico por fabricante exibido em `BatteryBanner.tsx`.
 
 ---
 
@@ -169,7 +178,7 @@ flowchart TD
     S4["[4/5] Cópia de Binários (.so) e Assets Web para gen/android/"]
     S5["[5/5] Montagem do APK via Gradle (assembleArm64Release)"]
 
-    S1 --> S2 --> S3 --> S4 --> S5 --> FinalAPK["APK Final: IdleStream_4.0.0_arm64.apk"]
+    S1 --> S2 --> S3 --> S4 --> S5 --> FinalAPK["APK Final: IdleStream_4.1.2_arm64.apk"]
 ```
 
 ### Análise das Etapas do Script:

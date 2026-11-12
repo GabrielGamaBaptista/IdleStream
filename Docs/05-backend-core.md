@@ -20,9 +20,10 @@ wiki_links:
   - "[[04-games-engine]]"
   - "[[06-frontend]]"
   - "[[09-sistema-de-votos]]"
+  - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
-version: "4.0.0"
-last_updated: "2026-11-10"
+version: "4.1.2"
+last_updated: "2026-11-12"
 summary: "Referência completa do Rust Core: modelo de dados e store tolerante a falhas, ciclo de vida de streams e modo vigília a cada 300s, algoritmos de verificação live_check e dicionário exaustivo de comandos IPC Tauri."
 ---
 
@@ -91,11 +92,12 @@ classDiagram
     AppConfig *-- GameSlotConfig
 ```
 
-### 1.1 Tolerância Extrema a Falhas na Desserialização (`store.rs`)
-O arquivo `config.json` pode sofrer corrupções parciais se o sistema for desligado abruptamente. A função `ConfigStore::load()` implementa uma estratégia de desserialização em cascata:
-1. **Limpeza de BOM**: Remove automaticamente marcas de ordem de byte UTF-8 (`\u{feff}`).
-2. **Desserialização Direta**: Tenta carregar a struct `AppConfig` completa via `serde_json::from_str`.
-3. **Fallback Leniente por Seção**: Se a desserialização direta falhar (por exemplo, por um campo desconhecido adicionado em versão anterior), o parser chaveia para leitura de árvore genérica `serde_json::Value` e recupera individualmente cada seção válida (`accounts`, `streams`, `settings`, `game_slots`), descartando apenas os campos incompatíveis e evitando a perda de dados do usuário.
+### 1.1 Tolerância Extrema a Falhas e Escrita Atômica (`store.rs` & `runtime_state.json`)
+O arquivo `config.json` e o novo arquivo de sessão `runtime_state.json` (`RuntimeSessionState`) implementam gravação e leitura resilientes:
+1. **Escrita Atômica (`write_atomic`)**: Toda persistência de `config.json` e `runtime_state.json` escreve primeiro em um arquivo temporário `.tmp` e substitui o destino via `fs::rename`, protegendo contra corrupção em quedas abruptas do sistema.
+2. **Limpeza de BOM**: Remove automaticamente marcas de ordem de byte UTF-8 (`\u{feff}`).
+3. **Desserialização Direta + Fallback Leniente por Seção**: Se a desserialização direta de `AppConfig` falhar (por exemplo, por campo desconhecido), o parser chaveia para `serde_json::Value` e recupera individualmente `accounts`, `streams`, `settings`, `game_slots` e `vote_accounts`.
+4. **Persistência de Sessão Ativa (`RuntimeSessionState`)**: Armazena `desired_active_streams`, `desired_active_game_slots`, `active_tab`, `game_layout`, `focused_game_slot_id`, `game_fps_tier` e `pokeidle_ultra`. No boot (`lib.rs`), `compute_streams_to_restore()` retoma a união sem duplicatas de `auto_start ∪ desired_active_streams` e a 1ª verificação do loop de vigília é antecipada para **15 segundos** (ciclos seguintes a cada 300s). (Detalhes em **[[11-resiliencia-segundo-plano]]**.)
 
 ### 1.2 Migrações Automáticas em Tempo de Execução
 Ao carregar o arquivo, o sistema executa mutações retrocompatíveis:
@@ -195,7 +197,9 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `update_stream` | `stream: StreamConfig` | `Result<AppConfig, String>` | Atualiza metadados da stream e sincroniza contas ativas. |
 | `set_selected_account` | `stream_id: String`, `account_id: String` | `Result<AppConfig, String>` | Define a conta prioritária para resgates manuais e exibição de saldo. |
 | `remove_stream` | `stream_id: String` | `Result<AppConfig, String>` | Interrompe o watcher associado e remove a stream da configuração. |
-| `get_app_version` | Nenhum | `String` | Retorna a string SemVer da versão corrente do binário (ex: `"3.2.7"`). |
+| `get_runtime_state` | Nenhum | `Result<RuntimeSessionState, String>` | Retorna o snapshot persistido da sessão ativa (aba, slots/streams desejados, layout e Modo Ultra). |
+| `set_runtime_ui_state` | `active_tab`, `game_layout`, `focused_game_slot_id`, `game_fps_tier`, `pokeidle_ultra`, `desired_active_game_slots` | `Result<RuntimeSessionState, String>` | Atualiza parcialmente os campos de sessão em `runtime_state.json` de forma atômica. |
+| `get_app_version` | Nenhum | `String` | Retorna a string SemVer da versão corrente do binário (ex: `"4.1.2"`). |
 
 ### 4.2 Comandos de Execução e Status de Streams (`commands.rs`)
 
