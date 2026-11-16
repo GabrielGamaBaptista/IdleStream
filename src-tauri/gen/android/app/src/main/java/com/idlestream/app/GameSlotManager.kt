@@ -266,9 +266,9 @@ class GameSlotManager(private val app: Application) {
         watchdogExecutor?.scheduleWithFixedDelay({
             if (activeSlots.isEmpty()) return@scheduleWithFixedDelay
             val tick = watchdogTick.incrementAndGet()
-            // Em segundo plano/tela desligada reduz o pulso nativo para a cada ~10s (economia de CPU),
+            // Em segundo plano/tela desligada reduz o pulso nativo para a cada ~30s (economia drástica de CPU/V8),
             // mantendo em 2s quando o app está em primeiro plano ativo.
-            if (isLowPowerBackground && (tick % 5 != 0)) {
+            if (isLowPowerBackground && (tick % 15 != 0)) {
                 return@scheduleWithFixedDelay
             }
             mainHandler.post {
@@ -284,7 +284,7 @@ class GameSlotManager(private val app: Application) {
                 }
             }
         }, 2000, 2000, java.util.concurrent.TimeUnit.MILLISECONDS)
-        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 2s foreground / 10s background)")
+        Log.d(TAG, "Watchdog de segundo plano iniciado (pulso 2s foreground / 30s background)")
     }
 
     fun stopWatchdog() {

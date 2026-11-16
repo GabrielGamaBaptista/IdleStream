@@ -527,6 +527,8 @@ class MainActivity : TauriActivity() {
         backgroundHandler.removeCallbacks(backgroundLowPowerRunnable)
         IdleStreamForegroundService.clearRecoveryNotification(this)
         try {
+            mainWebView?.onResume()
+            mainWebView?.resumeTimers()
             gameSlotManager.attachToActivity(this)
             gameSlotManager.setLowPowerBackgroundMode(false, "foreground_start")
         } catch (_: Throwable) {}
@@ -548,12 +550,7 @@ class MainActivity : TauriActivity() {
         super.onPause()
         try {
             android.webkit.CookieManager.getInstance().flush()
-            // WryActivity.onPause() chama mWebView.onPause().
-            // Chamamos onResume() imediatamente para manter o pipeline de JavaScript do Tauri ativo
-            // e evitar congelamento dos slots e do frontend em segundo plano.
-            mainWebView?.onResume()
-            mainWebView?.resumeTimers()
-            gameSlotManager.resumeAllTimers()
+            mainWebView?.onPause()
         } catch (_: Throwable) {}
     }
 
@@ -562,11 +559,10 @@ class MainActivity : TauriActivity() {
         isForeground = false
         backgroundHandler.removeCallbacks(backgroundLowPowerRunnable)
         backgroundHandler.postDelayed(backgroundLowPowerRunnable, 10_000L)
-        LifecycleLogger.log(this, "ACTIVITY_STOP", "Segundo plano detectado; modo 1 FPS em 10s se permanecer oculto")
+        LifecycleLogger.log(this, "ACTIVITY_STOP", "Segundo plano detectado; pausando timers da mainWebView")
         try {
             android.webkit.CookieManager.getInstance().flush()
-            mainWebView?.onResume()
-            mainWebView?.resumeTimers()
+            mainWebView?.pauseTimers()
             gameSlotManager.resumeAllTimers()
         } catch (_: Throwable) {}
     }

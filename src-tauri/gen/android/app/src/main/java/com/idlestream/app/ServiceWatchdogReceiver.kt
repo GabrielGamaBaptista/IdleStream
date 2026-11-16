@@ -9,7 +9,7 @@ import android.os.Build
 import android.os.SystemClock
 
 /**
- * Watchdog independente via AlarmManager (setAndAllowWhileIdle) que verifica a cada 5 minutos
+ * Watchdog independente via AlarmManager (setAndAllowWhileIdle) que verifica a cada 12 minutos
  * se o processo / IdleStreamForegroundService continua vivo enquanto houver farm ativo.
  * Caso o Android ou algum killer OEM tenha encerrado o serviço, ele é reerguido imediatamente.
  */
@@ -36,7 +36,7 @@ class ServiceWatchdogReceiver : BroadcastReceiver() {
             return
         }
 
-        // Reagenda o próximo pulso de 3 minutos antes de tudo
+        // Reagenda o próximo pulso de 12 minutos antes de tudo
         scheduleNext(appCtx, INTERVAL_MS)
 
         if (!IdleStreamForegroundService.isRunning) {
@@ -58,7 +58,7 @@ class ServiceWatchdogReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_WATCHDOG = "com.idlestream.app.ACTION_SERVICE_WATCHDOG"
         private const val REQ_CODE = 202699
-        private const val INTERVAL_MS = 3 * 60 * 1000L
+        private const val INTERVAL_MS = 12 * 60 * 1000L
 
         fun scheduleNext(context: Context, delayMs: Long = INTERVAL_MS) {
             try {

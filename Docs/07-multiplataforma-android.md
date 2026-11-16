@@ -29,8 +29,8 @@ wiki_links:
   - "[[09-sistema-de-votos]]"
   - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
-version: "4.1.2"
-last_updated: "2026-11-12"
+version: "4.1.3"
+last_updated: "2026-11-16"
 summary: "Engenharia profunda do ecossistema Android: persistência nativa de sessões PokeIdle em SharedPreferences, pontes JNI e JavaScript, Foreground Service com WakeLock, rastreamento de toques anti-sleep e pipeline NDK/Gradle."
 ---
 
@@ -148,16 +148,16 @@ stateDiagram-v2
     MonitorandoAtivo --> [*]: ACTION_STOP ou onTaskRemoved (Manual)
 ```
 
-### 3.1 Mecanismos de Proteção Ativos (`v4.1.1` / `v4.1.2`):
+### 3.1 Mecanismos de Proteção Ativos (`v4.1.1` / `v4.1.2` / `v4.1.3`):
 1. **Notificação Persistente & Contrato `START_STICKY`**:
    - Registrada no canal `idlestream_vigilance_channel` com `startForeground(...)` garantido em todas as ações não-parada (incluindo `ACTION_UPDATE` e reinicializações `START_STICKY` com `intent == null`) usando `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` (Android 14+).
-   - Supervisor periódico (30s) mantém `WakeLock`/`WifiLock` e chama `CookieManager.getInstance().flush()`.
+   - Supervisor periódico (60s em `v4.1.3`) mantém `WakeLock`/`WifiLock` e chama `CookieManager.getInstance().flush()`.
 2. **Modo 1 FPS + Liberação de GPU na Tela Apagada e após 10s em Fundo**:
-   - Listener dinâmico para `ACTION_SCREEN_OFF` (imediato) e timer de **10 segundos** em `MainActivity.onStop()` alternam os WebViews de jogos para **1 FPS** + `View.LAYER_TYPE_NONE`, mantendo WebSockets, `HackTimer` e `/hunt` ativos.
-3. **Partial WakeLock (`PowerManager.PARTIAL_WAKE_LOCK`) e `WifiLock`**:
-   - Mantêm CPU e Wi-Fi (`WIFI_MODE_FULL_LOW_LATENCY` no Android 10+) ativos mesmo com tela bloqueada.
-4. **Watchdog de 3 Minutos vs. Fechamento Manual**:
-   - [`ServiceWatchdogReceiver`](file:///C:/Projetos/Chatter/src-tauri/gen/android/app/src/main/java/com/idlestream/app/ServiceWatchdogReceiver.kt) (`AlarmManager.setAndAllowWhileIdle`) verifica a cada 3 minutos se o serviço caiu involuntariamente (LMK/OEM) com `farming_active == true`.
+   - Listener dinâmico para `ACTION_SCREEN_OFF` (imediato) e timer de **10 segundos** em `MainActivity.onStop()` alternam os WebViews de jogos para **1 FPS** + `View.LAYER_TYPE_NONE`, mantendo WebSockets, `HackTimer` e `/hunt` ativos. Em `v4.1.3`, a `mainWebView` (React UI) executa `onPause()` e `pauseTimers()` ao apagar a tela, e o watchdog JS passa de 10s para 30s.
+3. **Partial WakeLock (`PowerManager.PARTIAL_WAKE_LOCK`) e `WifiLock` Otimizado (`v4.1.3`)**:
+   - Mantêm CPU e Wi-Fi (`WIFI_MODE_FULL`) ativos mesmo com tela bloqueada, permitindo que o rádio Wi-Fi entre nos estados de baixo consumo 802.11 sem desconectar WebSockets. O áudio silencioso contínuo foi desativado no Android, liberando o DSP do SoC.
+4. **Watchdog de Segurança vs. Fechamento Manual**:
+   - [`ServiceWatchdogReceiver`](file:///C:/Projetos/Chatter/src-tauri/gen/android/app/src/main/java/com/idlestream/app/ServiceWatchdogReceiver.kt) (`AlarmManager.setAndAllowWhileIdle`) monitora a cada 12 minutos (em `v4.1.3`) se o serviço caiu involuntariamente (LMK/OEM) com `farming_active == true`.
    - Fechamentos manuais (`onTaskRemoved` nos Apps Recentes, botão **"Parar"** ou `ApplicationExitInfo` com `REASON_USER_REQUESTED` / `REASON_USER_STOPPED` / `REASON_EXIT_SELF`) executam `performManualShutdown()`, gravam `farming_active = false` com `.commit()` e desarmam qualquer auto-reabertura. (Veja detalhes completos em **[[11-resiliencia-segundo-plano]]**.)
 
 ### 3.2 Bypass das Otimizações Agressivas de Bateria OEM

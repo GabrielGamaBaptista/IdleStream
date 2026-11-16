@@ -88,10 +88,26 @@
     scheduleNextFlush();
 
     // ============================================================
-    // 4. BYPASS DE THROTTLING CHROMIUM VIA WEB AUDIO & HTML5 AUDIO
+    // 4. BYPASS DE THROTTLING CHROMIUM VIA WEB AUDIO & HTML5 AUDIO (DESKTOP WINDOWS)
     // ============================================================
-    // Chromium isenta abas com mídia ativa (IsAudible) de throttling e congelamento em segundo plano.
+    // Chromium Desktop isenta abas com mídia ativa (IsAudible) de throttling e congelamento.
+    // No Android, o Foreground Service persistente nativo já garante a sobrevivência do processo,
+    // de forma que o áudio silencioso é desativado para permitir que o hardware DSP de som do celular durma.
+    const isAndroidEnvironment = () => {
+      try {
+        if (window.IdleStreamSlotBridge || (window.AndroidBridge && typeof window.AndroidBridge.isAndroid === 'function')) {
+          return true;
+        }
+        if (navigator && navigator.userAgent && /android/i.test(navigator.userAgent)) {
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    };
+    const isAndroid = isAndroidEnvironment();
+
     const initSilentAudioTag = () => {
+      if (isAndroid) return;
       try {
         if (document.getElementById('__idlestream_silent_audio__')) return;
         // 1 segundo de silêncio codificado em WAV base64
@@ -109,14 +125,17 @@
       } catch (_) {}
     };
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initSilentAudioTag);
-    } else {
-      initSilentAudioTag();
+    if (!isAndroid) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSilentAudioTag);
+      } else {
+        initSilentAudioTag();
+      }
     }
 
     let audioCtx = null;
     const initSilentAudio = () => {
+      if (isAndroid) return;
       try {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) return;
@@ -144,17 +163,19 @@
       }
     };
 
-    initSilentAudio();
-    ['click', 'touchstart', 'keydown'].forEach((ev) => {
-      window.addEventListener(ev, () => {
-        initSilentAudioTag();
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume().catch(() => {});
-        } else if (!audioCtx) {
-          initSilentAudio();
-        }
-      }, { once: true, passive: true });
-    });
+    if (!isAndroid) {
+      initSilentAudio();
+      ['click', 'touchstart', 'keydown'].forEach((ev) => {
+        window.addEventListener(ev, () => {
+          initSilentAudioTag();
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          } else if (!audioCtx) {
+            initSilentAudio();
+          }
+        }, { once: true, passive: true });
+      });
+    }
 
     // ============================================================
     // 4.1. ECONOMIA DE CPU: CONTROLE INTELIGENTE DE ÁUDIO DO JOGO
@@ -370,17 +391,19 @@
     // ============================================================
     window.__idlestreamHeartbeat = function () {
       try {
-        // 1. Manter mídia silenciosa ativa (IsAudible para isenção Chromium)
-        const silentAudio = document.getElementById('__idlestream_silent_audio__');
-        if (!silentAudio) {
-          initSilentAudioTag();
-        } else if (silentAudio.paused) {
-          silentAudio.play().catch(() => {});
-        }
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume().catch(() => {});
-        } else if (!audioCtx) {
-          initSilentAudio();
+        // 1. Manter mídia silenciosa ativa apenas no Desktop Windows (IsAudible para isenção Chromium)
+        if (!isAndroid) {
+          const silentAudio = document.getElementById('__idlestream_silent_audio__');
+          if (!silentAudio) {
+            initSilentAudioTag();
+          } else if (silentAudio.paused) {
+            silentAudio.play().catch(() => {});
+          }
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          } else if (!audioCtx) {
+            initSilentAudio();
+          }
         }
 
         // 2. Despachar callbacks de renderização/jogo pendentes

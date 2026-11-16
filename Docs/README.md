@@ -21,8 +21,8 @@ wiki_links:
   - "[[10-sessoes-resgates-e-verificador]]"
   - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
-version: "4.1.2"
-last_updated: "2026-11-12"
+version: "4.1.3"
+last_updated: "2026-11-16"
 summary: "Índice Mestre (Map of Content) da documentação do IdleStream. Mapeia a arquitetura de sistemas, matriz cruzada de código para documento, grafos de dependência e glossário técnico para desenvolvedores e agentes de IA."
 ---
 

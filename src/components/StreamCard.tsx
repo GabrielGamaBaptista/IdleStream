@@ -59,12 +59,23 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   useEffect(() => {
     if (isConnected && status.connected_at) {
       const update = () => {
+        if (typeof document !== 'undefined' && document.hidden) return;
         const now = Math.floor(Date.now() / 1000);
         setUptimeSecs(Math.max(0, now - status.connected_at!));
       };
       update();
       const interval = setInterval(update, 1000);
-      return () => clearInterval(interval);
+      const onVisibility = () => {
+        if (typeof document !== 'undefined' && !document.hidden && status.connected_at) {
+          const now = Math.floor(Date.now() / 1000);
+          setUptimeSecs(Math.max(0, now - status.connected_at));
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibility);
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener('visibilitychange', onVisibility);
+      };
     } else {
       setUptimeSecs(0);
     }

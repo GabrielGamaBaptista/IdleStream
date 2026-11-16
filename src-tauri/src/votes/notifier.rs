@@ -124,13 +124,14 @@ pub async fn evaluate_due_vote_notifications(state: &Arc<AppState>) {
 }
 
 /// Inicia o scheduler em background que monitora ciclos de 24h 01m para as 4 contas.
+/// Intervalo de 60s poupa 75% dos acordares desnecessários da task sem impactar a precisão dos alertas.
 pub fn start_vote_scheduler(state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         // Checagem inicial pouco após boot (captura votos que venceram com o app fechado)
         tokio::time::sleep(Duration::from_secs(3)).await;
         loop {
             evaluate_due_vote_notifications(&state).await;
-            tokio::time::sleep(Duration::from_secs(15)).await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
 }

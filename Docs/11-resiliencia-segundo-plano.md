@@ -1,6 +1,6 @@
 ---
 id: "DOC-11-RESILIENCIA-SEGUNDO-PLANO"
-title: "Resiliência em Segundo Plano, Modo 1 FPS e Recuperação de Sessão (v4.1.1 / v4.1.2)"
+title: "Resiliência em Segundo Plano, Modo 1 FPS e Otimização Extrema de Bateria (v4.1.1 a v4.1.3)"
 category: "architecture"
 tags: [idlestream, android, background, low-power, 1fps, application-exit-info, watchdog, runtime-state, resilience]
 related_code:
@@ -29,9 +29,9 @@ wiki_links:
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
 status: "completed"
-version: "4.1.2"
-last_updated: "2026-11-12"
-summary: "Arquitetura multicamadas de sobrevivência em segundo plano e tela bloqueada no Android (v4.1.1 / v4.1.2): desacoplamento do GameSlotManager para Application, modo econômico automático de 1 FPS + liberação de GPU, recuperação de renderer Chromium, persistência atômica runtime_state.json e distinção rigorosa entre fechamento manual e morte por garbage collector OEM."
+version: "4.1.3"
+last_updated: "2026-11-16"
+summary: "Arquitetura multicamadas de sobrevivência em segundo plano e tela bloqueada no Android (v4.1.1 a v4.1.3): desacoplamento do GameSlotManager para Application, modo econômico de 1 FPS + liberação de GPU, otimização extrema de bateria (WIFI_MODE_FULL, suspensão de áudio contínuo, congelamento de UI em background), recuperação de renderer Chromium, persistência atômica runtime_state.json e distinção rigorosa entre fechamento manual e morte por GC OEM."
 ---
 
 # Resiliência em Segundo Plano, Modo 1 FPS e Recuperação de Sessão (`v4.1.1` / `v4.1.2`)

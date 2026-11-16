@@ -372,7 +372,7 @@ class IdleStreamForegroundService : Service() {
         supervisorExecutor = Executors.newSingleThreadScheduledExecutor()
         supervisorExecutor?.scheduleWithFixedDelay({
             verifyLocksAndHealth()
-        }, 30, 30, TimeUnit.SECONDS)
+        }, 60, 60, TimeUnit.SECONDS)
     }
 
     private fun stopSupervisor() {
@@ -585,12 +585,9 @@ class IdleStreamForegroundService : Service() {
 
             if (wifiLock == null) {
                 val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                val lockMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
-                }
+                // WIFI_MODE_FULL mantém conexão de rede ativa com tela bloqueada sem desativar o power-save 802.11
+                @Suppress("DEPRECATION")
+                val lockMode = WifiManager.WIFI_MODE_FULL
                 wifiLock = wm?.createWifiLock(
                     lockMode,
                     "IdleStream::WifiLock"
@@ -600,7 +597,7 @@ class IdleStreamForegroundService : Service() {
             }
             if (wifiLock?.isHeld == false) {
                 wifiLock?.acquire()
-                android.util.Log.d("IdleStream", "WifiLock acquired (low-latency active)")
+                android.util.Log.d("IdleStream", "WifiLock acquired (WIFI_MODE_FULL power-save friendly)")
             }
             isWifiLockHeld = wifiLock?.isHeld == true
         } catch (e: Exception) {

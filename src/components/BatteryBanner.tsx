@@ -47,11 +47,21 @@ export const BatteryBanner: React.FC = () => {
 
   useEffect(() => {
     checkStatus();
-    const interval = setInterval(checkStatus, 3000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      checkStatus();
+    }, 15000);
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        checkStatus();
+      }
+    };
     window.addEventListener('focus', checkStatus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', checkStatus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 
