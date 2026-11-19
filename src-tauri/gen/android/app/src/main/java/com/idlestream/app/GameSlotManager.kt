@@ -759,6 +759,10 @@ class GameSlotManager(private val app: Application) {
                 view.evaluateJavascript("if (!window.__pokeidleHuntGlobalLoaded) {\n$huntScript\n}", null)
             }
         }
+
+        // 4. Reaplicar zoom configurado para o slot
+        val currentZoom = slotZooms[slotId] ?: 1.0
+        applySlotZoom(view, currentZoom)
     }
 
     @Volatile
@@ -814,11 +818,28 @@ class GameSlotManager(private val app: Application) {
         }
         runOnMain {
             val wv = slotWebViews[slotId] ?: return@runOnMain
-            val pct = (zoom * 100).toInt()
-            // setInitialScale já ajusta nativamente o fator de escala da viewport da WebView.
-            // Omitir document.body.style.zoom previne zoom duplo e distorções em modais com CSS position:fixed
-            wv.setInitialScale(pct)
+            applySlotZoom(wv, zoom)
         }
+    }
+
+    private fun applySlotZoom(wv: WebView, zoom: Double) {
+        val pct = (zoom * 100).toInt()
+        try {
+            wv.setInitialScale(pct)
+        } catch (_: Throwable) {}
+        val js = """
+            (function() {
+                try {
+                    var z = '$zoom';
+                    if (document.body) {
+                        document.body.style.zoom = z;
+                    } else if (document.documentElement) {
+                        document.documentElement.style.zoom = z;
+                    }
+                } catch(e) {}
+            })();
+        """.trimIndent()
+        wv.evaluateJavascript(js, null)
     }
 
     fun setFps(fps: Int) {

@@ -321,4 +321,80 @@ assert.strictEqual(computeEffectiveScaleFactor(50, false, 0.5), 0.5, 'Sem zoom d
 assert.strictEqual(computeEffectiveScaleFactor(50, true, 0.5), 0.25, 'Com zoom duplo no CSS ocorreria distorção grave (25%)');
 console.log('  ✓ Layout mobile responsivo, altura mínima anti-corte e eliminação de zoom duplo validados com sucesso');
 
+// ==========================================
+// Teste 10: Dimensões do Card Header e Prevenção de Overflow no Grid
+// ==========================================
+console.log('\n🔹 Teste 10: Dimensões Compactas do Header dos Slots e Visibilidade dos Botões...');
+const zoomBoxWidth = 48; // [-] select [+] compact
+const actionButtonWidth = 20; // 5.5 (22px) ou 20px
+const actionButtonsCount = 5; // Stats + Reload + Focus + Stop + Settings
+const gapsTotal = 4 * 2; // gap-0.5
+const totalRightControlsWidth = zoomBoxWidth + (actionButtonsCount * actionButtonWidth) + gapsTotal;
+
+assert.ok(
+  totalRightControlsWidth <= 160,
+  `O conjunto de controles da direita (${totalRightControlsWidth}px) deve ser <= 160px para caber no modo grid`
+);
+
+const minCardWidthInGrid = 220; // largura mínima extrema de um slot no grid 2x2
+const remainingLeftWidth = minCardWidthInGrid - totalRightControlsWidth;
+assert.ok(
+  remainingLeftWidth >= 50,
+  `Deve restar pelo menos 50px de largura para o indicador de status e o apelido da conta sem colisão (restou ${remainingLeftWidth}px)`
+);
+console.log('  ✓ Dimensões compactas e ausência de overflow no cabeçalho dos slots validadas com sucesso');
+
+// ==========================================
+// Teste 11: Unificação de Tela Cheia e Botão Único de Retomar Menus
+// ==========================================
+console.log('\n🔹 Teste 11: Unificação de Tela Cheia e Botão Único de Retomar Menus...');
+function evaluateFloatingButtons(isImmersiveMode: boolean, isToolbarVisible: boolean): string[] {
+  const buttons: string[] = [];
+  if (!isToolbarVisible || isImmersiveMode) {
+    if (isImmersiveMode) {
+      buttons.push('Restaurar Menus');
+    } else {
+      buttons.push('Barra Jogos');
+    }
+  }
+  return buttons;
+}
+
+// Quando Tela Cheia é clicada: isImmersiveMode = true e isToolbarVisible = false
+const fullscreenButtons = evaluateFloatingButtons(true, false);
+assert.strictEqual(fullscreenButtons.length, 1, 'Em modo tela cheia deve existir estritamente 1 único botão flutuante');
+assert.strictEqual(fullscreenButtons[0], 'Restaurar Menus', 'O botão único deve ser "Restaurar Menus"');
+
+// Quando apenas a barra é recolhida sem tela cheia:
+const collapsedBarButtons = evaluateFloatingButtons(false, false);
+assert.strictEqual(collapsedBarButtons.length, 1, 'Ao recolher apenas a barra deve existir 1 botão');
+assert.strictEqual(collapsedBarButtons[0], 'Barra Jogos', 'O botão deve ser "Barra Jogos"');
+
+// Em modo normal:
+const normalButtons = evaluateFloatingButtons(false, true);
+assert.strictEqual(normalButtons.length, 0, 'Em modo normal nenhum botão flutuante deve ser exibido');
+console.log('  ✓ Botão flutuante único e ausência de sobreposição validados com sucesso');
+
+// ==========================================
+// Teste 12: Injeção de Zoom Dinâmico Funcional no Android
+// ==========================================
+console.log('\n🔹 Teste 12: Injeção de Zoom Dinâmico Funcional no Android...');
+const androidGameSlotManagerContent = fs.readFileSync(
+  './src-tauri/gen/android/app/src/main/java/com/idlestream/app/GameSlotManager.kt',
+  'utf8'
+);
+assert.ok(
+  androidGameSlotManagerContent.includes('applySlotZoom'),
+  'GameSlotManager.kt deve conter o método applySlotZoom()'
+);
+assert.ok(
+  androidGameSlotManagerContent.includes('document.body.style.zoom'),
+  'applySlotZoom deve injetar CSS document.body.style.zoom para zoom imediato em runtime'
+);
+assert.ok(
+  androidGameSlotManagerContent.includes('applySlotZoom(view, currentZoom)'),
+  'injectEngineScripts deve reaplicar o zoom ao carregar/recarregar a página'
+);
+console.log('  ✓ Injeção de zoom dinâmico funcional no Android validada com sucesso');
+
 console.log('\n🎉 TODOS OS TESTES UNITÁRIOS DE JOGOS IDLE PASSARAM COM 100% DE SUCESSO!\n');

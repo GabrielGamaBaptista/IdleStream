@@ -16,9 +16,9 @@ if (Test-Path $target) {
     Move-Item -Path $target -Destination $backup -Force
 }
 
-Write-Host "Copiando nova versão v4.2.3 para $target..."
+Write-Host "Copiando nova versão v4.2.5 para $target..."
 Copy-Item -Path $source -Destination $target -Force
 
 Write-Host "Iniciando nova versão do IdleStream..."
 Start-Process -FilePath $target
-Write-Host "IdleStream v4.2.3 instalado e iniciado com sucesso!"
+Write-Host "IdleStream v4.2.5 instalado e iniciado com sucesso!"

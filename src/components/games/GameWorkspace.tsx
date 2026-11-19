@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 export const GameWorkspace: React.FC = () => {
-  const { config, updateGameSlot, isImmersiveMode, toggleImmersiveMode, setImmersiveMode } = useAppStore();
+  const { config, updateGameSlot, isImmersiveMode, setImmersiveMode } = useAppStore();
   const gameSlots = config.game_slots || [];
 
   const [activeSlots, setActiveSlots] = useState<string[]>([]);
@@ -510,35 +510,31 @@ export const GameWorkspace: React.FC = () => {
     <div className="flex flex-col h-full w-full bg-neutral-950 overflow-hidden select-none relative">
       {/* Botão/Pílula Flutuante no Canto para Restaurar Menus ou Barra Superior */}
       {(!isToolbarVisible || isImmersiveMode) && (
-        <div className="fixed top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] right-3 z-50 flex items-center gap-1.5 bg-neutral-900/90 hover:bg-neutral-900 text-neutral-200 border border-neutral-700/80 shadow-2xl backdrop-blur-md px-2.5 py-1 rounded-full transition-all animate-in fade-in duration-200">
-          {!isToolbarVisible && (
+        <div className="fixed top-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] right-3 z-50 flex items-center bg-neutral-900/95 hover:bg-neutral-900 text-neutral-200 border border-neutral-700/80 shadow-2xl backdrop-blur-md px-3 py-1.5 rounded-full transition-all animate-in fade-in duration-200">
+          {isImmersiveMode ? (
             <button
               onClick={() => {
+                setImmersiveMode(false);
                 setIsToolbarVisible(true);
                 setTimeout(syncBounds, 60);
               }}
-              className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
-              title="Reabrir barra de ferramentas dos jogos"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-              <span>Barra Jogos</span>
-            </button>
-          )}
-
-          {!isToolbarVisible && isImmersiveMode && <span className="w-px h-3 bg-neutral-700" />}
-
-          {isImmersiveMode && (
-            <button
-              onClick={() => {
-                toggleImmersiveMode();
-                setIsToolbarVisible(true);
-                setTimeout(syncBounds, 60);
-              }}
-              className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition cursor-pointer"
+              className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition cursor-pointer"
               title="Restaurar menus do aplicativo (ESC)"
             >
               <Shrink className="w-3.5 h-3.5" />
               <span>Restaurar Menus</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setIsToolbarVisible(true);
+                setTimeout(syncBounds, 60);
+              }}
+              className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+              title="Reabrir barra de ferramentas dos jogos"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+              <span>Barra Jogos</span>
             </button>
           )}
         </div>
@@ -687,16 +683,16 @@ export const GameWorkspace: React.FC = () => {
 
             {/* Toggle Modo Tela Cheia / Ocultar Menus */}
             <button
-              onClick={toggleImmersiveMode}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0 ${
-                isImmersiveMode
-                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
-                  : 'bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/80 hover:bg-neutral-700'
-              }`}
-              title={isImmersiveMode ? 'Restaurar menus da aplicação' : 'Ocultar menus (Tela Cheia)'}
+              onClick={() => {
+                setImmersiveMode(true);
+                setIsToolbarVisible(false);
+                setTimeout(syncBounds, 60);
+              }}
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/80 hover:bg-neutral-700 transition cursor-pointer shrink-0"
+              title="Tela cheia (ocultar menus e barra)"
             >
-              {isImmersiveMode ? <Shrink className="w-3.5 h-3.5" /> : <Expand className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{isImmersiveMode ? 'Restaurar Menus' : 'Tela Cheia'}</span>
+              <Expand className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Tela Cheia</span>
             </button>
 
             {/* Minimizar Barra Superior */}
@@ -987,24 +983,27 @@ export const GameWorkspace: React.FC = () => {
         }`}
       >
         {/* Cabeçalho do Card (Estilo IdleDeck) */}
-        <div className="flex items-center justify-between gap-1 px-1.5 py-1 sm:px-3 sm:py-1.5 bg-neutral-900 border-b border-neutral-800/80 shrink-0 min-h-[32px] overflow-hidden">
-          <div className="flex items-center gap-1.5 min-w-0 shrink">
+        <div className="flex items-center justify-between gap-1 px-1.5 py-1 bg-neutral-900 border-b border-neutral-800/80 shrink-0 h-8 overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${
                 isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-600'
               }`}
             />
-            <span className="text-xs font-semibold text-neutral-200 truncate">
+            <span
+              className="text-xs font-semibold text-neutral-200 truncate select-none min-w-0"
+              title={slot.label || slot.id}
+            >
               {slot.label || slot.id}
             </span>
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
             {/* Controle de Zoom Compacto no Card */}
-            <div className="flex items-center bg-neutral-800/90 rounded border border-neutral-700/60 text-[10px] text-neutral-300 overflow-hidden shrink-0 h-6">
+            <div className="flex items-center bg-neutral-800/90 rounded border border-neutral-700/60 text-[10px] text-neutral-300 overflow-hidden shrink-0 h-5">
               <button
                 onClick={() => handleZoomStep(slot.id, 'out')}
-                className="px-1.5 h-full flex items-center justify-center hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none leading-none text-xs"
+                className="w-3.5 h-full flex items-center justify-center hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none text-[10px] leading-none"
                 title="Diminuir Zoom (-)"
               >
                 -
@@ -1015,7 +1014,7 @@ export const GameWorkspace: React.FC = () => {
                   const val = parseFloat(e.target.value) / 100;
                   setZoomForSlot(slot.id, val);
                 }}
-                className="bg-transparent text-[10px] text-neutral-200 px-0.5 h-full focus:outline-none cursor-pointer appearance-none text-center font-medium w-[36px]"
+                className="bg-transparent text-[10px] text-neutral-200 px-0.5 h-full focus:outline-none cursor-pointer appearance-none text-center font-medium w-[28px] sm:w-[32px]"
                 title="Ajustar Nível de Zoom"
               >
                 <option value={50} className="bg-neutral-900 text-white">50%</option>
@@ -1033,7 +1032,7 @@ export const GameWorkspace: React.FC = () => {
               </select>
               <button
                 onClick={() => handleZoomStep(slot.id, 'in')}
-                className="px-1.5 h-full flex items-center justify-center hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none leading-none text-xs"
+                className="w-3.5 h-full flex items-center justify-center hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none text-[10px] leading-none"
                 title="Aumentar Zoom (+)"
               >
                 +
@@ -1043,10 +1042,10 @@ export const GameWorkspace: React.FC = () => {
             {isRunning && (
               <button
                 onClick={() => handleToggleSlotUltra(slot.id)}
-                className="p-1 rounded text-purple-400 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer shrink-0"
-                title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de Estatísticas)"
+                className="w-5 h-5 flex items-center justify-center rounded text-purple-400 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer shrink-0"
+                title="Alternar Modo Ultra Economia (Estatísticas)"
               >
-                <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
+                <BarChart3 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
             )}
 
@@ -1054,10 +1053,10 @@ export const GameWorkspace: React.FC = () => {
               <>
                 <button
                   onClick={() => handleReloadSlot(slot.id)}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
+                  className="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
                   title="Recarregar página"
                 >
-                  <RotateCw className="w-3.5 h-3.5" />
+                  <RotateCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 </button>
 
                 {!isFocusedMode && (
@@ -1066,37 +1065,37 @@ export const GameWorkspace: React.FC = () => {
                       setFocusedSlotId(slot.id);
                       handleSelectLayoutMode('focus');
                     }}
-                    className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
+                    className="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
                     title="Maximizar / Foco nesta conta"
                   >
-                    <Maximize2 className="w-3.5 h-3.5" />
+                    <Maximize2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
                 )}
 
                 <button
                   onClick={() => handleStopSlot(slot.id)}
-                  className="p-1 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition cursor-pointer shrink-0"
+                  className="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition cursor-pointer shrink-0"
                   title="Parar jogo"
                 >
-                  <Square className="w-3.5 h-3.5" />
+                  <Square className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 </button>
               </>
             ) : (
               <button
                 onClick={() => handleStartSlot(slot.id, slot.url)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer shadow-xs shrink-0"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-semibold transition cursor-pointer shadow-xs shrink-0 h-5"
               >
-                <Play className="w-3 h-3 fill-current" />
+                <Play className="w-2.5 h-2.5 fill-current" />
                 <span>Iniciar</span>
               </button>
             )}
 
             <button
               onClick={() => setEditingSlot(slot)}
-              className="p-1 rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition cursor-pointer shrink-0"
+              className="w-5 h-5 flex items-center justify-center rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition cursor-pointer shrink-0"
               title="Configurar slot"
             >
-              <Settings className="w-3.5 h-3.5" />
+              <Settings className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             </button>
           </div>
         </div>

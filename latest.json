@@ -1,11 +1,11 @@
 {
-  "version": "4.2.4",
-  "notes": "IdleStream v4.2.4 — Remoção do botão de Tela Cheia redundante no cabeçalho durante a aba Idle Games, padronização do ícone de layout para Modo 1 Tela (Square), eliminação do botão duplicado 'Nova Stream' na barra lateral e ordenação alfabética natural das contas na aba Contas pelo apelido (label).",
-  "pub_date": "2026-11-19T15:59:00Z",
+  "version": "4.2.5",
+  "notes": "IdleStream v4.2.5 — Cabeçalho ultra-compacto nos slots de jogos com prevenção de overflow e colisão (botões Parar e Configurações sempre visíveis, nome e status desacoplados do zoom), unificação de Tela Cheia com minimização automática da barra de ferramentas e 1 único botão flutuante de Restaurar Menus (sem duplicação/sobreposição), e injeção nativa de zoom em tempo real no Android via document.body.style.zoom e re-aplicação no carregamento.",
+  "pub_date": "2026-11-19T16:55:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjE4cFNKQU9PMkpCN0RQVFdMQ3J5L2F5UkxUZ2hucnBQbTZ2Wkd2Y0hSQkVRWHBWWHk1TEJpOCtXMmtaNlJINTNLRlgzb055VDZuQmJVd3pTRmpIdkFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTAzOTUyCWZpbGU6SWRsZVN0cmVhbV80LjIuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjQKY3B3cjhjMDdhb0JiakNBcXpMQkxrdmxtaDZhdzI0ejc4d1kxNG41NlMzYmhEdU45L3UvVUdJVFhjbXZWQTlIY0ZITjVIN24zR3p4OWc3amV6dklaQnc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.4/IdleStream_4.2.4_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjlSVjgyWSs4QzZRenJ5LzNNMjVhWi9aVng3NXQ1VjBYbDZrOExFMXcrSDMrQVBSUnBOU2RxODZwbUt5Ym1ibWZGOGUwbWtGaHZFR3RQZkRlb0xyOVE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTA3MDczCWZpbGU6SWRsZVN0cmVhbV80LjIuNV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjUKYnhTcHlCaURKZEdkVGx5cDUwdFBvNUcrNkozdDkxbWppRy9LSG4yZ3Ivbk1EamtGbld6YlZBQyttb0QzUFpycVJHaEduQ0IvOFZvdHJhcUYyUTFzQWc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.5/IdleStream_4.2.5_x64-setup.exe"
     }
   }
 }
