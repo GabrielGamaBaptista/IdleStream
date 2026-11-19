@@ -815,8 +815,9 @@ class GameSlotManager(private val app: Application) {
         runOnMain {
             val wv = slotWebViews[slotId] ?: return@runOnMain
             val pct = (zoom * 100).toInt()
+            // setInitialScale já ajusta nativamente o fator de escala da viewport da WebView.
+            // Omitir document.body.style.zoom previne zoom duplo e distorções em modais com CSS position:fixed
             wv.setInitialScale(pct)
-            wv.evaluateJavascript("document.body.style.zoom = '${zoom}';", null)
         }
     }
 

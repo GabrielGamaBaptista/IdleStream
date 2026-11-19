@@ -35,6 +35,31 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+
+            <!-- Deep Link Custom Scheme: idlestream://vote-sync?id=... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="idlestream" android:host="vote-sync" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="idlestream" android:host="sync" />
+            </intent-filter>
+
+            <!-- Universal Link HTTPS para leitura direta da câmera de qualquer smartphone -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="gabrielgamabaptista.github.io"
+                    android:pathPrefix="/IdleStream/sync" />
+            </intent-filter>
         </activity>
 
         <activity

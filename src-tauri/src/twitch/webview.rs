@@ -21,7 +21,7 @@ use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 static ACTIVE_HEADLESS_CLAIMS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(desktop)]
-const MAX_CONCURRENT_HEADLESS_CLAIMS: usize = 1;
+const MAX_CONCURRENT_HEADLESS_CLAIMS: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct TwitchCredentials {

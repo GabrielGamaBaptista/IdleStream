@@ -52,6 +52,8 @@ class MainActivity : TauriActivity() {
     var pendingOpenTab: String? = null
     @Volatile
     var pendingVoteAccountId: String? = null
+    @Volatile
+    var pendingVoteSyncId: String? = null
 
     @Volatile
     var lastUserInteractionTime = System.currentTimeMillis()
@@ -403,6 +405,13 @@ class MainActivity : TauriActivity() {
                 put("accountId", accountId)
             }.toString()
         }
+
+        @JavascriptInterface
+        fun consumePendingVoteSyncId(): String {
+            val id = activity.pendingVoteSyncId ?: ""
+            activity.pendingVoteSyncId = null
+            return id
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -446,6 +455,7 @@ class MainActivity : TauriActivity() {
         IdleStreamForegroundService.clearRecoveryNotification(this)
         pendingOpenTab = intent?.getStringExtra("open_tab")
         pendingVoteAccountId = intent?.getStringExtra("vote_account_id")
+        handleVoteSyncDeepLink(intent)
 
         // Anexa o GameSlotManager de nível de processo à Activity atual e restaura slots persistidos
         gameSlotManager.attachToActivity(this)
@@ -519,6 +529,7 @@ class MainActivity : TauriActivity() {
             pendingVoteAccountId = voteAccId
             notifyOpenTab(openTab, voteAccId)
         }
+        handleVoteSyncDeepLink(intent)
     }
 
     override fun onStart() {
@@ -821,5 +832,31 @@ class MainActivity : TauriActivity() {
             put("accountId", voteAccountId)
         }.toString()
         dispatchVoteEvent("idlestream-open-tab", payload)
+    }
+
+    private fun handleVoteSyncDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        android.util.Log.d("IdleStream", "handleVoteSyncDeepLink uri=$data")
+        val syncId = data.getQueryParameter("id")
+        if (!syncId.isNullOrBlank()) {
+            pendingVoteSyncId = syncId
+            notifyVoteSyncId(syncId)
+        }
+    }
+
+    fun notifyVoteSyncId(syncId: String) {
+        runOnUiThread {
+            val safeId = org.json.JSONObject.quote(syncId)
+            android.util.Log.d("IdleStream", "notifyVoteSyncId syncId=$syncId")
+            val script = """
+                (function() {
+                    if (typeof window.__onVoteSyncIdReceived === 'function') {
+                        try { window.__onVoteSyncIdReceived($safeId); } catch(e) { console.error(e); }
+                    }
+                    window.dispatchEvent(new CustomEvent('idlestream-vote-sync-id', { detail: { syncId: $safeId } }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script, null)
+        }
     }
 }

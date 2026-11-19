@@ -43,7 +43,7 @@ fn apply_status(
         }
         MiningSlotState::ActiveMining => {
             let msg = if chest_available {
-                format!("🪙 Baú de +50 disponível! (Rank #{} • Média: {:.1}h)", rank, avg_hours)
+                format!("🪙 Coletando baú de +50 pontos... (Rank #{})", rank)
             } else {
                 format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours)
             };
@@ -245,6 +245,7 @@ pub fn start_twitch_watcher(
                                         Some(&clean_token),
                                     );
                                 }
+                                chest_available = false;
                             }
                         }
                     }
@@ -342,6 +343,11 @@ pub fn start_twitch_watcher(
                                     current_points = Some(cur + claim_res.points);
                                 }
                                 chest_available = false;
+                                on_status(
+                                    StatusKind::Connected,
+                                    Some(format!("🪙 +50 pontos resgatados! (Rank #{})", rank)),
+                                    current_points,
+                                );
                             }
                             Err(_) => {
                                 // GQL falhou: fallback headless no Desktop com WebView2 genuíno
@@ -354,6 +360,12 @@ pub fn start_twitch_watcher(
                                         Some(&clean_token),
                                     );
                                 }
+                                on_status(
+                                    StatusKind::Connected,
+                                    Some(format!("🪙 Resgatando baú de +50... (Rank #{})", rank)),
+                                    current_points,
+                                );
+                                chest_available = false;
                             }
                         }
                     }

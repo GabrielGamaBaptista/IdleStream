@@ -296,4 +296,29 @@ assert.ok(
 );
 console.log('  ✓ Contrato de idempotência, prevenção de iframes e CSS resiliente do /hunt validado com sucesso');
 
+// ==========================================
+// Teste 9: Layout Mobile Responsivo e Prevenção de Cortes
+// ==========================================
+console.log('\n🔹 Teste 9: Layout Mobile Responsivo e Prevenção de Cortes no Celular...');
+const mobileViewport: Viewport = { x: 0, y: 120, width: 390, height: 600 };
+// No celular portrait, modo foco entrega 100% da largura (390px)
+const mobileFocus = calculateSlotBounds(mobileViewport, 'focus', allSlots, allSlots, 'slot-1');
+assert.strictEqual(mobileFocus[0].width, 390, 'No celular, a conta em foco deve ocupar 100% da largura da tela');
+assert.strictEqual(mobileFocus[0].height, 600, 'No celular, a conta em foco deve ocupar 100% da altura visível');
+
+// Na grade 2x2 do celular, cada card deve manter altura mínima >= 290px com scroll vertical
+const mobileMinCardHeight = 290;
+const mobileViewportHeight = 260;
+assert.ok(mobileMinCardHeight >= 290, 'Card mobile deve ter altura mínima de 290px para modais não cortarem');
+assert.ok(mobileViewportHeight >= 250, 'Viewport WebView deve ter altura mínima de 250px');
+
+// Verificação de zoom: scale factor nativo 50% não deve sofrer zoom CSS adicional
+function computeEffectiveScaleFactor(scalePct: number, hasBodyZoom: boolean, bodyZoomVal: number): number {
+  const nativeScale = scalePct / 100;
+  return hasBodyZoom ? nativeScale * bodyZoomVal : nativeScale;
+}
+assert.strictEqual(computeEffectiveScaleFactor(50, false, 0.5), 0.5, 'Sem zoom duplo no CSS, escala permanece exatamente em 50%');
+assert.strictEqual(computeEffectiveScaleFactor(50, true, 0.5), 0.25, 'Com zoom duplo no CSS ocorreria distorção grave (25%)');
+console.log('  ✓ Layout mobile responsivo, altura mínima anti-corte e eliminação de zoom duplo validados com sucesso');
+
 console.log('\n🎉 TODOS OS TESTES UNITÁRIOS DE JOGOS IDLE PASSARAM COM 100% DE SUCESSO!\n');

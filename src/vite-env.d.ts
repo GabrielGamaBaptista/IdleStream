@@ -47,6 +47,7 @@ interface AndroidBridge {
   syncVoteAlarms?(jsonAccounts: string): void;
   sendVoteTestNotification?(accountId: string, title: string, text: string): void;
   consumePendingOpenTab?(): string;
+  consumePendingVoteSyncId?(): string;
 }
 
 interface Window {

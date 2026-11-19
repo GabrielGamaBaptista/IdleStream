@@ -282,9 +282,27 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
 
         {/* Message banner (Minerando / Prioridade / Fila de Espera) */}
         {isConnected && status.message && (
-          <div className="mt-2.5 p-1.5 rounded bg-neutral-950 border border-neutral-800 flex items-center gap-1.5 text-neutral-300 text-[11px] font-mono leading-tight">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-            <span className="truncate">{status.message}</span>
+          <div className="mt-2.5 p-1.5 rounded bg-neutral-950 border border-neutral-800 flex items-center justify-between gap-1.5 text-neutral-300 text-[11px] font-mono leading-tight">
+            <div className="flex items-center gap-1.5 truncate">
+              <span
+                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  status.message.toLowerCase().includes('baú') || status.message.toLowerCase().includes('coletando')
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-emerald-400 animate-pulse'
+                }`}
+              />
+              <span className="truncate">{status.message}</span>
+            </div>
+            {(status.message.toLowerCase().includes('baú') || status.message.toLowerCase().includes('bônus')) && streamAccounts[0] && (
+              <button
+                type="button"
+                onClick={() => openStreamRedeem(stream.id, streamAccounts[0].id)}
+                className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-semibold transition cursor-pointer shrink-0 ml-1"
+                title="Abrir chat para resgatar bônus instantaneamente"
+              >
+                Resgatar
+              </button>
+            )}
           </div>
         )}
 

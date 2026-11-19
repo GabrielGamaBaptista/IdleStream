@@ -43,11 +43,23 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
     if (existingId) {
       generateQr(existingId);
     }
-  }, [isOpen]);
+
+    const handleIncomingSync = (e: any) => {
+      const id = e.detail?.syncId;
+      if (id) {
+        setCurrentSyncId(id);
+        generateQr(id);
+        onSyncStateChanged();
+      }
+    };
+    window.addEventListener('idlestream-vote-sync-id', handleIncomingSync);
+    return () => window.removeEventListener('idlestream-vote-sync-id', handleIncomingSync);
+  }, [isOpen, onSyncStateChanged]);
 
   const generateQr = async (id: string) => {
     try {
-      const payload = `idlestream://vote-sync?id=${id}`;
+      // Universal Link HTTPS para compatibilidade universal com qualquer app de câmera do Android/iOS
+      const payload = `https://gabrielgamabaptista.github.io/IdleStream/sync?id=${encodeURIComponent(id)}`;
       const url = await QRCode.toDataURL(payload, {
         width: 260,
         margin: 2,

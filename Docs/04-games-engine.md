@@ -244,7 +244,23 @@ O componente React [`src/components/games/GameWorkspace.tsx`](file:///C:/Projeto
 
 ---
 
-## 7. Próximos Passos & Documentos Relacionados
+## 7. Responsividade Mobile e Resolução de Cortes na Tela (v4.2.1)
+
+A versão **v4.2.1** aperfeiçoou a experiência de jogos em telas verticais de smartphones:
+1. **Eliminação de Zoom Duplo no Android (`GameSlotManager.kt`)**:
+   - Anteriormente, o Android executava simultaneamente `wv.setInitialScale(pct)` e `document.body.style.zoom = '${zoom}';`.
+   - Essa combinação resultava em um zoom residual de 25% (0.5 * 0.5), distorcendo elementos com `position: fixed` e `z-index` elevado no PokeIdle (como o modal de sessão *"CONTA ABERTA EM OUTRO LUGAR"*).
+   - O ajuste delegou o controle de escala 100% à viewport nativa da WebView via `setInitialScale`, eliminando quebras de layout.
+2. **Modo Foco como Padrão no Celular**:
+   - Em smartphones portrait (`< 768px` ou Android), o layout padrão inicial é o **Modo Foco (`1x`)**, entregando 100% de largura da tela para a conta em jogo com alternância rápida por abas superiores (`#1`, `#2`, `#3`, `#4`).
+3. **Grade 2x2 com Rolagem Vertical e Espaçamento Seguro (`pb-28`)**:
+   - Ao optar pelo modo Grade (`4x`) no celular, o container substitui o bloqueio rígido `overflow-hidden` por rolagem vertical suave (`overflow-y-auto pb-28`).
+   - Cada card possui altura mínima garantida de `300px` (viewport `260px`), mantendo todos os botões e avisos visíveis sem cortes atrás da barra de navegação inferior.
+   - O evento `onScroll={syncBounds}` sincroniza em tempo real as coordenadas das WebViews filhas durante o scroll.
+
+---
+
+## 8. Próximos Passos & Documentos Relacionados
 
 Para compreender a estrutura interna do estado global em Rust (`AppState`), a persistência em `config.json` e consultar o dicionário exaustivo de comandos IPC:
 👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC**.

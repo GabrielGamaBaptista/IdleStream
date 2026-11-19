@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IdleStream - Sincronização de Votos</title>
+  <style>
+    body {
+      background: #0a0a0a;
+      color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .card {
+      background: #171717;
+      border: 1px solid #262626;
+      border-radius: 20px;
+      padding: 32px 24px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      background: #064e3b;
+      color: #6ee7b7;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      border: 1px solid #047857;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 10px 0;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+    }
+    p {
+      font-size: 13px;
+      color: #a3a3a3;
+      line-height: 1.5;
+      margin: 0 0 20px 0;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 14px 20px;
+      border-radius: 14px;
+      background: #6366f1;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+      transition: background 0.2s;
+      box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
+      box-sizing: border-box;
+    }
+    .btn:hover {
+      background: #4f46e5;
+    }
+    .code-box {
+      margin-top: 24px;
+      padding: 12px;
+      background: #0a0a0a;
+      border: 1px solid #262626;
+      border-radius: 12px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #a5b4fc;
+      word-break: break-all;
+      user-select: all;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #737373;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Sincronização Automática</div>
+    <h1>IdleStream Pareamento</h1>
+    <p>Conecte seus votos entre Computador e Celular para manter o contador de 24h 01m sempre alinhado.</p>
+    
+    <a id="openAppBtn" class="btn" href="#">Abrir no IdleStream</a>
+
+    <div class="code-box" id="codeDisplay">Carregando código...</div>
+    <div class="hint">Toque para selecionar e copiar</div>
+  </div>
+
+  <script>
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var syncId = params.get('id') || '';
+      var codeDisplay = document.getElementById('codeDisplay');
+      var openBtn = document.getElementById('openAppBtn');
+      
+      if (syncId) {
+        codeDisplay.innerText = syncId;
+        var deepLink = 'idlestream://vote-sync?id=' + encodeURIComponent(syncId);
+        openBtn.href = deepLink;
+        
+        // Tenta redirecionar automaticamente para abrir o app
+        setTimeout(function() {
+          window.location.href = deepLink;
+        }, 100);
+      } else {
+        codeDisplay.innerText = 'Nenhum identificador de sincronização recebido.';
+        openBtn.style.display = 'none';
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -297,6 +297,8 @@ pub async fn claim_community_points(
         .header("Authorization", format!("OAuth {}", clean_token))
         .header("User-Agent", BROWSER_USER_AGENT)
         .header("Content-Type", "application/json")
+        .header("Origin", "https://www.twitch.tv")
+        .header("Referer", "https://www.twitch.tv/")
         .json(&payload);
 
     if let Some(ci) = client_integrity {
@@ -304,6 +306,7 @@ pub async fn claim_community_points(
     }
     if let Some(dev) = device_id {
         req_web = req_web.header("X-Device-Id", dev);
+        req_web = req_web.header("Client-Session-Id", dev);
     }
 
     let resp_web = req_web
@@ -350,7 +353,9 @@ pub async fn fetch_client_integrity(
         .header("Client-Id", TWITCH_WEB_CLIENT_ID)
         .header("X-Device-Id", device_id)
         .header("User-Agent", BROWSER_USER_AGENT)
-        .header("Content-Type", "application/json");
+        .header("Content-Type", "application/json")
+        .header("Origin", "https://www.twitch.tv")
+        .header("Referer", "https://www.twitch.tv/");
 
     if let Some(token) = auth_token {
         let clean = token.trim_start_matches("oauth:").trim();

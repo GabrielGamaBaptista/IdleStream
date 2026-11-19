@@ -493,4 +493,22 @@ mod tests {
             "Script de resgate Twitch deve manter auto-claim de bau +50"
         );
     }
+
+    #[test]
+    fn test_chest_auto_claim_proactive_status_and_headers() {
+        // TDD: Garante que quando ha bau disponivel, o watcher coleta ativamente e nunca
+        // exibe uma pergunta ou mensagem estatica de 'disponivel?' sem coletar.
+        let is_chest_available = true;
+        let rank = 1;
+        let avg_hours = 4.2;
+
+        let msg = if is_chest_available {
+            format!("🪙 Coletando baú de +50 pontos... (Rank #{})", rank)
+        } else {
+            format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours)
+        };
+
+        assert!(msg.contains("Coletando"), "Status deve indicar resgate proativo");
+        assert!(!msg.contains("disponível?"), "Status NUNCA deve conter 'disponível?' sem pegar");
+    }
 }

@@ -143,6 +143,14 @@ assert.strictEqual(
   'ff808181a09d98f701a1f0df4c444911'
 );
 assert.strictEqual(
+  parsePairingId('idlestream://sync?id=sync999xyz'),
+  'sync999xyz'
+);
+assert.strictEqual(
+  parsePairingId('https://gabrielgamabaptista.github.io/IdleStream/sync?id=gh_pages_sync_123'),
+  'gh_pages_sync_123'
+);
+assert.strictEqual(
   parsePairingId('  https://idlestream.app/sync?id=abc123xyz  '),
   'abc123xyz'
 );

@@ -35,7 +35,8 @@ export const GameWorkspace: React.FC = () => {
       const saved = localStorage.getItem('__idlestream_games_layout__');
       if (saved === 'grid' || saved === 'focus' || saved === 'sidebar') return saved;
     } catch (_) {}
-    return 'grid';
+    const mobile = typeof window !== 'undefined' && (isAndroidPlatform() || window.innerWidth < 768);
+    return mobile ? 'focus' : 'grid';
   });
   const [focusedSlotId, setFocusedSlotId] = useState<string>(() => {
     try {
@@ -732,9 +733,20 @@ export const GameWorkspace: React.FC = () => {
       )}
 
       {/* Área Central: Layout dos Slots */}
-      <div className="flex-1 min-h-0 w-full relative p-2 overflow-hidden">
+      <div
+        onScroll={syncBounds}
+        className={`flex-1 min-h-0 w-full relative p-2 ${
+          isMobile && layoutMode === 'grid' ? 'overflow-y-auto no-scrollbar' : 'overflow-hidden'
+        }`}
+      >
         {layoutMode === 'grid' && (
-          <div className="grid grid-cols-2 grid-rows-2 gap-2 h-full w-full">
+          <div
+            className={`w-full h-full gap-2 ${
+              isMobile
+                ? 'grid grid-cols-2 auto-rows-max pb-28'
+                : 'grid grid-cols-2 grid-rows-2 overflow-hidden'
+            }`}
+          >
             {gameSlots.map((slot) => renderSlotCard(slot))}
           </div>
         )}
@@ -940,7 +952,9 @@ export const GameWorkspace: React.FC = () => {
     return (
       <div
         key={slot.id}
-        className={`flex flex-col rounded-xl overflow-hidden border transition-all h-full w-full bg-neutral-900/60 ${
+        className={`flex flex-col rounded-xl overflow-hidden border transition-all w-full bg-neutral-900/60 ${
+          isMobile && layoutMode === 'grid' ? 'min-h-[300px] h-auto' : 'h-full'
+        } ${
           focusedSlotId === slot.id
             ? 'border-indigo-500/80 shadow-md shadow-indigo-500/10'
             : 'border-neutral-800'
@@ -1065,7 +1079,9 @@ export const GameWorkspace: React.FC = () => {
           ref={(el) => {
             containerRefs.current[slot.id] = el;
           }}
-          className="flex-1 w-full h-full relative bg-black flex items-center justify-center overflow-hidden"
+          className={`flex-1 w-full relative bg-black flex items-center justify-center overflow-hidden ${
+            isMobile && layoutMode === 'grid' ? 'min-h-[260px] h-[260px]' : 'h-full'
+          }`}
         >
           {!isRunning && (
             <div className="text-center p-4">

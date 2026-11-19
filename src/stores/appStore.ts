@@ -19,6 +19,7 @@ import {
 import { checkForAppUpdates, installAppUpdate, UnifiedUpdateResult } from '../services/updaterService';
 import { gamePlatformService } from '../services/gamePlatformService';
 import { votePlatformService } from '../services/votePlatformService';
+import { voteSyncService } from '../services/voteSyncService';
 
 const VALID_TABS = ['streams', 'games', 'votes', 'accounts', 'settings'] as const;
 const ACTIVE_TAB_STORAGE_KEY = '__idlestream_active_tab__';
@@ -154,7 +155,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.2.0',
+  appVersion: '4.2.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -462,6 +463,36 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           }
         });
+
+        const applyIncomingVoteSyncId = (syncId: string) => {
+          if (!syncId) return;
+          try {
+            voteSyncService.setSyncId(syncId);
+            get().setActiveTab('votes');
+            const accounts = get().config.vote_accounts || [];
+            voteSyncService
+              .reconcileVotesBidirectional(syncId, accounts, (acc) => {
+                get().updateVoteAccount(acc);
+              })
+              .catch(() => {});
+          } catch (_) {}
+        };
+
+        window.addEventListener('idlestream-vote-sync-id', (e: any) => {
+          const syncId = e.detail?.syncId;
+          if (syncId) {
+            applyIncomingVoteSyncId(syncId);
+          }
+        });
+
+        if (typeof window.AndroidBridge?.consumePendingVoteSyncId === 'function') {
+          try {
+            const pendingSyncId = window.AndroidBridge.consumePendingVoteSyncId();
+            if (pendingSyncId) {
+              applyIncomingVoteSyncId(pendingSyncId);
+            }
+          } catch (_) {}
+        }
 
         if (typeof window.AndroidBridge?.consumePendingOpenTab === 'function') {
           try {

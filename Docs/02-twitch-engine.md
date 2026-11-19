@@ -265,12 +265,15 @@ const selectors = [
 ```
 O script combina um polling a cada 2000ms com um `MutationObserver` no nó `document.body` com debounce de 400ms, assegurando que qualquer baú seja clicado no exato milissegundo em que renderizar na tela.
 
-### 6.3 Janelas Headless Descartáveis de 25 Segundos
-Se o claim de baú falhar via GQL:
+### 6.3 Janelas Headless Descartáveis de 25 Segundos e Concorrência Aumentada (v4.2.1)
+Se o claim de baú falhar via GQL direto (ou exigir autenticação Kasada):
 - O Rust instancia uma janela WebView invisível (`visible: false`), apontando diretamente para `https://www.twitch.tv/popout/{slug}/chat`.
 - O cookie `auth-token` da conta é injetado programaticamente.
 - A janela carrega o chat oficial e o script de MutationObserver clica no baú.
 - Um temporizador do Tokio encerra e destrói o processo do WebView2 após 25 segundos, liberando 100% da memória RAM alocada temporariamente.
+- **Concorrência Elevada (v4.2.1)**: O limite `MAX_CONCURRENT_HEADLESS_CLAIMS` foi aumentado para **3 janelas simultâneas**, permitindo resgates paralelos quando múltiplos canais disponibilizarem baús ao mesmo tempo.
+- **Headers Legítimos de Navegador**: `Origin: https://www.twitch.tv` e `Referer: https://www.twitch.tv/` foram adicionados em todas as chamadas de integridade e claim para mitigar bloqueios Kasada/Cloudflare.
+- **Máquina de Estados Proativa**: O watcher transmite imediatamente `"🪙 Coletando baú de +50 pontos..."` e `"🪙 +50 pontos resgatados!"`, nunca deixando o status passivo "baú disponível?" sem ação.
 
 ---
 

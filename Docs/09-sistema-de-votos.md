@@ -154,3 +154,18 @@ sequenceDiagram
 4. **Pareamento Instantâneo via QR Code**:
    - Um dispositivo gera a chave de sincronização com QR Code renderizado em alta definição (`qrcode`).
    - O outro dispositivo lê o QR Code ou insere a chave, completando o vínculo imediatamente.
+
+---
+
+## 8. Deep Linking e Leitura Nativa de QR Code pela Câmera (v4.2.1)
+
+A versão **v4.2.1** eliminou o erro *"não há aplicação no seu telefone para usar informação desse qrcode"* ao escanear com a câmera padrão do smartphone:
+1. **Universal Link HTTPS e Intent Filters (`AndroidManifest.xml`)**:
+   - O QR Code agora codifica a URL universal HTTPS: `https://gabrielgamabaptista.github.io/IdleStream/sync?id={id}`.
+   - O Android registra filtros de Intent para o esquema customizado `idlestream://vote-sync` e para a URL HTTPS com `autoVerify="true"`.
+   - Qualquer aplicativo de câmera nativo (Samsung, Motorola, Xiaomi, Google Pixel, iPhone) reconhece o link imediatamente e oferece a opção de abrir diretamente o IdleStream.
+2. **Página de Redirecionamento e Fallback (`sync.html`)**:
+   - Caso o usuário abra o link em um navegador web móvel, uma página dedicada em [public/sync/index.html](file:///c:/Projetos/Chatter/public/sync/index.html) apresenta o botão *"Abrir no IdleStream"* com o esquema nativo e exibe o código para cópia manual.
+3. **Despacho Automático na Inicialização (`MainActivity.kt` & `appStore.ts`)**:
+   - O método `handleVoteSyncDeepLink` captura o Intent tanto no `onCreate` quanto no `onNewIntent`.
+   - Ao receber o identificador de pareamento, o app chaveia para a aba de Votos, salva a credencial e executa a reconciliação bidirecional na nuvem sem requisição de toque manual.
