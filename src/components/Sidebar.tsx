@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { Tv, Users, Settings, Plus, Filter, Gamepad2, Vote } from 'lucide-react';
+import { Tv, Users, Settings, Filter, Gamepad2, Vote } from 'lucide-react';
 import { countReadyVoteAccounts, DEFAULT_VOTE_ACCOUNTS } from '../services/votePlatformService';
 
 export const Sidebar: React.FC = () => {
@@ -11,8 +11,6 @@ export const Sidebar: React.FC = () => {
     setPlatformFilter,
     config,
     voteAlerts,
-    setAddStreamOpen,
-    setAddAccountOpen,
   } = useAppStore();
 
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
@@ -185,25 +183,6 @@ export const Sidebar: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Quick Add Buttons */}
-      <div className="space-y-2 pt-4 mt-6 border-t border-neutral-800 shrink-0">
-        <button
-          onClick={() => setAddStreamOpen(true)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition shadow-sm hover:shadow-indigo-500/20 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nova Stream</span>
-        </button>
-
-        <button
-          onClick={() => setAddAccountOpen(true)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60 transition cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nova Conta</span>
-        </button>
       </div>
     </aside>
   );

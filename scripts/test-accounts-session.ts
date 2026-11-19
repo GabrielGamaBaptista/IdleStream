@@ -121,29 +121,29 @@ assert.strictEqual(timeoutAcc.state, 'network_error');
 assert.strictEqual(timeoutAcc.requires_reauth, false, 'Timeout de rede não deve marcar conta como exigindo re-login');
 assert.strictEqual(getFailingAccounts(timeoutSummary).length, 0, 'NetworkError não deve ser listado em failingAccounts');
 
-// 6. Teste de ordenação de contas: 1º Plataforma (Twitch antes de Kick), 2º Nome/Username (A-Z)
+// 6. Teste de ordenação de contas: 1º Plataforma (Twitch antes de Kick), 2º Apelido/Label (A-Z natural)
 const unsortedAccounts = [
-  { id: '1', platform: 'kick', label: 'Zebra Kick', username: 'zebrak' },
-  { id: '2', platform: 'twitch', label: 'Beta Twitch', username: 'betat' },
-  { id: '3', platform: 'kick', label: 'Alfa Kick', username: 'alfak' },
-  { id: '4', platform: 'twitch', label: 'Alfa Twitch', username: 'alfat' },
+  { id: '1', platform: 'kick', label: '2_GGB2006', username: '2ggb2006' },
+  { id: '2', platform: 'twitch', label: '2_GGB2006', username: 'ggb2006_2' },
+  { id: '3', platform: 'kick', label: '1_GGB2006', username: 'ggb2006' },
+  { id: '4', platform: 'twitch', label: '1_GGB2006', username: 'ggb2006_' },
 ];
 
 const sorted = [...unsortedAccounts].sort((a, b) => {
   if (a.platform !== b.platform) {
     return a.platform === 'twitch' ? -1 : 1;
   }
-  const nameA = (a.username || a.label || '').trim().toLowerCase();
-  const nameB = (b.username || b.label || '').trim().toLowerCase();
-  const nameComp = nameA.localeCompare(nameB);
-  if (nameComp !== 0) return nameComp;
-  return (a.label || '').trim().toLowerCase().localeCompare((b.label || '').trim().toLowerCase());
+  const labelA = (a.label || a.username || '').trim();
+  const labelB = (b.label || b.username || '').trim();
+  const labelComp = labelA.localeCompare(labelB, undefined, { numeric: true, sensitivity: 'base' });
+  if (labelComp !== 0) return labelComp;
+  return (a.username || '').trim().localeCompare((b.username || '').trim(), undefined, { numeric: true, sensitivity: 'base' });
 });
 
 assert.deepStrictEqual(
   sorted.map((a) => a.id),
   ['4', '2', '3', '1'],
-  'As contas devem ser ordenadas Twitch (Alfa, Beta) e depois Kick (Alfa, Zebra)'
+  'As contas devem ser ordenadas Twitch (1_GGB2006, 2_GGB2006) e depois Kick (1_GGB2006, 2_GGB2006)'
 );
 
 // 7. Teste de atualização de dados da conta (edição de label e username)

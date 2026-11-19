@@ -45,17 +45,17 @@ export const AccountManager: React.FC = () => {
 
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 
-  // Ordenação: 1º por plataforma (Twitch primeiro, Kick depois), 2º por nome/username em ordem alfabética
+  // Ordenação: 1º por plataforma (Twitch primeiro, Kick depois), 2º pelo apelido da conta (label) em ordem alfabética natural
   const sortedAccounts = useMemo(() => {
     return [...config.accounts].sort((a, b) => {
       if (a.platform !== b.platform) {
         return a.platform === 'twitch' ? -1 : 1;
       }
-      const nameA = (a.username || a.label || '').trim().toLowerCase();
-      const nameB = (b.username || b.label || '').trim().toLowerCase();
-      const nameComp = nameA.localeCompare(nameB);
-      if (nameComp !== 0) return nameComp;
-      return (a.label || '').trim().toLowerCase().localeCompare((b.label || '').trim().toLowerCase());
+      const labelA = (a.label || a.username || '').trim();
+      const labelB = (b.label || b.username || '').trim();
+      const labelComp = labelA.localeCompare(labelB, undefined, { numeric: true, sensitivity: 'base' });
+      if (labelComp !== 0) return labelComp;
+      return (a.username || '').trim().localeCompare((b.username || '').trim(), undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [config.accounts]);
 

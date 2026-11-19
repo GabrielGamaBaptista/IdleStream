@@ -667,9 +667,9 @@ export const GameWorkspace: React.FC = () => {
                 className={`p-1 sm:p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
                   layoutMode === 'focus' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
-                title="Modo Foco (1 Conta em destaque total)"
+                title="Modo 1 Tela (Conta em destaque)"
               >
-                <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 {isMobile && <span className="text-[10px]">1x</span>}
               </button>
               {!isMobile && (

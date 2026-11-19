@@ -132,13 +132,15 @@ export const Header: React.FC = () => {
             <Square className="w-3 h-3 fill-current" />
             <span>Parar</span>
           </button>
-          <button
-            onClick={toggleImmersiveMode}
-            className="flex items-center justify-center p-1.5 rounded-lg bg-neutral-800 active:bg-neutral-700 text-neutral-300 border border-neutral-700/60 transition cursor-pointer"
-            title={isImmersiveMode ? 'Sair da tela cheia' : 'Tela cheia (ocultar menus)'}
-          >
-            {isImmersiveMode ? <Minimize2 className="w-3.5 h-3.5 text-emerald-400" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
+          {activeTab !== 'games' && (
+            <button
+              onClick={toggleImmersiveMode}
+              className="flex items-center justify-center p-1.5 rounded-lg bg-neutral-800 active:bg-neutral-700 text-neutral-300 border border-neutral-700/60 transition cursor-pointer"
+              title={isImmersiveMode ? 'Sair da tela cheia' : 'Tela cheia (ocultar menus)'}
+            >
+              {isImmersiveMode ? <Minimize2 className="w-3.5 h-3.5 text-emerald-400" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -214,41 +216,47 @@ export const Header: React.FC = () => {
 
         {/* Global Controls on Desktop */}
         <div className="hidden md:flex items-center gap-2">
-          <button
-            onClick={startAll}
-            disabled={totalStreams === 0}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-medium transition shadow-sm hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            title="Inicia todas as streams (em vigília caso estejam offline)"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            Ativar Todas
-          </button>
-          <button
-            onClick={stopAll}
-            disabled={activeStreams === 0 && standbyStreams === 0}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700/60 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            title="Para todas as streams ativas"
-          >
-            <Square className="w-3.5 h-3.5 fill-current" />
-            Parar Todas
-          </button>
-          <button
-            onClick={toggleImmersiveMode}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60 transition cursor-pointer"
-            title={isImmersiveMode ? 'Sair da tela cheia' : 'Tela cheia (ocultar menus)'}
-          >
-            {isImmersiveMode ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden lg:inline">Restaurar</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-neutral-400" />
-                <span className="hidden lg:inline">Tela Cheia</span>
-              </>
-            )}
-          </button>
+          {isStreamsTab && (
+            <>
+              <button
+                onClick={startAll}
+                disabled={totalStreams === 0}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-medium transition shadow-sm hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Inicia todas as streams (em vigília caso estejam offline)"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                Ativar Todas
+              </button>
+              <button
+                onClick={stopAll}
+                disabled={activeStreams === 0 && standbyStreams === 0}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700/60 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Para todas as streams ativas"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                Parar Todas
+              </button>
+            </>
+          )}
+          {activeTab !== 'games' && (
+            <button
+              onClick={toggleImmersiveMode}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60 transition cursor-pointer"
+              title={isImmersiveMode ? 'Sair da tela cheia' : 'Tela cheia (ocultar menus)'}
+            >
+              {isImmersiveMode ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden lg:inline">Restaurar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="hidden lg:inline">Tela Cheia</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </header>

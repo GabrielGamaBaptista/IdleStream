@@ -1,11 +1,11 @@
 {
-  "version": "4.2.3",
-  "notes": "IdleStream v4.2.3 — Persistência garantida do pareamento PC ↔ Celular (vote_sync_id) gravado atomicamente em disco (config.json), reconciliação automática de votos no startup em ambas as plataformas, push imediato de votos para a nuvem ao confirmar votação e botão de sincronização sob demanda no modal.",
-  "pub_date": "2026-11-19T14:59:00Z",
+  "version": "4.2.4",
+  "notes": "IdleStream v4.2.4 — Remoção do botão de Tela Cheia redundante no cabeçalho durante a aba Idle Games, padronização do ícone de layout para Modo 1 Tela (Square), eliminação do botão duplicado 'Nova Stream' na barra lateral e ordenação alfabética natural das contas na aba Contas pelo apelido (label).",
+  "pub_date": "2026-11-19T15:59:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjdlSEpERDY1ZXBxNXhyMzhvWFVNMW5NOC9WdGpZbkR3L05oOFExWVNDZUw1d0pkODFnRHJFcUJwSGJ5a2xxYlRFZnc0NnNhY2psQlo3eTEzVE1EaUFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTAwMzU4CWZpbGU6SWRsZVN0cmVhbV80LjIuM194NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjMKc2tSTkdrZjMrVk1yRmF0aFBuWmlzY0ZqNmdmVFZMM0hBcEdGaDMraWR3MXJPd0tZSlVDMWh4Q2NvTkhzSFBPeW1pdnJDWmNBbVIySVdWeTJlSXlhQnc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.3/IdleStream_4.2.3_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjE4cFNKQU9PMkpCN0RQVFdMQ3J5L2F5UkxUZ2hucnBQbTZ2Wkd2Y0hSQkVRWHBWWHk1TEJpOCtXMmtaNlJINTNLRlgzb055VDZuQmJVd3pTRmpIdkFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTAzOTUyCWZpbGU6SWRsZVN0cmVhbV80LjIuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjQKY3B3cjhjMDdhb0JiakNBcXpMQkxrdmxtaDZhdzI0ejc4d1kxNG41NlMzYmhEdU45L3UvVUdJVFhjbXZWQTlIY0ZITjVIN24zR3p4OWc3amV6dklaQnc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.4/IdleStream_4.2.4_x64-setup.exe"
     }
   }
 }
