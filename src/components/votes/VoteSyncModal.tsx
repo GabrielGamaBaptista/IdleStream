@@ -58,8 +58,8 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
 
   const generateQr = async (id: string) => {
     try {
-      // Universal Link HTTPS para compatibilidade universal com qualquer app de câmera do Android/iOS
-      const payload = `https://gabrielgamabaptista.github.io/IdleStream/sync?id=${encodeURIComponent(id)}`;
+      // Deep Link nativo do IdleStream (registrado no AndroidManifest.xml)
+      const payload = `idlestream://vote-sync?id=${encodeURIComponent(id)}`;
       const url = await QRCode.toDataURL(payload, {
         width: 260,
         margin: 2,

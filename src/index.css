@@ -11,3 +11,11 @@ html, body {
     @apply bg-neutral-950 text-neutral-100 select-none overflow-hidden font-sans;
   }
 }
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

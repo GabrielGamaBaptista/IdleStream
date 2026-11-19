@@ -229,6 +229,14 @@ pub fn start_twitch_watcher(
                         ).await {
                             Ok(claim_res) => {
                                 println!("[Twitch] Sucesso ao resgatar baú em standby de +{} pontos em {}", claim_res.points, clean_slug);
+                                crate::audit_log!(
+                                    "LIVES",
+                                    "INFO",
+                                    "Baú Twitch coletado com sucesso! +{} pontos em [{}] (Conta: {})",
+                                    claim_res.points,
+                                    clean_slug,
+                                    account_id
+                                );
                                 if let Some(cur) = current_points {
                                     current_points = Some(cur + claim_res.points);
                                 }
@@ -339,6 +347,14 @@ pub fn start_twitch_watcher(
                         ).await {
                             Ok(claim_res) => {
                                 println!("[Twitch] Sucesso ao resgatar baú de +{} pontos em {}", claim_res.points, clean_slug);
+                                crate::audit_log!(
+                                    "LIVES",
+                                    "INFO",
+                                    "Baú Twitch coletado com sucesso! +{} pontos em [{}] (Conta: {})",
+                                    claim_res.points,
+                                    clean_slug,
+                                    account_id
+                                );
                                 if let Some(cur) = current_points {
                                     current_points = Some(cur + claim_res.points);
                                 }

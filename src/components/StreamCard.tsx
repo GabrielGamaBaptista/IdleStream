@@ -55,16 +55,18 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   const isKick = stream.platform === 'kick';
 
   const isFarming = Boolean(
+    status.is_live &&
     (status.is_farming || isConnected) &&
     (status.is_farming ||
       status.message?.toLowerCase().includes('minerando') ||
       status.message?.toLowerCase().includes('baú') ||
+      status.message?.toLowerCase().includes('pontos') ||
       isConnected)
   );
 
   const isLiveOnly = Boolean(
     !isFarming &&
-    (status.is_live || status.message?.toLowerCase().includes('fila') || status.message?.toLowerCase().includes('vigília'))
+    status.is_live
   );
 
   const [uptimeSecs, setUptimeSecs] = useState<number>(status.uptime_seconds || 0);

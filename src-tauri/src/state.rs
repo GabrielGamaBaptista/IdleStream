@@ -514,7 +514,7 @@ impl AppState {
                                             }
                                         }
                                         StatusKind::Standby => {
-                                            if current.status != StatusKind::Connected {
+                                            if is_selected_or_first {
                                                 current.status = StatusKind::Standby;
                                                 current.is_farming = false;
                                                 // Se mensagem indica fila de espera (streamer online na Twitch), mantém is_live = true
@@ -585,19 +585,27 @@ impl AppState {
                     self.twitch_watchers.lock().await.insert(session_key, watcher);
                 }
 
-                let now = Utc::now().timestamp();
+                let (prev_pts, prev_acc_pts) = {
+                    let map = self.statuses.lock().await;
+                    if let Some(s) = map.get(stream_id) {
+                        (s.channel_points.clone(), s.account_points.clone())
+                    } else {
+                        (None, HashMap::new())
+                    }
+                };
+
                 let ram = (accounts_with_tokens.len() as u32) * 1;
                 let status = StreamRuntimeStatus {
                     stream_id: stream_id.to_string(),
-                    status: StatusKind::Connected,
+                    status: StatusKind::Connecting,
                     is_live: true,
-                    is_farming: true,
-                    message: None,
+                    is_farming: false,
+                    message: Some("Aguardando verificação de prioridade Twitch...".into()),
                     uptime_seconds: 0,
                     estimated_ram_mb: ram,
-                    connected_at: Some(now),
-                    channel_points: None,
-                    account_points: HashMap::new(),
+                    connected_at: None,
+                    channel_points: prev_pts,
+                    account_points: prev_acc_pts,
                 };
 
                 self.statuses.lock().await.insert(stream_id.to_string(), status.clone());
@@ -734,7 +742,7 @@ impl AppState {
                                             }
                                         }
                                         StatusKind::Standby => {
-                                            if current.status != StatusKind::Connected {
+                                            if is_selected_or_first {
                                                 current.status = StatusKind::Standby;
                                                 current.is_farming = false;
                                                 // Se mensagem indica fila de vigília Kick (streamer online), mantém is_live = true
@@ -936,28 +944,40 @@ impl AppState {
                         Platform::Kick => check_kick_live(&this.http_client, &stream.channel_slug).await,
                     };
 
-                    if (curr.status == StatusKind::Standby || curr.status == StatusKind::Error || curr.status == StatusKind::Connecting) && is_live {
-                        // Stream came ONLINE or recovering from temporary error/connecting state
-                        crate::audit_log!(
-                            "LIVES",
-                            "INFO",
-                            "Stream [{}] ({:?}) entrou AO VIVO! Iniciando farm ativo.",
-                            stream.channel_slug,
-                            stream.platform
-                        );
-                        let accounts = {
-                            let cfg = this.config.lock().await;
-                            cfg.accounts
-                                .iter()
-                                .filter(|a| stream.account_ids.contains(&a.id))
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        };
-                        if !accounts.is_empty() {
-                            let _ = this.activate_online_stream(&stream.id, &stream.platform, &stream.channel_slug, &accounts).await;
+                    let has_active_watchers = if stream.platform == Platform::Kick {
+                        let prefix = format!("{}:", stream.id);
+                        let watchers = this.kick_watchers.lock().await;
+                        watchers.keys().any(|k| k.starts_with(&prefix) || k.as_str() == stream.id)
+                    } else {
+                        let prefix = format!("{}:", stream.id);
+                        let watchers = this.twitch_watchers.lock().await;
+                        watchers.keys().any(|k| k.starts_with(&prefix) || k.as_str() == stream.id)
+                    };
+
+                    if is_live {
+                        // Stream está ONLINE: ativa apenas se transitou de offline ou se não possui watcher ativo
+                        if !has_active_watchers || (!curr.is_live && curr.status == StatusKind::Standby) {
+                            crate::audit_log!(
+                                "LIVES",
+                                "INFO",
+                                "Stream [{}] ({:?}) entrou AO VIVO! Iniciando farm ativo.",
+                                stream.channel_slug,
+                                stream.platform
+                            );
+                            let accounts = {
+                                let cfg = this.config.lock().await;
+                                cfg.accounts
+                                    .iter()
+                                    .filter(|a| stream.account_ids.contains(&a.id))
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                            };
+                            if !accounts.is_empty() {
+                                let _ = this.activate_online_stream(&stream.id, &stream.platform, &stream.channel_slug, &accounts).await;
+                            }
                         }
-                    } else if (curr.status == StatusKind::Connected || curr.status == StatusKind::Connecting) && !is_live {
-                        // Stream went OFFLINE! Stop players to free up RAM, transition to Standby
+                    } else if (curr.status == StatusKind::Connected || curr.status == StatusKind::Connecting || curr.is_live || has_active_watchers) && !is_live {
+                        // Stream encerrou a transmissão (OFFLINE)! Encerra players e entra em vigília (0 MB)
                         crate::audit_log!(
                             "LIVES",
                             "INFO",

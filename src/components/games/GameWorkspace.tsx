@@ -175,6 +175,7 @@ export const GameWorkspace: React.FC = () => {
 
   // Referências para os containers DOM onde cada WebView deve se posicionar
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
 
   // Monitorar tamanho de tela para layout mobile responsivo
   useEffect(() => {
@@ -269,6 +270,8 @@ export const GameWorkspace: React.FC = () => {
     const shouldHideWebviews = isModalOpen || isIdleDimmed;
 
     const bounds: SlotBounds[] = [];
+    const wsEl = workspaceRef.current;
+    const wsRect = wsEl ? wsEl.getBoundingClientRect() : null;
 
     // Para cada um dos 4 slots configurados
     for (const slot of gameSlots) {
@@ -298,12 +301,34 @@ export const GameWorkspace: React.FC = () => {
       }
 
       const rect = el.getBoundingClientRect();
+      let clampedX = rect.x;
+      let clampedY = rect.y;
+      let clampedW = rect.width;
+      let clampedH = rect.height;
+
+      if (wsRect) {
+        // Assegura que as coordenadas nunca ultrapassem o container pai (evita invadir BottomNav e StatusBar)
+        const left = Math.max(wsRect.left, rect.left);
+        const top = Math.max(wsRect.top, rect.top);
+        const right = Math.min(wsRect.right, rect.right);
+        const bottom = Math.min(wsRect.bottom, rect.bottom);
+
+        clampedX = left;
+        clampedY = top;
+        clampedW = Math.max(0, right - left);
+        clampedH = Math.max(0, bottom - top);
+
+        if (clampedW < 10 || clampedH < 10) {
+          isVisible = false;
+        }
+      }
+
       bounds.push({
         slot_id: slot.id,
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
+        x: Math.round(clampedX),
+        y: Math.round(clampedY),
+        width: Math.round(clampedW),
+        height: Math.round(clampedH),
         visible: isVisible,
       });
     }
@@ -398,27 +423,12 @@ export const GameWorkspace: React.FC = () => {
 
   const handleSelectLayoutMode = (mode: 'grid' | 'focus' | 'sidebar') => {
     setLayoutMode(mode);
-    if (mode === 'grid') {
-      activeSlots.forEach((slotId) => {
-        const slot = gameSlots.find((s) => s.id === slotId);
-        if (!slot?.zoom && !slotZooms[slotId]) {
-          gamePlatformService.setSlotZoom(slotId, 0.75).catch(() => {});
-        }
-      });
-    } else if (mode === 'focus') {
-      const targetId = focusedSlotId || activeSlots[0];
-      const slot = gameSlots.find((s) => s.id === targetId);
-      if (targetId && !slot?.zoom && !slotZooms[targetId]) {
-        gamePlatformService.setSlotZoom(targetId, 1.0).catch(() => {});
-      }
-    }
   };
 
   const handleZoomStep = (slotId: string, direction: 'in' | 'out') => {
-    const defaultZoom = layoutMode === 'grid' ? 0.75 : 1.0;
-    const currentZoom = slotZooms[slotId] ?? gameSlots.find((s) => s.id === slotId)?.zoom ?? defaultZoom;
-    const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
-    let closestIndex = 5; // default 1.0
+    const currentZoom = slotZooms[slotId] ?? gameSlots.find((s) => s.id === slotId)?.zoom ?? 1.0;
+    const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.85, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+    let closestIndex = 6; // default 1.0
     let minDiff = Infinity;
     ZOOM_LEVELS.forEach((level, idx) => {
       const diff = Math.abs(level - currentZoom);
@@ -441,8 +451,7 @@ export const GameWorkspace: React.FC = () => {
       const nextSlots = activeSlots.includes(slotId) ? activeSlots : [...activeSlots, slotId];
       setActiveSlots(nextSlots);
       const slot = gameSlots.find((s) => s.id === slotId);
-      const defaultZoom = layoutMode === 'grid' ? 0.75 : 1.0;
-      const zoom = slotZooms[slotId] ?? slot?.zoom ?? defaultZoom;
+      const zoom = slotZooms[slotId] ?? slot?.zoom ?? 1.0;
       await gamePlatformService.startSlot(
         slotId,
         url.trim() || 'https://pokeidle.io/app',
@@ -734,25 +743,17 @@ export const GameWorkspace: React.FC = () => {
 
       {/* Área Central: Layout dos Slots */}
       <div
-        onScroll={syncBounds}
-        className={`flex-1 min-h-0 w-full relative p-2 ${
-          isMobile && layoutMode === 'grid' ? 'overflow-y-auto no-scrollbar' : 'overflow-hidden'
-        }`}
+        ref={workspaceRef}
+        className="flex-1 min-h-0 w-full relative p-2 overflow-hidden"
       >
         {layoutMode === 'grid' && (
-          <div
-            className={`w-full h-full gap-2 ${
-              isMobile
-                ? 'grid grid-cols-2 auto-rows-max pb-28'
-                : 'grid grid-cols-2 grid-rows-2 overflow-hidden'
-            }`}
-          >
+          <div className="grid grid-cols-2 grid-rows-2 gap-2 h-full w-full overflow-hidden">
             {gameSlots.map((slot) => renderSlotCard(slot))}
           </div>
         )}
 
         {layoutMode === 'focus' && (
-          <div className="h-full w-full">
+          <div className="h-full w-full overflow-hidden">
             {gameSlots
               .filter((slot) => slot.id === focusedSlotId)
               .map((slot) => renderSlotCard(slot, true))}
@@ -760,9 +761,9 @@ export const GameWorkspace: React.FC = () => {
         )}
 
         {layoutMode === 'sidebar' && (
-          <div className="flex gap-2 h-full w-full">
+          <div className="flex gap-2 h-full w-full overflow-hidden">
             {/* Slot Principal em Destaque (72% da largura) */}
-            <div className="flex-1 h-full min-w-0">
+            <div className="flex-1 h-full min-w-0 overflow-hidden">
               {gameSlots
                 .filter((slot) => slot.id === focusedSlotId)
                 .map((slot) => renderSlotCard(slot, true))}
@@ -890,6 +891,32 @@ export const GameWorkspace: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="text-xs font-semibold text-neutral-400 block mb-1">
+                  Nível de Zoom da Aba
+                </label>
+                <select
+                  value={Math.round((editingSlot.zoom ?? 1.0) * 100)}
+                  onChange={(e) => {
+                    const z = Number(e.target.value) / 100;
+                    setEditingSlot({ ...editingSlot, zoom: z });
+                  }}
+                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-white focus:outline-hidden focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value={50}>50%</option>
+                  <option value={67}>67%</option>
+                  <option value={75}>75%</option>
+                  <option value={80}>80%</option>
+                  <option value={90}>90%</option>
+                  <option value={100}>100% (Padrão Nativo)</option>
+                  <option value={110}>110%</option>
+                  <option value={125}>125%</option>
+                  <option value={150}>150%</option>
+                  <option value={175}>175%</option>
+                  <option value={200}>200%</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -929,6 +956,8 @@ export const GameWorkspace: React.FC = () => {
                 </button>
                 <button
                   onClick={async () => {
+                    const z = editingSlot.zoom ?? 1.0;
+                    await setZoomForSlot(editingSlot.id, z);
                     await updateGameSlot(editingSlot);
                     setEditingSlot(null);
                   }}
@@ -947,21 +976,18 @@ export const GameWorkspace: React.FC = () => {
   // Renderiza o card individual de um slot com seu header e a div onde a WebView se ancora
   function renderSlotCard(slot: GameSlotConfig, isFocusedMode = false, _isSidebarCard = false) {
     const isRunning = activeSlots.includes(slot.id);
-    const effectiveZoom = slotZooms[slot.id] ?? slot.zoom ?? (layoutMode === 'grid' ? 0.75 : 1.0);
 
     return (
       <div
         key={slot.id}
-        className={`flex flex-col rounded-xl overflow-hidden border transition-all w-full bg-neutral-900/60 ${
-          isMobile && layoutMode === 'grid' ? 'min-h-[300px] h-auto' : 'h-full'
-        } ${
+        className={`flex flex-col rounded-xl overflow-hidden border transition-all w-full h-full bg-neutral-900/60 ${
           focusedSlotId === slot.id
             ? 'border-indigo-500/80 shadow-md shadow-indigo-500/10'
             : 'border-neutral-800'
         }`}
       >
         {/* Cabeçalho do Card (Estilo IdleDeck) */}
-        <div className="flex items-center justify-between gap-1 px-2 py-1.5 sm:px-3 bg-neutral-900 border-b border-neutral-800/80 shrink-0 min-h-[32px]">
+        <div className="flex items-center justify-between gap-1 px-1.5 py-1 sm:px-3 sm:py-1.5 bg-neutral-900 border-b border-neutral-800/80 shrink-0 min-h-[32px] overflow-hidden">
           <div className="flex items-center gap-1.5 min-w-0 shrink">
             <span
               className={`w-2 h-2 rounded-full shrink-0 ${
@@ -973,7 +999,47 @@ export const GameWorkspace: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+            {/* Controle de Zoom Compacto no Card */}
+            <div className="flex items-center bg-neutral-800/90 rounded border border-neutral-700/60 text-[10px] text-neutral-300 overflow-hidden shrink-0 h-6">
+              <button
+                onClick={() => handleZoomStep(slot.id, 'out')}
+                className="px-1.5 h-full flex items-center justify-center hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none leading-none text-xs"
+                title="Diminuir Zoom (-)"
+              >
+                -
+              </button>
+              <select
+                value={Math.round((slotZooms[slot.id] ?? slot.zoom ?? 1.0) * 100)}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) / 100;
+                  setZoomForSlot(slot.id, val);
+                }}
+                className="bg-transparent text-[10px] text-neutral-200 px-0.5 h-full focus:outline-none cursor-pointer appearance-none text-center font-medium w-[36px]"
+                title="Ajustar Nível de Zoom"
+              >
+                <option value={50} className="bg-neutral-900 text-white">50%</option>
+                <option value={67} className="bg-neutral-900 text-white">67%</option>
+                <option value={75} className="bg-neutral-900 text-white">75%</option>
+                <option value={80} className="bg-neutral-900 text-white">80%</option>
+                <option value={85} className="bg-neutral-900 text-white">85%</option>
+                <option value={90} className="bg-neutral-900 text-white">90%</option>
+                <option value={100} className="bg-neutral-900 text-white">100%</option>
+                <option value={110} className="bg-neutral-900 text-white">110%</option>
+                <option value={125} className="bg-neutral-900 text-white">125%</option>
+                <option value={150} className="bg-neutral-900 text-white">150%</option>
+                <option value={175} className="bg-neutral-900 text-white">175%</option>
+                <option value={200} className="bg-neutral-900 text-white">200%</option>
+              </select>
+              <button
+                onClick={() => handleZoomStep(slot.id, 'in')}
+                className="px-1.5 h-full flex items-center justify-center hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none leading-none text-xs"
+                title="Aumentar Zoom (+)"
+              >
+                +
+              </button>
+            </div>
+
             {isRunning && (
               <button
                 onClick={() => handleToggleSlotUltra(slot.id)}
@@ -984,47 +1050,11 @@ export const GameWorkspace: React.FC = () => {
               </button>
             )}
 
-            {/* Controle de Zoom estilo Navegador */}
-            <div className="flex items-center bg-neutral-800/90 rounded border border-neutral-700/60 text-[10px] text-neutral-300 overflow-hidden shrink-0">
-              <button
-                onClick={() => handleZoomStep(slot.id, 'out')}
-                className="px-1.5 py-0.5 hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none leading-none"
-                title="Diminuir Zoom (-)"
-              >
-                -
-              </button>
-              <select
-                value={Math.round(effectiveZoom * 100)}
-                onChange={(e) => setZoomForSlot(slot.id, Number(e.target.value) / 100)}
-                className="bg-transparent text-[10px] font-mono font-medium text-neutral-200 px-0.5 sm:px-1 py-0.5 outline-hidden cursor-pointer hover:text-indigo-400 text-center"
-                title="Nível de Zoom da Aba"
-              >
-                <option value={50} className="bg-neutral-900 text-white">50%</option>
-                <option value={67} className="bg-neutral-900 text-white">67%</option>
-                <option value={75} className="bg-neutral-900 text-white">75% (Auto Grade)</option>
-                <option value={80} className="bg-neutral-900 text-white">80%</option>
-                <option value={90} className="bg-neutral-900 text-white">90%</option>
-                <option value={100} className="bg-neutral-900 text-white">100% (Nativo)</option>
-                <option value={110} className="bg-neutral-900 text-white">110%</option>
-                <option value={125} className="bg-neutral-900 text-white">125%</option>
-                <option value={150} className="bg-neutral-900 text-white">150%</option>
-                <option value={175} className="bg-neutral-900 text-white">175%</option>
-                <option value={200} className="bg-neutral-900 text-white">200%</option>
-              </select>
-              <button
-                onClick={() => handleZoomStep(slot.id, 'in')}
-                className="px-1.5 py-0.5 hover:bg-neutral-700 hover:text-white transition cursor-pointer font-bold select-none leading-none"
-                title="Aumentar Zoom (+)"
-              >
-                +
-              </button>
-            </div>
-
             {isRunning ? (
               <>
                 <button
                   onClick={() => handleReloadSlot(slot.id)}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
                   title="Recarregar página"
                 >
                   <RotateCw className="w-3.5 h-3.5" />
@@ -1035,11 +1065,8 @@ export const GameWorkspace: React.FC = () => {
                     onClick={() => {
                       setFocusedSlotId(slot.id);
                       handleSelectLayoutMode('focus');
-                      if (!slot.zoom && !slotZooms[slot.id]) {
-                        gamePlatformService.setSlotZoom(slot.id, 1.0).catch(() => {});
-                      }
                     }}
-                    className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+                    className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer shrink-0"
                     title="Maximizar / Foco nesta conta"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
@@ -1048,7 +1075,7 @@ export const GameWorkspace: React.FC = () => {
 
                 <button
                   onClick={() => handleStopSlot(slot.id)}
-                  className="p-1 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition cursor-pointer"
+                  className="p-1 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition cursor-pointer shrink-0"
                   title="Parar jogo"
                 >
                   <Square className="w-3.5 h-3.5" />
@@ -1057,7 +1084,7 @@ export const GameWorkspace: React.FC = () => {
             ) : (
               <button
                 onClick={() => handleStartSlot(slot.id, slot.url)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer shadow-xs"
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition cursor-pointer shadow-xs shrink-0"
               >
                 <Play className="w-3 h-3 fill-current" />
                 <span>Iniciar</span>
@@ -1066,7 +1093,7 @@ export const GameWorkspace: React.FC = () => {
 
             <button
               onClick={() => setEditingSlot(slot)}
-              className="p-1 rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition cursor-pointer"
+              className="p-1 rounded text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition cursor-pointer shrink-0"
               title="Configurar slot"
             >
               <Settings className="w-3.5 h-3.5" />
@@ -1079,9 +1106,7 @@ export const GameWorkspace: React.FC = () => {
           ref={(el) => {
             containerRefs.current[slot.id] = el;
           }}
-          className={`flex-1 w-full relative bg-black flex items-center justify-center overflow-hidden ${
-            isMobile && layoutMode === 'grid' ? 'min-h-[260px] h-[260px]' : 'h-full'
-          }`}
+          className="flex-1 w-full h-full relative bg-black flex items-center justify-center overflow-hidden"
         >
           {!isRunning && (
             <div className="text-center p-4">

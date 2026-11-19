@@ -50,16 +50,18 @@ console.log('3. Testando classificação dos badges ("Farmando" vs "Ao Vivo" vs 
 function classifyStreamState(status: StreamRuntimeStatus): 'farmando' | 'ao_vivo' | 'vigilia' | 'outro' {
   const isConnected = status.status === 'connected';
   const isFarming = Boolean(
+    status.is_live &&
     (status.is_farming || isConnected) &&
     (status.is_farming ||
       status.message?.toLowerCase().includes('minerando') ||
       status.message?.toLowerCase().includes('baú') ||
+      status.message?.toLowerCase().includes('pontos') ||
       isConnected)
   );
 
   const isLiveOnly = Boolean(
     !isFarming &&
-    (status.is_live || status.message?.toLowerCase().includes('fila') || status.message?.toLowerCase().includes('vigília'))
+    status.is_live
   );
 
   if (isFarming) return 'farmando';
@@ -100,6 +102,17 @@ const offlineStream: StreamRuntimeStatus = {
   estimated_ram_mb: 0,
 };
 assert.strictEqual(classifyStreamState(offlineStream), 'vigilia', 'Stream offline deve ser "vigilia"');
+
+const offlineStreamEndedVigil: StreamRuntimeStatus = {
+  stream_id: 's-off-vigil',
+  status: 'standby',
+  is_live: false,
+  is_farming: false,
+  message: 'Stream encerrou. Em vigília aguardando próximo broadcast...',
+  uptime_seconds: 0,
+  estimated_ram_mb: 0,
+};
+assert.strictEqual(classifyStreamState(offlineStreamEndedVigil), 'vigilia', 'Stream encerrou em vigília deve ser "vigilia" e NUNCA "ao_vivo"');
 console.log('  ✓ Classificação visual e lógica de badges validada');
 
 // 4. Teste de ordenação de streams por pontos separando Twitch e Kick

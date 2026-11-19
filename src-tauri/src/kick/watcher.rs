@@ -579,6 +579,14 @@ pub fn start_kick_watcher(
                                     Ok(new_pts) => {
                                         current_points = Some(new_pts);
                                         apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+                                        crate::audit_log!(
+                                            "LIVES",
+                                            "INFO",
+                                            "Kick Farm Ativo: saldo atualizado em [{}] -> {} pontos (Conta: {})",
+                                            clean_slug,
+                                            new_pts,
+                                            account_id
+                                        );
                                     }
                                     Err(ref err) => {
                                         if err.contains("não autenticada") || err.contains("401") || err.contains("403") {

@@ -1,11 +1,11 @@
 {
-  "version": "4.2.1",
-  "notes": "IdleStream v4.2.1 — Correção no scanner de QR Code (Universal Links / App Links para Deep Linking Android), layout responsivo scrollável e sem double-zoom nos jogos mobile, e resgate proativo automático de baús Twitch +50 pontos com cabeçalhos de integridade oficiais.",
-  "pub_date": "2026-11-19T02:08:00Z",
+  "version": "4.2.2",
+  "notes": "IdleStream v4.2.2 — Layout de jogos contido sem sobreposição de menus, zoom nativo 100% com controles compactos diretos no card, pareamento de votos via Deep Link nativo idlestream://vote-sync, limite estrito e ordenação de prioridade Twitch/Kick, loop de vigília estabilizado contra HTTP 429, auditoria em disco de baús/pontos e supressão de popups flutuantes do /hunt.",
+  "pub_date": "2026-11-19T14:16:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vjhyb1J4b2dGR0FKMkRCMFB2WUNOWSt6VDc2dXZITmFJbCtkL3VuT2tYanpkZGFXcnNGMVlER1pDMzc0Qzg0ZjVyd3JVUTRWSExhWDBJSEd1NmJkT1E0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDU0MDUyCWZpbGU6SWRsZVN0cmVhbV80LjIuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjEKWmorUmY0Zjd2eXYwL3Z3d1dmdjJnb0YzUm9HQVIvMUFmak55cHhJNHZnUDlVVk15OGcxU1BpY0VHV1Zwd2c5dndLcTBpN2dFOEF3ZHBnSnJJdTZYRHc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.1/IdleStream_4.2.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VnpZblBXcUFpNjk2VnR5MFBndG1xeTdJTzArTS9rZW1WVGs0WDNWbVRBc3ZrelhQby82bE9vY3ExVytRL29IdkJwOTZqajBSSndLZitNRFFDQXNIMmcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDk3NzU4CWZpbGU6SWRsZVN0cmVhbV80LjIuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjIKMTE5b2g3RjZheFhHTWtueHIwU1dsTUh4UVRQMVdJQ21UMzA4a010MlU2bTRDRTY2a0l4c0R1MFNMUnh5Q0xDMlpxVHVIbGlKR2dvd1JXM21RT3dQQXc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.2/IdleStream_4.2.2_x64-setup.exe"
     }
   }
 }
