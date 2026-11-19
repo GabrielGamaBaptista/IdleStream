@@ -100,8 +100,10 @@ impl ConfigStore {
                                     }
                                 }
                             }
+                            let vote_sync_id: Option<String> = val.get("vote_sync_id")
+                                .and_then(|v| serde_json::from_value(v.clone()).ok());
                             eprintln!("[ConfigStore] Lenient fallback salvaged {} accounts and {} streams", accounts.len(), streams.len());
-                            AppConfig { accounts, streams, settings, game_slots, vote_accounts }
+                            AppConfig { accounts, streams, settings, game_slots, vote_accounts, vote_sync_id }
                         } else {
                             eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED completely: {}! Content: {}", e, clean_content);
                             AppConfig::default()

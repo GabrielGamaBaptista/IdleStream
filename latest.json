@@ -1,11 +1,11 @@
 {
-  "version": "4.2.2",
-  "notes": "IdleStream v4.2.2 — Layout de jogos contido sem sobreposição de menus, zoom nativo 100% com controles compactos diretos no card, pareamento de votos via Deep Link nativo idlestream://vote-sync, limite estrito e ordenação de prioridade Twitch/Kick, loop de vigília estabilizado contra HTTP 429, auditoria em disco de baús/pontos e supressão de popups flutuantes do /hunt.",
-  "pub_date": "2026-11-19T14:16:00Z",
+  "version": "4.2.3",
+  "notes": "IdleStream v4.2.3 — Persistência garantida do pareamento PC ↔ Celular (vote_sync_id) gravado atomicamente em disco (config.json), reconciliação automática de votos no startup em ambas as plataformas, push imediato de votos para a nuvem ao confirmar votação e botão de sincronização sob demanda no modal.",
+  "pub_date": "2026-11-19T14:59:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VnpZblBXcUFpNjk2VnR5MFBndG1xeTdJTzArTS9rZW1WVGs0WDNWbVRBc3ZrelhQby82bE9vY3ExVytRL29IdkJwOTZqajBSSndLZitNRFFDQXNIMmcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDk3NzU4CWZpbGU6SWRsZVN0cmVhbV80LjIuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjIKMTE5b2g3RjZheFhHTWtueHIwU1dsTUh4UVRQMVdJQ21UMzA4a010MlU2bTRDRTY2a0l4c0R1MFNMUnh5Q0xDMlpxVHVIbGlKR2dvd1JXM21RT3dQQXc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.2/IdleStream_4.2.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjdlSEpERDY1ZXBxNXhyMzhvWFVNMW5NOC9WdGpZbkR3L05oOFExWVNDZUw1d0pkODFnRHJFcUJwSGJ5a2xxYlRFZnc0NnNhY2psQlo3eTEzVE1EaUFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTAwMzU4CWZpbGU6SWRsZVN0cmVhbV80LjIuM194NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjMKc2tSTkdrZjMrVk1yRmF0aFBuWmlzY0ZqNmdmVFZMM0hBcEdGaDMraWR3MXJPd0tZSlVDMWh4Q2NvTkhzSFBPeW1pdnJDWmNBbVIySVdWeTJlSXlhQnc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.3/IdleStream_4.2.3_x64-setup.exe"
     }
   }
 }

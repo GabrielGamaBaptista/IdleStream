@@ -280,6 +280,8 @@ pub struct AppConfig {
     pub game_slots: Vec<GameSlotConfig>,
     #[serde(default = "default_vote_accounts")]
     pub vote_accounts: Vec<VoteAccountConfig>,
+    #[serde(default)]
+    pub vote_sync_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -298,6 +300,7 @@ impl Default for AppConfig {
             settings: AppSettings::default(),
             game_slots: default_game_slots(),
             vote_accounts: default_vote_accounts(),
+            vote_sync_id: None,
         }
     }
 }

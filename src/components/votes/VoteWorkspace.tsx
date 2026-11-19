@@ -84,14 +84,20 @@ export const VoteWorkspace: React.FC = () => {
   const [editError, setEditError] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [syncId, setSyncId] = useState<string | null>(() => voteSyncService.getSyncId());
+  const [syncId, setSyncId] = useState<string | null>(() => config.vote_sync_id || voteSyncService.getSyncId());
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
   const webViewMountRef = useRef<HTMLDivElement | null>(null);
 
+  // Mantém syncId sincronizado com o config persistente em disco
+  useEffect(() => {
+    const id = config.vote_sync_id || voteSyncService.getSyncId();
+    setSyncId(id);
+  }, [config.vote_sync_id]);
+
   // Sincronização Automática ao Abrir o App (Busca atualizações recentes do outro dispositivo)
   useEffect(() => {
-    const activeSyncId = voteSyncService.getSyncId();
+    const activeSyncId = config.vote_sync_id || voteSyncService.getSyncId();
     setSyncId(activeSyncId);
     if (!activeSyncId) return;
 
@@ -332,7 +338,7 @@ export const VoteWorkspace: React.FC = () => {
       );
 
       // Despacha atualização automática para o outro dispositivo se pareado
-      const activeSyncId = voteSyncService.getSyncId();
+      const activeSyncId = config.vote_sync_id || voteSyncService.getSyncId();
       if (activeSyncId) {
         const nowSec = Math.floor(Date.now() / 1000);
         const updatedAccounts = voteAccounts.map((a) =>

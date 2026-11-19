@@ -152,10 +152,12 @@ interface AppState {
   markVoteCompleted: (accountId: string, votedAt?: number) => Promise<void>;
   resetVoteTimer: (accountId: string) => Promise<void>;
   testVoteNotification: (accountId?: string) => Promise<VoteReadyNotificationPayload | null>;
+  setVoteSyncId: (syncId: string | null) => Promise<void>;
+  reconcileVotesWithCloud: () => Promise<{ updatedCount: number; pushedToRemote: boolean }>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.2.1',
+  appVersion: '4.2.3',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -211,6 +213,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (tab !== 'votes') {
       // Destrói imediatamente qualquer WebView de votação ao sair da aba Votos (0 MB RAM)
       votePlatformService.closeVoteWebView().catch(() => {});
+    } else {
+      // Ao entrar na aba Votos, dispara reconciliação em background com a nuvem
+      const activeSyncId = get().config.vote_sync_id || voteSyncService.getSyncId();
+      if (activeSyncId) {
+        voteSyncService
+          .reconcileVotesBidirectional(
+            activeSyncId,
+            get().config.vote_accounts || [],
+            (acc) => get().updateVoteAccount(acc)
+          )
+          .catch(() => {});
+      }
     }
     set({ activeTab: tab });
   },
@@ -309,6 +323,41 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().fetchConfig();
       await get().fetchStatuses();
       await get().fetchAccountsHealth();
+
+      // Reconciliação automática de votos PC <-> Celular ao abrir a aplicação
+      try {
+        const configSyncId = get().config.vote_sync_id;
+        const localSyncId = voteSyncService.getSyncId();
+        const effectiveSyncId = (configSyncId && configSyncId.trim()) || (localSyncId && localSyncId.trim());
+
+        if (effectiveSyncId) {
+          voteSyncService.setSyncId(effectiveSyncId);
+          if (!configSyncId) {
+            invoke('vote_set_sync_id', { syncId: effectiveSyncId }).catch(() => {});
+            set((state) => ({
+              config: { ...state.config, vote_sync_id: effectiveSyncId },
+            }));
+          }
+
+          const currentAccounts = get().config.vote_accounts || [];
+          voteSyncService
+            .reconcileVotesBidirectional(effectiveSyncId, currentAccounts, (acc) => {
+              get().updateVoteAccount(acc);
+            })
+            .then((res) => {
+              if (res.updatedCount > 0 || res.pushedToRemote) {
+                console.log(
+                  `[VoteSync] Reconciliação no startup: ${res.updatedCount} conta(s) atualizada(s), sincronizado na nuvem: ${res.pushedToRemote}`
+                );
+              }
+            })
+            .catch((e) => {
+              console.warn('[VoteSync] Falha silenciosa de reconciliação no startup:', e);
+            });
+        }
+      } catch (e) {
+        console.warn('[VoteSync] Falha ao verificar sincronização no startup:', e);
+      }
 
       const runtimeState = await invoke<RuntimeSessionState>('get_runtime_state').catch(() => null);
       if (runtimeState?.last_active_tab && isValidNavigationTab(runtimeState.last_active_tab)) {
@@ -467,11 +516,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         const applyIncomingVoteSyncId = (syncId: string) => {
           if (!syncId) return;
           try {
-            voteSyncService.setSyncId(syncId);
+            const cleanId = syncId.trim();
+            voteSyncService.setSyncId(cleanId);
+            invoke('vote_set_sync_id', { syncId: cleanId }).catch(() => {});
+            set((state) => ({
+              config: { ...state.config, vote_sync_id: cleanId },
+            }));
             get().setActiveTab('votes');
             const accounts = get().config.vote_accounts || [];
             voteSyncService
-              .reconcileVotesBidirectional(syncId, accounts, (acc) => {
+              .reconcileVotesBidirectional(cleanId, accounts, (acc) => {
                 get().updateVoteAccount(acc);
               })
               .catch(() => {});
@@ -776,6 +830,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = await invoke<AppConfig>('vote_update_account', { account });
     set({ config: updated });
     votePlatformService.syncAndroidAlarms(updated.vote_accounts);
+
+    const activeSyncId = updated.vote_sync_id || get().config.vote_sync_id || voteSyncService.getSyncId();
+    if (activeSyncId && updated.vote_accounts) {
+      voteSyncService.pushLocalVotes(activeSyncId, updated.vote_accounts).catch(() => {});
+    }
   },
 
   markVoteCompleted: async (accountId, votedAt) => {
@@ -788,6 +847,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       voteAlerts: state.voteAlerts.filter((a) => a.account_id !== accountId),
     }));
     votePlatformService.syncAndroidAlarms(updated.vote_accounts);
+
+    // Push imediato para a nuvem para manter celular e PC 100% alinhados
+    const activeSyncId = updated.vote_sync_id || get().config.vote_sync_id || voteSyncService.getSyncId();
+    if (activeSyncId && updated.vote_accounts) {
+      voteSyncService.pushLocalVotes(activeSyncId, updated.vote_accounts).catch((e) => {
+        console.warn('[VoteSync] Falha ao enviar voto para a nuvem:', e);
+      });
+    }
   },
 
   resetVoteTimer: async (accountId) => {
@@ -797,6 +864,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       voteAlerts: state.voteAlerts.filter((a) => a.account_id !== accountId),
     }));
     votePlatformService.syncAndroidAlarms(updated.vote_accounts);
+
+    const activeSyncId = updated.vote_sync_id || get().config.vote_sync_id || voteSyncService.getSyncId();
+    if (activeSyncId && updated.vote_accounts) {
+      voteSyncService.pushLocalVotes(activeSyncId, updated.vote_accounts).catch(() => {});
+    }
   },
 
   testVoteNotification: async (accountId) => {
@@ -806,5 +878,35 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('Falha ao disparar notificação de teste de voto:', e);
       return null;
     }
+  },
+
+  setVoteSyncId: async (syncId) => {
+    const sanitized = syncId?.trim() || null;
+    voteSyncService.setSyncId(sanitized);
+    try {
+      const updated = await invoke<AppConfig>('vote_set_sync_id', { syncId: sanitized });
+      set({ config: updated });
+      if (sanitized && updated.vote_accounts) {
+        voteSyncService
+          .reconcileVotesBidirectional(sanitized, updated.vote_accounts, (acc) => {
+            get().updateVoteAccount(acc);
+          })
+          .catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Falha ao salvar vote_sync_id no backend:', e);
+      set((state) => ({
+        config: { ...state.config, vote_sync_id: sanitized },
+      }));
+    }
+  },
+
+  reconcileVotesWithCloud: async () => {
+    const activeSyncId = get().config.vote_sync_id || voteSyncService.getSyncId();
+    if (!activeSyncId) return { updatedCount: 0, pushedToRemote: false };
+    const accounts = get().config.vote_accounts || [];
+    return await voteSyncService.reconcileVotesBidirectional(activeSyncId, accounts, (acc) => {
+      get().updateVoteAccount(acc);
+    });
   },
 }));

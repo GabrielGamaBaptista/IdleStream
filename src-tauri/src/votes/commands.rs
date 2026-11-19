@@ -205,3 +205,33 @@ pub async fn vote_test_notification(
 
     Ok(payload)
 }
+
+#[tauri::command]
+pub async fn vote_set_sync_id(
+    state: State<'_, Arc<AppState>>,
+    sync_id: Option<String>,
+) -> Result<AppConfig, String> {
+    let mut cfg = state.config.lock().await;
+    let sanitized = sync_id
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    cfg.vote_sync_id = sanitized.clone();
+    state.config_store.save(&cfg)?;
+
+    crate::audit_log!(
+        "VOTES",
+        "INFO",
+        "ID de sincronização de votos atualizado em disco: {:?}",
+        cfg.vote_sync_id
+    );
+
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn vote_get_sync_id(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let cfg = state.config.lock().await;
+    Ok(cfg.vote_sync_id.clone())
+}

@@ -9,9 +9,11 @@ import {
   Unlink,
   Sparkles,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { voteSyncService } from '../../services/voteSyncService';
 import { VoteAccountConfig } from '../../types';
+import { useAppStore } from '../../stores/appStore';
 
 interface VoteSyncModalProps {
   isOpen: boolean;
@@ -26,18 +28,22 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
   voteAccounts,
   onSyncStateChanged,
 }) => {
+  const { config, setVoteSyncId, reconcileVotesWithCloud } = useAppStore();
   const [currentSyncId, setCurrentSyncId] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [inputCode, setInputCode] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    const existingId = voteSyncService.getSyncId();
+    const existingId = config.vote_sync_id || voteSyncService.getSyncId();
     setCurrentSyncId(existingId);
     setErrorMsg(null);
+    setSyncSuccessMsg(null);
     setCopiedSuccess(false);
 
     if (existingId) {
@@ -54,7 +60,7 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
     };
     window.addEventListener('idlestream-vote-sync-id', handleIncomingSync);
     return () => window.removeEventListener('idlestream-vote-sync-id', handleIncomingSync);
-  }, [isOpen, onSyncStateChanged]);
+  }, [isOpen, config.vote_sync_id, onSyncStateChanged]);
 
   const generateQr = async (id: string) => {
     try {
@@ -79,6 +85,7 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
     setErrorMsg(null);
     try {
       const newId = await voteSyncService.createNewPairingId(voteAccounts);
+      await setVoteSyncId(newId);
       setCurrentSyncId(newId);
       await generateQr(newId);
       onSyncStateChanged();
@@ -105,18 +112,42 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
       } catch (_) {}
     }
 
-    voteSyncService.setSyncId(extractedId);
-    setCurrentSyncId(extractedId);
-    await generateQr(extractedId);
-    setInputCode('');
-    onSyncStateChanged();
+    try {
+      await setVoteSyncId(extractedId);
+      setCurrentSyncId(extractedId);
+      await generateQr(extractedId);
+      setInputCode('');
+      onSyncStateChanged();
+    } catch (e) {
+      setErrorMsg('Erro ao conectar pareamento');
+    }
   };
 
-  const handleDisconnect = () => {
-    voteSyncService.setSyncId(null);
+  const handleDisconnect = async () => {
+    await setVoteSyncId(null);
     setCurrentSyncId(null);
     setQrDataUrl('');
     onSyncStateChanged();
+  };
+
+  const handleForceManualSync = async () => {
+    setIsManualSyncing(true);
+    setErrorMsg(null);
+    setSyncSuccessMsg(null);
+    try {
+      const res = await reconcileVotesWithCloud();
+      setSyncSuccessMsg(
+        res.updatedCount > 0
+          ? `${res.updatedCount} conta(s) sincronizada(s) da nuvem!`
+          : 'Timers de votos já estão 100% atualizados!'
+      );
+      onSyncStateChanged();
+      setTimeout(() => setSyncSuccessMsg(null), 3500);
+    } catch (e) {
+      setErrorMsg('Falha ao conectar com o servidor de sincronização');
+    } finally {
+      setIsManualSyncing(false);
+    }
   };
 
   const handleCopyId = () => {
@@ -213,6 +244,23 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
                   <Copy className="w-3.5 h-3.5" />
                   <span>{copiedSuccess ? 'Copiado!' : 'Copiar'}</span>
                 </button>
+              </div>
+
+              {/* Botão de Sincronização Manual com a Nuvem */}
+              <div className="w-full flex flex-col items-center gap-2">
+                <button
+                  onClick={handleForceManualSync}
+                  disabled={isManualSyncing}
+                  className="w-full py-2 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-200 text-xs font-medium flex items-center justify-center gap-2 transition cursor-pointer border border-neutral-700/60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${isManualSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isManualSyncing ? 'Sincronizando com a Nuvem...' : 'Sincronizar com a Nuvem Agora'}</span>
+                </button>
+                {syncSuccessMsg && (
+                  <span className="text-[11px] text-emerald-400 font-medium animate-in fade-in">
+                    {syncSuccessMsg}
+                  </span>
+                )}
               </div>
 
               <div className="w-full pt-2 border-t border-neutral-800 flex justify-between items-center">

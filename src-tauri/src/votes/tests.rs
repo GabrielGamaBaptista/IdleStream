@@ -210,3 +210,33 @@ fn test_config_store_vote_accounts_migration_and_persistence() {
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn test_vote_sync_id_persistence_in_config_store() {
+    let temp_dir = std::env::temp_dir().join(format!("idlestream_vote_sync_{}", uuid::Uuid::new_v4()));
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let config_file = temp_dir.join("config.json");
+
+    let store = ConfigStore::new_with_path(config_file);
+    let mut cfg = store.load();
+    assert_eq!(cfg.vote_sync_id, None);
+
+    cfg.vote_sync_id = Some("ff808181a09d98f701a1f0df4c444911".to_string());
+    store.save(&cfg).expect("Salvar vote_sync_id");
+
+    let reloaded = store.load();
+    assert_eq!(
+        reloaded.vote_sync_id.as_deref(),
+        Some("ff808181a09d98f701a1f0df4c444911")
+    );
+
+    // Testar remoção / despareamento
+    let mut cfg_unpair = reloaded;
+    cfg_unpair.vote_sync_id = None;
+    store.save(&cfg_unpair).expect("Salvar unpair");
+
+    let reloaded_unpaired = store.load();
+    assert_eq!(reloaded_unpaired.vote_sync_id, None);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}

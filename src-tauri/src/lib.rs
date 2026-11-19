@@ -307,6 +307,8 @@ pub fn run() {
             votes::commands::vote_mark_completed,
             votes::commands::vote_reset_timer,
             votes::commands::vote_test_notification,
+            votes::commands::vote_set_sync_id,
+            votes::commands::vote_get_sync_id,
             get_audit_logs,
             clear_audit_logs,
             write_audit_log,

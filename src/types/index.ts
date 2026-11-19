@@ -110,6 +110,7 @@ export interface AppConfig {
   settings: AppSettings;
   game_slots?: GameSlotConfig[];
   vote_accounts?: VoteAccountConfig[];
+  vote_sync_id?: string | null;
 }
 
 export interface RuntimeSessionState {
