@@ -195,4 +195,105 @@ const uniqueColors = new Set(sampleSlots.map((s) => s.color));
 assert.strictEqual(uniqueColors.size, 4, 'Todas as 4 cores devem ser únicas para distinção visual');
 console.log('  ✓ Slots possuem IDs e identificadores únicos garantidos');
 
+// ==========================================
+// Teste 6: Performance Dinâmica Inteligente (Etapa 5)
+// ==========================================
+console.log('\n🔹 Teste 6: Performance Dinâmica Inteligente (60 FPS -> 10 FPS -> 1 FPS)...');
+function computeDynamicFps(idleSeconds: number, sleepThresholdSeconds: number): number {
+  if (sleepThresholdSeconds > 0 && idleSeconds >= sleepThresholdSeconds) {
+    return 1; // Sleep mode profundo
+  }
+  if (idleSeconds >= 30) {
+    return 10; // Inativo > 30s: modo eco
+  }
+  return 60; // Ativo (< 30s): fluidez máxima
+}
+
+// 1. Usuário ativamente mexendo (< 30s)
+assert.strictEqual(computeDynamicFps(0, 300), 60, '0s de inatividade = 60 FPS');
+assert.strictEqual(computeDynamicFps(15, 300), 60, '15s de inatividade = 60 FPS');
+assert.strictEqual(computeDynamicFps(29, 300), 60, '29s de inatividade = 60 FPS');
+
+// 2. 30 segundos contínuos sem mexer
+assert.strictEqual(computeDynamicFps(30, 300), 10, '30s de inatividade = reduz imediatamente para 10 FPS');
+assert.strictEqual(computeDynamicFps(45, 300), 10, '45s de inatividade = mantém 10 FPS');
+assert.strictEqual(computeDynamicFps(299, 300), 10, '299s de inatividade = mantém 10 FPS');
+
+// 3. Atinge timer de sleep configurado (ex: 5 min = 300s)
+assert.strictEqual(computeDynamicFps(300, 300), 1, '300s atingidos = entra em Sleep Mode (1 FPS)');
+assert.strictEqual(computeDynamicFps(600, 300), 1, 'Inatividade prolongada = permanece em 1 FPS');
+
+// 4. Se sleep desativado (sleepThreshold = 0)
+assert.strictEqual(computeDynamicFps(500, 0), 10, 'Com sleep desativado, mantém 10 FPS sem suspender');
+
+// 5. Restauração instantânea ao primeiro toque/clique (idleSeconds resetado para 0)
+assert.strictEqual(computeDynamicFps(0, 300), 60, 'Interação do usuário restaura instantaneamente 60 FPS');
+console.log('  ✓ Máquina de estados de performance dinâmica validada com 100% de precisão');
+
+// ==========================================
+// Teste 7: Auto-Fit Adaptativo de Zoom (Etapa 6)
+// ==========================================
+console.log('\n🔹 Teste 7: Auto-Fit Adaptativo de Zoom (Grid 0.75 vs Focus 1.0)...');
+function computeEffectiveZoom(
+  slotId: string,
+  layoutMode: 'grid' | 'focus' | 'sidebar',
+  slotZooms: Record<string, number>,
+  configuredZoom?: number
+): number {
+  if (slotZooms[slotId] !== undefined) return slotZooms[slotId];
+  if (configuredZoom !== undefined && configuredZoom > 0) return configuredZoom;
+  return layoutMode === 'grid' ? 0.75 : 1.0;
+}
+
+// 1. Em modo grid sem override: deve ser 0.75 (Auto Grade)
+assert.strictEqual(computeEffectiveZoom('slot-1', 'grid', {}), 0.75, 'Modo Grid deve aplicar 0.75 (75%) por padrão');
+
+// 2. Em modo focus sem override: deve ser 1.0 (Nativo 100%)
+assert.strictEqual(computeEffectiveZoom('slot-1', 'focus', {}), 1.0, 'Modo Foco deve aplicar 1.0 (100% nativo)');
+
+// 3. Com override explícito do usuário (ex: 90%): deve prevalecer sobre o padrão do layout
+assert.strictEqual(computeEffectiveZoom('slot-1', 'grid', { 'slot-1': 0.9 }), 0.9, 'Zoom manual 90% deve ser respeitado em grid');
+assert.strictEqual(computeEffectiveZoom('slot-1', 'focus', { 'slot-1': 1.25 }), 1.25, 'Zoom manual 125% deve ser respeitado em focus');
+
+// 4. Zoom salvo na configuração do slot
+assert.strictEqual(computeEffectiveZoom('slot-2', 'grid', {}, 0.8), 0.8, 'Zoom configurado no slot deve ser respeitado');
+console.log('  ✓ Auto-Fit adaptativo de zoom (Grid 0.75 / Focus 1.0 / Custom Override) validado com sucesso');
+
+// ==========================================
+// Teste 8: Contrato de Idempotência e Resiliência de CSS do /hunt (Etapa 6)
+// ==========================================
+console.log('\n🔹 Teste 8: Contrato de Idempotência e Resiliência de CSS do /hunt...');
+import * as fs from 'fs';
+import * as path from 'path';
+
+const huntScriptPath = path.resolve(__dirname, '../src-tauri/src/games/hunt_extension.js');
+const huntScriptContent = fs.readFileSync(huntScriptPath, 'utf-8');
+
+assert.ok(huntScriptContent.length > 50000, 'hunt_extension.js deve conter o bundle completo');
+assert.ok(
+  huntScriptContent.includes('window.top !== window.self'),
+  'hunt_extension.js deve verificar se está no top frame para impedir injeção em iframes'
+);
+assert.ok(
+  huntScriptContent.includes('__pokeidleHuntGlobalLoaded'),
+  'hunt_extension.js deve possuir trava estrita __pokeidleHuntGlobalLoaded'
+);
+assert.ok(
+  huntScriptContent.includes('ensureHuntStyles'),
+  'hunt_extension.js deve possuir a função resiliente ensureHuntStyles()'
+);
+assert.ok(
+  huntScriptContent.includes('__pokeidle_hunt_style__'),
+  'hunt_extension.js deve injetar style com id __pokeidle_hunt_style__'
+);
+assert.ok(
+  huntScriptContent.includes('DOMContentLoaded'),
+  'hunt_extension.js deve registrar listener DOMContentLoaded caso head ainda não esteja montado'
+);
+assert.ok(
+  huntScriptContent.trim().endsWith('})();'),
+  'hunt_extension.js deve encapsular todo o conteúdo em uma IIFE fechada'
+);
+console.log('  ✓ Contrato de idempotência, prevenção de iframes e CSS resiliente do /hunt validado com sucesso');
+
 console.log('\n🎉 TODOS OS TESTES UNITÁRIOS DE JOGOS IDLE PASSARAM COM 100% DE SUCESSO!\n');

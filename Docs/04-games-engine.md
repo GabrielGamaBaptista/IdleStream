@@ -16,9 +16,9 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[06-frontend]]"
 status: "completed"
-version: "4.0.0"
-last_updated: "2026-11-10"
-summary: "Documentação do ecossistema de jogos ociosos (PokeIdle) do IdleStream: orquestração de Child Webviews nativas no Tauri v2, layouts geométricos dinâmicos, motor anti-sleep JS de 6 camadas, monitor de inatividade com reporte de toque e injeção da extensão de caça /hunt."
+version: "4.2.0"
+last_updated: "2026-11-18"
+summary: "Documentação do ecossistema de jogos ociosos (PokeIdle) do IdleStream: orquestração de Child Webviews nativas no Tauri v2, layouts geométricos dinâmicos com auto-fit adaptativo, performance dinâmica automatizada (60 -> 10 -> 1 FPS), motor anti-sleep JS de 6 camadas e extensão /hunt com injeção idempotente e CSS resiliente."
 ---
 
 # Game Workspace e Motor Anti-Sleep (Child Webviews, Anti-Suspension & /hunt)
@@ -193,22 +193,44 @@ Interage diretamente com o estado interno do PokeIdle (`window.appSettings` ou c
 - Desativa animações de batalha e transições de tela.
 - Reduz a resolução interna de renderização do mapa.
 
-### 4.3 Monitor de Inatividade Real e Proteção Anti-Sleep (`GameWorkspace.tsx`)
-A versão 3.2.8 corrigiu a armadilha de falso-positivo de inatividade que forçava a tela de sleep enquanto o usuário estava ativamente jogando:
-- **Resolução de Falso Sleep via `Math.min`**: As WebViews dos jogos operam em instâncias isoladas (Child Webviews no desktop e WebViews nativas no Android). Eventos de clique ou toque disparados diretamente dentro dos jogos não alcançam a árvore DOM do React. Anteriormente, `Math.max(appIdleSec, systemIdleSec)` considerava o app inativo mesmo enquanto o SO ou as WebViews registravam cliques. O cálculo foi corrigido para `Math.min(appIdleSec, systemIdleSec)`, garantindo que apenas a ausência total de interação em ambas as esferas acione o modo de suspensão.
-- **Ponte de Reporte de Atividade (`anti_sleep.js` e `IdleStreamSlotBridge`)**: Os scripts injetados nos slots escutam eventos de `mousedown`, `touchstart`, `keydown` e `wheel`, notificando `window.IdleStreamSlotBridge.reportActivity()` no Android e `window.__onUserActivity()` no React.
-- **Integração Win32 e Android**: No Windows, `game_get_system_idle_seconds` via `GetLastInputInfo` afere os milissegundos globais do usuário. No Android, `MainActivity.dispatchTouchEvent` zera o temporizador instantaneamente a cada toque físico na tela.
+### 4.3 Performance Dinâmica Automatizada & Fim dos Botões Manuais (v4.2.0)
+Na versão **4.2.0**, os seletores manuais estáticos de 60/30/10 FPS foram completamente removidos da barra de ferramentas, dando lugar a uma **máquina de estados de performance dinâmica 100% autônoma**:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ativo_60FPS: Interação Humana (Mouse / Toque / Tecla)
+    Ativo_60FPS --> Eco_10FPS: 30s sem Interação (Super Economia)
+    Eco_10FPS --> Ativo_60FPS: Qualquer Toque / Movimento
+    Eco_10FPS --> Sleep_1FPS: Timeout Inativo Atingido (ex: 5 min)
+    Sleep_1FPS --> Ativo_60FPS: Qualquer Toque / Movimento
+```
+
+- **60 FPS (Máxima Fluidez)**: Engajado no primeiro milissegundo de qualquer interação detectada no aplicativo ou dentro das child WebViews dos jogos.
+- **10 FPS (Modo Super Economia)**: Se passarem **30 segundos contínuos** sem nenhuma interação humana, a taxa é automaticamente reduzida para 10 FPS, poupando até 85% de CPU/GPU enquanto a caça e batalhas continuam ocorrendo.
+- **1 FPS (Modo Sleep)**: Ao atingir o tempo configurado pelo usuário (ex: 5 minutos), a tela é escurecida com overlay protetor e os frames caem para 1 FPS para máxima conservação de energia e resfriamento térmico.
+- **Auto-Fit Adaptativo de Zoom (Grid 4 Telas vs Focus 1 Tela)**:
+  - **Modo Grid (2x2)**: Aplica zoom adaptativo automático de **75% (`0.75`)** em cada slot. Isso garante que a interface inteira do PokeIdle (mapa, barra lateral, botões de ação e status) caiba perfeitamente no quadrante sem cortes ou barras de rolagem excessivas.
+  - **Modo Focus / Imersivo**: Ao expandir um slot individual, a escala retorna instantaneamente para **100% (`1.0`)** nativo, proporcionando fidelidade visual e nitidez idêntica à de um navegador desktop full-window.
 
 ---
 
-## 5. Extensão de Caça Embutida (`hunt_extension.js`)
+## 5. Extensão de Caça Embutida (`hunt_extension.js`) e Correção Definitiva (v4.2.0)
 
-Para URLs que contenham o domínio `pokeidle.io`, o gerenciador injeta automaticamente a extensão proprietária `/hunt` (arquivo embutido em compilação via `include_str!("hunt_extension.js")`):
+Para URLs contendo `pokeidle.io`, o gerenciador injeta automaticamente a extensão proprietária `/hunt`. A versão **4.2.0** resolveu em definitivo os problemas visuais de botões duplicados e caixas pretas/brancas sem estilo:
 
-### Recursos da Extensão:
-- **Tabelas de Eficácia Elemental**: Matriz completa de vantagens e fraquezas de tipos Pokémon (Geração 1 a 9).
-- **Mapeamento de Rotas Outland**: Banco de dados com probabilidades de spawn, itens raros e níveis de bosses por região.
-- **Seletor Inteligente de Alvos**: Algoritmo que calcula o time de ataque ideal contra o Pokémon selvagem encontrado para maximizar a velocidade de captura e ganho de Pokédollars.
+### 5.1 Causa Raiz e Solução da Renderização:
+1. **Encapsulamento IIFE e Idempotência Global Estrita**:
+   - Todo o script de 18.000 linhas foi encapsulado em uma IIFE com proteções de topo:
+     ```javascript
+     if (window.top !== window.self) return; // NUNCA injeta em iframes internos
+     if (window.__pokeidleHuntGlobalLoaded) return; // Trava contra injeções duplicadas
+     window.__pokeidleHuntGlobalLoaded = true;
+     ```
+2. **Injeção de CSS Resiliente (`ensureHuntStyles`)**:
+   - Em `document_start`, o elemento `<head>` do DOM pode ser nulo. A função `ensureHuntStyles()` valida a disponibilidade do `<head>` e, caso nulo, agenda a injeção automaticamente no evento `DOMContentLoaded`.
+   - Limpeza preventiva de nós DOM: antes de montar qualquer painel ou barra (`.pih-barra`, `.pih-painel`), remove instâncias preexistentes para impedir botões duplicados.
+3. **Eliminação de Injeções Redundantes no Android (`GameSlotManager.kt`)**:
+   - Removidas as chamadas redundantes em `onPageStarted` e guardada a injeção em `onPageFinished` para evitar execuções concorrentes.
 
 ---
 
@@ -216,9 +238,9 @@ Para URLs que contenham o domínio `pokeidle.io`, o gerenciador injeta automatic
 
 O componente React [`src/components/games/GameWorkspace.tsx`](file:///C:/Projetos/Chatter/src/components/games/GameWorkspace.tsx) provê o painel de comando do hub:
 - **Seletor de Layout**: Botões rápidos para alternar entre Grid 2x2, Focus Single e Focus Sidebar.
-- **Barra de Controle de FPS**: Seleção em um clique entre 60 FPS, 30 FPS e 10 FPS (persistida no `localStorage`).
-- **Escala de Zoom**: Controle de zoom de 50% a 200% por slot com atalho para reset (100%).
-- **Modo Imersivo (Fullscreen)**: Oculta a barra lateral e o cabeçalho do IdleStream, permitindo foco total nos 4 quadrantes de jogo (saída via tecla `ESC`).
+- **Automação Inteligente de FPS**: Badge informativo dinâmico indicando o patamar atual (60 FPS Ativo / 10 FPS Eco / 1 FPS Sleep) sem botões manuais desnecessários.
+- **Escala de Zoom Adaptativa**: Auto-fit inteligente com override manual proporcional (50% a 200%) com atalho para reset.
+- **Modo Imersivo (Fullscreen)**: Oculta o cabeçalho do IdleStream, permitindo foco total nos 4 quadrantes de jogo (saída via tecla `ESC`).
 
 ---
 

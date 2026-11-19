@@ -75,6 +75,7 @@ impl GameLayoutManager {
 
     /// Abre ou inicia uma conta de jogo idle em uma Child Webview
     pub async fn start_game_slot(&self, slot_id: &str, url: &str, zoom: Option<f64>) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "Iniciando WebView do slot [{}] com URL: {}", slot_id, url);
         #[cfg(desktop)]
         {
             let profile_dir = self.get_slot_profile_dir(slot_id);
@@ -146,6 +147,7 @@ impl GameLayoutManager {
 
     /// Para um slot de jogo e destrói sua Child Webview
     pub async fn stop_game_slot(&self, slot_id: &str) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "Encerrando WebView do slot [{}]", slot_id);
         #[cfg(desktop)]
         if let Some(wv) = self.app.get_webview(slot_id) {
             let _ = wv.close();
@@ -178,6 +180,8 @@ impl GameLayoutManager {
         // Salvar rect e modo atual
         *self.current_rect.lock().await = Some(rect.clone());
         *self.current_layout.lock().await = mode.clone();
+
+        crate::audit_log!("GAMES", "INFO", "Aplicando layout dos slots: {:?} ({} ativo(s))", mode, slot_keys.len());
 
         if slot_keys.is_empty() {
             return Ok(());
@@ -301,6 +305,7 @@ impl GameLayoutManager {
 
     /// Recarrega a página de um slot específico e reaplica as configurações de performance
     pub async fn reload_slot(&self, slot_id: &str) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "Recarregando WebView do slot [{}]", slot_id);
         #[cfg(desktop)]
         if let Some(wv) = self.app.get_webview(slot_id) {
             let current_fps = *self.current_fps.lock().await;
@@ -320,7 +325,6 @@ impl GameLayoutManager {
         #[cfg(desktop)]
         if let Some(wv) = self.app.get_webview(slot_id) {
             let _ = wv.set_zoom(zoom);
-            let _ = wv.eval(&format!("document.body.style.zoom = '{:.2}';", zoom));
         }
         Ok(())
     }
@@ -350,6 +354,7 @@ impl GameLayoutManager {
 
     /// Altera o limite de FPS (60, 30 ou 10 Super Economia) em todas as child webviews ativas
     pub async fn set_fps(&self, fps: u32) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "Ajustando taxa de quadros (FPS) para: {} FPS", fps);
         *self.current_fps.lock().await = fps;
         *self.eco_mode.lock().await = fps < 60;
 

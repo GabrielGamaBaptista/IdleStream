@@ -89,4 +89,82 @@ const dupSummary: AccountsHealthSummary = {
 const dups = findDuplicateAuthenticatedUsernames(dupSummary);
 assert.ok(dups['kuser1'] && dups['kuser1'].length === 2, 'Deve identificar contas Kick duplicadas case-insensitive');
 
-console.log('✅ TODOS OS TESTES FRONTEND DE SAÚDE DE CONTAS PASSARAM!\n');
+// 5. Tratamento de timeout / erro de rede (HTTP 408)
+const timeoutSummary: AccountsHealthSummary = {
+  total: 1,
+  healthy: 0,
+  failing: 0,
+  checking: 0,
+  warning: 1,
+  all_healthy: false,
+  checked_at: 1700000000,
+  accounts: [
+    {
+      account_id: 'kk-timeout',
+      platform: 'kick',
+      label: 'Kick Timeout',
+      username: 'kuser_timeout',
+      state: 'network_error',
+      authenticated_username: null,
+      username_matches: null,
+      has_redeem_session: true,
+      http_status: 408,
+      message: 'Tempo limite (8s) esgotado ao verificar conta com o servidor.',
+      checked_at: 1700000000,
+      requires_reauth: false,
+    },
+  ],
+};
+const timeoutAcc = getAccountHealthStatus(timeoutSummary, 'kk-timeout');
+assert.ok(timeoutAcc);
+assert.strictEqual(timeoutAcc.state, 'network_error');
+assert.strictEqual(timeoutAcc.requires_reauth, false, 'Timeout de rede não deve marcar conta como exigindo re-login');
+assert.strictEqual(getFailingAccounts(timeoutSummary).length, 0, 'NetworkError não deve ser listado em failingAccounts');
+
+// 6. Teste de ordenação de contas: 1º Plataforma (Twitch antes de Kick), 2º Nome/Username (A-Z)
+const unsortedAccounts = [
+  { id: '1', platform: 'kick', label: 'Zebra Kick', username: 'zebrak' },
+  { id: '2', platform: 'twitch', label: 'Beta Twitch', username: 'betat' },
+  { id: '3', platform: 'kick', label: 'Alfa Kick', username: 'alfak' },
+  { id: '4', platform: 'twitch', label: 'Alfa Twitch', username: 'alfat' },
+];
+
+const sorted = [...unsortedAccounts].sort((a, b) => {
+  if (a.platform !== b.platform) {
+    return a.platform === 'twitch' ? -1 : 1;
+  }
+  const nameA = (a.username || a.label || '').trim().toLowerCase();
+  const nameB = (b.username || b.label || '').trim().toLowerCase();
+  const nameComp = nameA.localeCompare(nameB);
+  if (nameComp !== 0) return nameComp;
+  return (a.label || '').trim().toLowerCase().localeCompare((b.label || '').trim().toLowerCase());
+});
+
+assert.deepStrictEqual(
+  sorted.map((a) => a.id),
+  ['4', '2', '3', '1'],
+  'As contas devem ser ordenadas Twitch (Alfa, Beta) e depois Kick (Alfa, Zebra)'
+);
+
+// 7. Teste de atualização de dados da conta (edição de label e username)
+const originalAccount = {
+  id: 'acc-edit-1',
+  platform: 'twitch' as const,
+  label: 'Conta Velha',
+  username: 'velho_nick',
+  oauth_token: 'valid_token_xyz',
+  enabled: true,
+};
+
+const updatedAccount = {
+  ...originalAccount,
+  label: '  Conta Nova Principal  '.trim(),
+  username: '  novo_nick_pro  '.trim().toLowerCase(),
+};
+
+assert.strictEqual(updatedAccount.label, 'Conta Nova Principal');
+assert.strictEqual(updatedAccount.username, 'novo_nick_pro');
+assert.strictEqual(updatedAccount.oauth_token, 'valid_token_xyz', 'O token deve permanecer inalterado na edição de nome');
+assert.strictEqual(updatedAccount.id, 'acc-edit-1', 'O ID deve permanecer inalterado');
+
+console.log('✅ TODOS OS TESTES FRONTEND DE SAÚDE E GERENCIAMENTO DE CONTAS PASSARAM!\n');

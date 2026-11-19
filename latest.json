@@ -1,11 +1,11 @@
 {
-  "version": "4.1.3",
-  "notes": "IdleStream v4.1.3 — Otimização extrema de bateria no Android (redução de ~60-75% de consumo em segundo plano): migração para WIFI_MODE_FULL (habilita 802.11 power-save sem desconectar WebSockets), desativação do DSP de áudio contínuo mobile, congelamento da React WebView e timers frontend com a tela apagada (pauseTimers/Page Visibility), e espaçamento inteligente de watchdogs e alarmes RTC.",
-  "pub_date": "2026-11-16T23:10:00Z",
+  "version": "4.2.0",
+  "notes": "IdleStream v4.2.0 — Auditoria em disco rotativa de 6h (0 MB em RAM), performance dinâmica automática nos jogos (60/10/1 FPS), correção visual e de layout do PokeIdle e /hunt (auto-fit e CSS resiliente), sincronização bidirecional de votos PC/Celular via QR Code, badge Farmando vs Ao Vivo, ordenação de lives por pontos e edição de contas.",
+  "pub_date": "2026-11-18T23:58:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjFFWFFIZUNvYjd0bVVQcGgvallON2FRZkZiVENrY0kwajFHY2lqc1dTUk9pb0xFaTludFhuQUZWWWsrTjRBVUNqd2VWZDRlWVdscmkyTEMwMVdZUkEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODcxMTc0CWZpbGU6SWRsZVN0cmVhbV80LjEuM194NjQtc2V0dXAuZXhlCXZlcnNpb246NC4xLjMKNFJYaHRueGJJOFR3Rll2cEU0ZjhQblBUeEhvUzBxVWZ0V1hFTWxRODZiNGZsNmJjSkdmU1ZZNTNNYmJwUXRDUDlTb2JFS2xSWWlOLzFpSjkxTWxWREE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.1.3/IdleStream_4.1.3_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjVTSTZiVEwybjR4TXFkNGhhTzRPbUVnRERLWVRPTUQ0VEZUMTF4SkdRQVBRMmhXTE9wR0FHZllCTlFyWFRRcmlRMDVkcmVRei83Z1I2aVJjalhnN1FNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MDQ2Mjg2CWZpbGU6SWRsZVN0cmVhbV80LjIuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjAKNFUxbzh6SzFCRDc0cUZEY0dQYUxDcjdDK1ZXZDlnblBEazNTUkh1WUFqSzlEdnBzNGhqRHcxZDNjU1Q4UWpzRTJhSDdjbFB2SUtnMWp0TERlQjQ2QlE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.0/IdleStream_4.2.0_x64-setup.exe"
     }
   }
 }

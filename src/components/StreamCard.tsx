@@ -54,6 +54,19 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   const isTwitch = stream.platform === 'twitch';
   const isKick = stream.platform === 'kick';
 
+  const isFarming = Boolean(
+    (status.is_farming || isConnected) &&
+    (status.is_farming ||
+      status.message?.toLowerCase().includes('minerando') ||
+      status.message?.toLowerCase().includes('baú') ||
+      isConnected)
+  );
+
+  const isLiveOnly = Boolean(
+    !isFarming &&
+    (status.is_live || status.message?.toLowerCase().includes('fila') || status.message?.toLowerCase().includes('vigília'))
+  );
+
   const [uptimeSecs, setUptimeSecs] = useState<number>(status.uptime_seconds || 0);
 
   useEffect(() => {
@@ -84,8 +97,10 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
   return (
     <div
       className={`relative rounded-xl border p-4 transition flex flex-col justify-between ${
-        isConnected
-          ? 'bg-neutral-900/90 border-neutral-700 shadow-lg shadow-black/40'
+        isFarming
+          ? 'bg-neutral-900/90 border-emerald-600/60 shadow-lg shadow-emerald-950/20 ring-1 ring-emerald-500/30'
+          : isLiveOnly
+          ? 'bg-neutral-900/80 border-neutral-700/80 shadow-md'
           : isStandby
           ? 'bg-neutral-900/50 border-indigo-900/50'
           : 'bg-neutral-900/30 border-neutral-800/80 hover:border-neutral-700/60'
@@ -113,44 +128,58 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
             )}
           </div>
 
-          {/* Status Indicator */}
+          {/* Status Indicator: Farmando (Pulsante) vs Ao Vivo vs Vigília vs Conectando/Erro/Parada */}
           <div className="flex items-center gap-1.5">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                isConnected
-                  ? 'bg-emerald-400'
-                  : isStandby
-                  ? 'bg-indigo-400'
-                  : isConnecting
-                  ? 'bg-amber-400'
-                  : isError
-                  ? 'bg-rose-500'
-                  : 'bg-neutral-600'
-              }`}
-            />
-            <span
-              className={`text-xs font-medium ${
-                isConnected
-                  ? 'text-emerald-400 font-semibold'
-                  : isStandby
-                  ? 'text-indigo-300 flex items-center gap-1'
-                  : isConnecting
-                  ? 'text-amber-400'
-                  : isError
-                  ? 'text-rose-400'
-                  : 'text-neutral-500'
-              }`}
-            >
-              {isConnected
-                ? 'Ao Vivo'
-                : isStandby
-                ? 'Vigília (Offline)'
-                : isConnecting
-                ? 'Conectando...'
-                : isError
-                ? 'Erro'
-                : 'Parada'}
-            </span>
+            {isFarming ? (
+              <span
+                className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 flex items-center gap-1.5 shadow-sm shadow-emerald-500/20 animate-pulse"
+                title="Contando pontos ativamente no canal"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-xs shadow-emerald-400" />
+                <span>Farmando</span>
+              </span>
+            ) : isLiveOnly ? (
+              <span
+                className="px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center gap-1.5"
+                title="Canal está ao vivo (aguardando na fila de prioridade para minerar)"
+              >
+                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                <span>Ao Vivo</span>
+              </span>
+            ) : (
+              <>
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    isConnecting
+                      ? 'bg-amber-400'
+                      : isStandby
+                      ? 'bg-indigo-400'
+                      : isError
+                      ? 'bg-rose-500'
+                      : 'bg-neutral-600'
+                  }`}
+                />
+                <span
+                  className={`text-xs font-medium ${
+                    isConnecting
+                      ? 'text-amber-400'
+                      : isStandby
+                      ? 'text-indigo-300 flex items-center gap-1'
+                      : isError
+                      ? 'text-rose-400'
+                      : 'text-neutral-500'
+                  }`}
+                >
+                  {isConnecting
+                    ? 'Conectando...'
+                    : isStandby
+                    ? 'Vigília (Offline)'
+                    : isError
+                    ? 'Erro'
+                    : 'Parada'}
+                </span>
+              </>
+            )}
           </div>
         </div>
 

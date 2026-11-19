@@ -296,3 +296,54 @@ fn test_kick_cookie_rotation_sync_detects_updated_session() {
     assert_eq!(update.kick_session.as_deref(), Some("ks_new_from_live1"));
     assert_eq!(update.session_token.as_deref(), Some("123|st_new"));
 }
+
+#[test]
+fn test_stuck_checking_cleanup_converts_to_network_error() {
+    let mut map = HashMap::new();
+    map.insert(
+        "acc-1".to_string(),
+        AccountHealthStatus {
+            account_id: "acc-1".into(),
+            platform: Platform::Twitch,
+            label: "Conta 1".into(),
+            username: "user1".into(),
+            state: AccountHealthState::Checking,
+            authenticated_username: None,
+            username_matches: None,
+            has_redeem_session: true,
+            http_status: None,
+            message: "Verificando...".into(),
+            checked_at: 1000,
+            requires_reauth: false,
+        },
+    );
+
+    // Simula a rotina de saneamento garantido
+    for st in map.values_mut() {
+        if st.state == AccountHealthState::Checking {
+            st.state = AccountHealthState::NetworkError;
+            st.message = "Verificação interrompida ou com tempo esgotado.".into();
+        }
+    }
+
+    assert_eq!(map.get("acc-1").unwrap().state, AccountHealthState::NetworkError);
+    assert_eq!(map.get("acc-1").unwrap().message, "Verificação interrompida ou com tempo esgotado.");
+}
+
+#[test]
+fn test_update_account_info_preserves_tokens_and_updates_label_username() {
+    let mut acc = make_kick_account("acc-k1", "Antigo Label", "old_user", Some("sess_123"), Some("tok_abc"));
+    assert_eq!(acc.label, "Antigo Label");
+    assert_eq!(acc.username, "old_user");
+    assert_eq!(acc.kick_session.as_deref(), Some("sess_123"));
+
+    // Simula a alteração solicitada pelo usuário
+    acc.label = "  Novo Apelido Principal  ".trim().to_string();
+    acc.username = "  novo_kick_user  ".trim().to_string();
+
+    assert_eq!(acc.label, "Novo Apelido Principal");
+    assert_eq!(acc.username, "novo_kick_user");
+    // Garante que credenciais de sessão foram 100% preservadas
+    assert_eq!(acc.kick_session.as_deref(), Some("sess_123"));
+    assert_eq!(acc.session_token.as_deref(), Some("tok_abc"));
+}

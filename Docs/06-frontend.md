@@ -22,11 +22,13 @@ wiki_links:
   - "[[05-backend-core]]"
   - "[[07-multiplataforma-android]]"
   - "[[09-sistema-de-votos]]"
+  - "[[10-sessoes-resgates-e-verificador]]"
   - "[[11-resiliencia-segundo-plano]]"
+  - "[[12-sistema-de-auditoria]]"
 status: "completed"
-version: "4.1.2"
-last_updated: "2026-11-12"
-summary: "Especificação completa da interface visual do IdleStream: arquitetura da store global com Zustand 5, ciclo de inicialização init(), catálogo detalhado de componentes React 19 e camada de serviços híbridos Desktop/Mobile."
+version: "4.2.0"
+last_updated: "2026-11-18"
+summary: "Especificação completa da interface visual do IdleStream v4.2.0: arquitetura da store global Zustand 5, Header adaptativo, badge Farmando vs Ao Vivo, ordenação por pontos, VoteSyncModal com QR Code, AuditLogViewer e serviços híbridos Desktop/Mobile."
 ---
 
 # Camada Frontend: React 19, Zustand Store e Catálogo de Componentes UI
@@ -121,24 +123,45 @@ graph TB
 Orquestrador central de layout. Gerencia a visibilidade de modais, escuta atalhos de teclado globais (como `ESC` para sair do modo imersivo de tela cheia em jogos) e alterna entre a visão de abas.
 
 #### `Header.tsx`
-Barra de status superior agregada:
-- **Estatísticas em Tempo Real**: Contadores visuais com a quantidade de transmissões ativas (`Connected`), em espera (`Standby`) e estimativa combinada de memória RAM consumida (~1 MB por live).
-- **Ações Globais**: Botões de um clique `"Ativar Todas"` (`startAll`) e `"Parar Todas"` (`stopAll`).
-- **Badge de Atualização de Versão**: Exibe uma pílula destacada quando uma nova versão (`v3.2.x`) for detectada no GitHub ou servidor de update.
+Barra de status superior agregada e adaptativa (v4.2.0):
+- **Visibilidade Inteligente de Recursos**: O card central com métricas de transmissões (`Ao Vivo`, `Modo Vigília` e `RAM Estimada ~X MB`) é renderizado **estritamente na aba Streams** (`activeTab === 'streams'`).
+- **Navegação Despoluída**: Nas abas Jogos, Votos, Contas e Configurações, o card de streams é omitido, mantendo apenas as ações globais essenciais (**"Ativar Todas"**, **"Parar Todas"**), indicador de saúde e o atalho de **Tela Cheia (Fullscreen)**.
+- **Badge de Atualização**: Exibe a versão detectada e permite início do download do update em um clique.
 
 #### `Sidebar.tsx` & `BottomNav.tsx`
 - **`Sidebar.tsx` (Desktop)**: Barra lateral fixa à esquerda com ícones Lucide para Streams, Idle Games, **Votos** (com contador pulsante de contas prontas), Contas e Configurações.
 - **`BottomNav.tsx` (Mobile Android)**: Barra de navegação inferior ergonomicamente posicionada para alcance do polegar em dispositivos móveis, incluindo atalho e badge de contas prontas em **Votos**.
 
-#### `VoteWorkspace.tsx` & `votePlatformService.ts`
-- Gerencia as 4 contas de votação diária (`GGB2006`, `GGB2006_2`, `GGB2006_3`, `GGB2006_4`) com ticker em tempo real (`HH:MM:SS`), barra de progresso de **24h 01m** (`86.460s`), edição de vínculos com os slots do `Idle Games` e abertura sob demanda da WebView restrita ao `topidle.com` (destruída automaticamente ao fechar ou trocar de aba).
-
 #### `StreamCard.tsx`
-O componente atômico mais complexo do sistema:
-- **Badge de Plataforma**: Identificador colorido para Twitch (roxo) ou Kick (verde).
-- **Indicador Dinâmico de Live**: Animação de pulso verde quando online, exibindo contador incremental de horas/minutos de live assistida.
-- **Seletor Multi-Conta de Pontos**: Menu suspenso com abas individuais para cada conta vinculada à transmissão, exibindo o saldo de pontos formatado de cada perfil.
-- **Botão de Resgate Rápido (`openStreamRedeem`)**: Abre diretamente a janela do chat web da Twitch ou Kick já autenticada com os cookies da conta selecionada para resgate manual imediato de recompensas do streamer.
+O componente atômico de visualização de streams:
+- **Diferenciação Visual "Farmando" vs "Ao Vivo" (v4.2.0)**:
+  - **Selo "Farmando"**: Pílula esmeralda pulsante exibida quando a live está ativa **E** alocada no slot prioritário de pontuação do minerador (`ActiveMining`), pontuando efetivamente em segundo plano.
+  - **Selo "Ao Vivo"**: Pílula indicando que o streamer está transmitindo, mas o canal está em lista de espera/vigília aguardando liberação de vaga concorrente.
+  - **Selo "Vigília"**: Exibido para canais offline com consumo de 0 MB de RAM.
+- **Ordenação Flexível por Saldo de Pontos**:
+  - Seletor de ordenação no topo da aba: *Mais Pontos*, *Menos Pontos*, *Ordem Padrão*, *A-Z*.
+  - Utilitário numérico `parsePointsNumber` que converte formatações de string (`"1.600"`, `"1,6 mil"`, `"250 pts"`) em números inteiros para ordenação correta.
+- **Seletor Multi-Conta de Pontos & Resgate Rápido**: Abas para alternar a conta exibida no card e botão `openStreamRedeem` para abrir o chat popout autenticado.
+
+#### `AccountManager.tsx` & `EditAccountModal.tsx` (v4.2.0)
+- **Ordenação Estruturada por Plataforma e Nome**: Agrupa primeiro todas as contas da Twitch e em seguida todas as contas da Kick, ordenadas alfabeticamente por nome.
+- **Edição de Identificação sem Perda de Sessão**: Modal dedicado para alterar rótulo e username da conta via comando `update_account_info`, preservando rigorosamente tokens OAuth, cookies nativos e sessões ativas.
+
+#### `VoteWorkspace.tsx` & `VoteSyncModal.tsx` (v4.2.0)
+- **Sincronização Bidirecional PC $\leftrightarrow$ Celular via QR Code**:
+  - Botão de pareamento no topo que abre o `VoteSyncModal` com QR Code gerado em alta definição (`qrcode`).
+  - **Totalmente Automatizado & Sem Botões Manuais de Atualização**:
+    - Ao abrir no Celular, busca automaticamente votos recentes efetuados no Computador.
+    - Ao abrir no Computador, busca automaticamente votos recentes efetuados no Celular.
+    - Ao registrar um voto em qualquer aparelho, despacha o payload de forma assíncrona e não-bloqueante.
+  - Zero impacto em memória RAM e zero tráfego de rede quando não pareado.
+
+#### `AuditLogViewer.tsx` (Aba Configurações — v4.2.0)
+- Componente de terminal monospace integrado para leitura dos logs rotativos de 6 horas em disco:
+  - Filtros por categoria (`TODAS`, `ACCOUNTS`, `LIVES`, `GAMES`, `VOTES`, `SYSTEM`).
+  - Filtros por nível (`TODOS`, `INFO`, `WARN`, `ERROR`).
+  - Campo de busca instantânea nos registros em disco.
+  - Ações para **"Copiar Relatório Completo"** e **"Limpar Histórico do Disco"** com confirmação de segurança.
 
 #### `BatteryBanner.tsx`
 Componente exclusivo do ambiente mobile Android:

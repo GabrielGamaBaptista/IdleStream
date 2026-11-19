@@ -317,6 +317,8 @@ pub struct StreamRuntimeStatus {
     pub stream_id: String,
     pub status: StatusKind,
     pub is_live: bool,
+    #[serde(default)]
+    pub is_farming: bool,
     pub message: Option<String>,
     pub uptime_seconds: u64,
     pub estimated_ram_mb: u32,

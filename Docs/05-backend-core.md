@@ -20,11 +20,13 @@ wiki_links:
   - "[[04-games-engine]]"
   - "[[06-frontend]]"
   - "[[09-sistema-de-votos]]"
+  - "[[10-sessoes-resgates-e-verificador]]"
   - "[[11-resiliencia-segundo-plano]]"
+  - "[[12-sistema-de-auditoria]]"
 status: "completed"
-version: "4.1.2"
-last_updated: "2026-11-12"
-summary: "Referência completa do Rust Core: modelo de dados e store tolerante a falhas, ciclo de vida de streams e modo vigília a cada 300s, algoritmos de verificação live_check e dicionário exaustivo de comandos IPC Tauri."
+version: "4.2.0"
+last_updated: "2026-11-18"
+summary: "Referência completa do Rust Core: modelo de dados e store tolerante a falhas, ciclo de vida de streams e modo vigília a cada 300s, sistema de auditoria 6h rotativo em disco (0 MB RAM) e dicionário exaustivo de comandos IPC Tauri."
 ---
 
 # Backend Rust Core, Estado Global e Dicionário de Comandos IPC
@@ -224,6 +226,7 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `save_kick_session` | `account_id: String` | `Result<AppConfig, String>` | Captura cookies de sessão da Kick e token JWT do LocalStorage. |
 | `save_kick_credentials_direct` | `account_id: String`, `kick_session: String`, `xsrf_token: String`, `session_token: String` | `Result<AppConfig, String>` | Permite injeção direta de credenciais Kick via formulário. |
 | `open_stream_redeem` | `account_id: String`, `stream_id: String` | `Result<(), String>` | Abre janela popout dedicada para resgate manual de recompensas. |
+| `update_account_info` | `account_id: String`, `label: String`, `username: String` | `Result<AppConfig, String>` | Atualiza rótulo e username da conta preservando integralmente tokens e cookies de sessão. |
 
 ### 4.4 Comandos do Motor de Jogos (`games/commands.rs`)
 
@@ -258,6 +261,16 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `vote_mark_completed` | `account_id: String`, `voted_at: Option<i64>` | `Result<AppConfig, String>` | Registra o timestamp do voto e agenda o próximo ciclo de alerta para +24h 01m. |
 | `vote_reset_timer` | `account_id: String` | `Result<AppConfig, String>` | Zera o timer da conta marcando-a novamente como pronta para votar. |
 | `vote_test_notification` | `account_id: Option<String>` | `Result<VoteReadyNotificationPayload, String>` | Dispara alerta imediato na UI e no sistema operacional (Windows Toast / Android). |
+
+### 4.6 Comandos do Sistema de Auditoria e Logs em Disco (`commands.rs` & `logger/mod.rs`)
+
+| Comando IPC | Parâmetros e Tipos | Retorno | Descrição & Efeitos Colaterais |
+| :--- | :--- | :--- | :--- |
+| `get_audit_logs` | `filter_category: Option<String>`, `filter_level: Option<String>`, `search: Option<String>` | `Result<String, String>` | Lê os logs gravados em disco das últimas 6 horas em ordem cronológica via `BufReader` com filtragem em tempo real (0 MB em RAM). |
+| `clear_audit_logs` | Nenhum | `Result<(), String>` | Deleta todos os 6 arquivos de log rotativos do disco, reinicia o slot para a Hora 1 e recria o arquivo inicial. |
+| `write_audit_log` | `category: String`, `level: String`, `message: String` | `Result<(), String>` | Permite registrar um evento arbitrário de auditoria diretamente nos arquivos em disco do backend. |
+
+> Detalhes arquiteturais aprofundados sobre a máquina de rotação horária e política de zero-RAM estão documentados em: **[[12-sistema-de-auditoria]] — Sistema de Auditoria e Logs Rotativos em Disco**.
 
 ---
 

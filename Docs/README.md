@@ -20,9 +20,10 @@ wiki_links:
   - "[[09-sistema-de-votos]]"
   - "[[10-sessoes-resgates-e-verificador]]"
   - "[[11-resiliencia-segundo-plano]]"
+  - "[[12-sistema-de-auditoria]]"
 status: "completed"
-version: "4.1.3"
-last_updated: "2026-11-16"
+version: "4.2.0"
+last_updated: "2026-11-18"
 summary: "Índice Mestre (Map of Content) da documentação do IdleStream. Mapeia a arquitetura de sistemas, matriz cruzada de código para documento, grafos de dependência e glossário técnico para desenvolvedores e agentes de IA."
 ---
 
@@ -69,6 +70,7 @@ A documentação divide-se em 12 documentos técnicos especializados e este índ
 | **[[09-sistema-de-votos]]** | Sistema de Votos Diários TopIdle | WebView interativa sob demanda (0 MB em repouso), whitelist TopIdle/OAuth/CAPTCHA, reuso Google e alertas de 24h 01m. | `src-tauri/src/votes/`<br/>`src/components/votes/` | **Concluído** |
 | **[[10-sessoes-resgates-e-verificador]]** | Sessões Persistentes & Verificador de Contas | Estratégia Profile-First (cookies nativos `Max-Age=90d` + `HttpOnly`), sync-back de rotação e verificador contínuo das 8 contas Twitch/Kick. | `src-tauri/src/accounts/`<br/>`src/utils/accountHealth.ts` | **Concluído** |
 | **[[11-resiliencia-segundo-plano]]** | Resiliência em Segundo Plano & Modo 1 FPS | `IdleStreamApplication`, modo 1 FPS (tela desligada / 10s fundo), `runtime_state.json`, `onRenderProcessGone` e saída manual vs kill OEM (`ApplicationExitInfo`). | `IdleStreamForegroundService.kt`<br/>`LifecycleLogger.kt`, `config/store.rs` | **Concluído** |
+| **[[12-sistema-de-auditoria]]** | Sistema de Auditoria e Logs em Disco | Persistência estrita em disco (0 MB em RAM), 6 arquivos rotativos de 1h com limite circular de sobrescrita e visualizador integrado. | `src-tauri/src/logger/`<br/>`src/components/AuditLogViewer.tsx` | **Concluído** |
 
 ---
 
@@ -94,8 +96,10 @@ C:\Projetos\Chatter\
 │   │   │   ├── pusher.rs, watcher.rs, http.rs, auth.rs, webview.rs
 │   │   ├── games\                          ──> [[04-games-engine]]
 │   │   │   ├── manager.rs, commands.rs, anti_sleep.js, hunt_extension.js
-│   │   └── votes\                          ──> [[09-sistema-de-votos]]
-│   │       ├── manager.rs, policy.rs, notifier.rs, commands.rs, vote_observer.js
+│   │   ├── votes\                          ──> [[09-sistema-de-votos]]
+│   │   │   ├── manager.rs, policy.rs, notifier.rs, commands.rs, vote_observer.js
+│   │   └── logger\                         ──> [[12-sistema-de-auditoria]]
+│   │       ├── mod.rs, tests.rs
 │   └── gen\android\                        ──> [[07-multiplataforma-android]], [[09-sistema-de-votos]], [[11-resiliencia-segundo-plano]]
 │       └── app\src\main\java\com\idlestream\app\
 │           ├── IdleStreamApplication.kt, MainActivity.kt, IdleStreamForegroundService.kt
@@ -107,10 +111,11 @@ C:\Projetos\Chatter\
 │   ├── stores\appStore.ts                  ──> [[06-frontend]]
 │   ├── components\                         ──> [[06-frontend]]
 │   │   ├── Header.tsx, Sidebar.tsx, BottomNav.tsx, StreamCard.tsx, AccountManager.tsx
+│   │   ├── EditAccountModal.tsx, AuditLogViewer.tsx ──> [[06-frontend]], [[10-sessoes-resgates-e-verificador]], [[12-sistema-de-auditoria]]
 │   │   ├── games\GameWorkspace.tsx         ──> [[04-games-engine]], [[06-frontend]]
-│   │   └── votes\VoteWorkspace.tsx         ──> [[09-sistema-de-votos]], [[06-frontend]]
+│   │   └── votes\VoteWorkspace.tsx, VoteSyncModal.tsx ──> [[09-sistema-de-votos]], [[06-frontend]]
 │   ├── services\                           ──> [[06-frontend]], [[07-multiplataforma-android]], [[09-sistema-de-votos]]
-│   │   ├── gamePlatformService.ts, votePlatformService.ts, updaterService.ts
+│   │   ├── gamePlatformService.ts, votePlatformService.ts, voteSyncService.ts, updaterService.ts
 │   └── types\index.ts, utils\              ──> [[06-frontend]]
 └── scripts\                                ──> [[08-operacao-e-scripts]]
     ├── build-android.ps1, sign-release.ps1, benchmark-performance.ts, test-*.ts

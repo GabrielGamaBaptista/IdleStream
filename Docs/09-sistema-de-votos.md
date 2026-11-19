@@ -26,9 +26,9 @@ wiki_links:
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
 status: "completed"
-version: "4.0.0"
-last_updated: "2026-11-10"
-summary: "Especificação técnica da seção Votos do IdleStream v4.0.0 para votação diária no TopIdle com WebView interativa sob demanda (0 MB em repouso), whitelist estrita, reuso dos 4 perfis Google de Idle Games e notificações exatas após 24h 01m em Desktop e Android."
+version: "4.2.0"
+last_updated: "2026-11-18"
+summary: "Especificação técnica da seção Votos do IdleStream: votação diária no TopIdle com WebView interativa sob demanda (0 MB em repouso), whitelist estrita, reuso dos 4 perfis Google de Idle Games, notificações de 24h 01m e sincronização bidirecional PC <-> Celular via QR Code."
 ---
 
 # Sistema de Votos Diários TopIdle (`v4.0.0`)
@@ -119,4 +119,38 @@ Comandos registrados no módulo `votes::commands`:
 Baterias de testes automatizados:
 - **Rust (`votes::tests`)**: `cargo test --lib`
 - **TypeScript (`scripts/test-votes.ts`)**: `npm run test:votes`
+- **Sincronização Bidirecional (`scripts/test-votes-sync.ts`)**: `npm run test:votes:sync`
 - **Android JUnit (`VoteUrlPolicyTest`)**: `.\gradlew.bat testArm64DebugUnitTest`
+
+---
+
+## 5. Sincronização Bidirecional PC $\leftrightarrow$ Celular via QR Code (v4.2.0)
+
+A versão **4.2.0** introduziu o serviço de sincronização inteligente de votos ([`voteSyncService.ts`](file:///c:/Projetos/Chatter/src/services/voteSyncService.ts) e [`VoteSyncModal.tsx`](file:///c:/Projetos/Chatter/src/components/votes/VoteSyncModal.tsx)), atendendo ao cenário de uso em redes móveis (4G/5G) ou redes Wi-Fi distintas:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Mobile as "Celular (Android 4G/Wi-Fi)"
+    participant Cloud as "Relay de Sincronização Seguro (REST Object)"
+    participant PC as "Computador (Desktop Windows)"
+
+    Note over Mobile: "Usuário vota às 16h no Celular (Rede Móvel)"
+    Mobile->>Cloud: "PUT /objects/{syncId} (voto vote-1 às 16h)"
+    Note over PC: "No dia seguinte, usuário liga o PC e abre o app"
+    PC->>Cloud: "GET /objects/{syncId} (busca automática no mount)"
+    Cloud-->>PC: "Retorna votos mais recentes"
+    PC->>PC: "Aplica max(local_ts, remote_ts) -> Timer sincronizado!"
+    Note over PC: "Contador agora só liberará o voto após 24h 01m das 16h"
+```
+
+### 5.1 Características e Otimizações de Performance:
+1. **Zero Impacto em Memória & Rede**: O serviço é puramente assíncrono. Se o usuário não configurou pareamento, nenhuma requisição ou timer de rede é disparado em segundo plano.
+2. **Reconciliação Monotônica (`max(local, remote)`)**: Não há risco de sobrescrita destrutiva. Se o computador tiver um voto registrado às 19h e o celular tiver um às 16h, o carimbo mantido será o mais recente (19h).
+3. **Fluxo 100% Autônomo (Sem Botões Manuais de Atualização)**:
+   - Ao abrir no Celular, busca automaticamente a sincronização recente do Computador.
+   - Ao abrir no Computador, busca automaticamente a sincronização recente do Celular.
+   - Ao confirmar um voto em qualquer aparelho, despacha os dados imediatamente em segundo plano sem congelar a interface.
+4. **Pareamento Instantâneo via QR Code**:
+   - Um dispositivo gera a chave de sincronização com QR Code renderizado em alta definição (`qrcode`).
+   - O outro dispositivo lê o QR Code ou insere a chave, completando o vínculo imediatamente.

@@ -36,9 +36,9 @@ wiki_links:
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
 status: "completed"
-version: "4.0.1"
-last_updated: "2026-11-11"
-summary: "Diagnóstico comparativo (Desktop Windows WebView2 vs Android CookieManager) da causa raiz do logout na 2ª live da Kick no computador, arquitetura Profile-First com pre-seeding nativo persistente, auto-reparo de cookies degradados e especificação TDD do Verificador Contínuo das 8 contas."
+version: "4.2.0"
+last_updated: "2026-11-18"
+summary: "Diagnóstico e resolução definitiva da persistência de sessões na Kick, eliminação de loop infinito de verificação, timeout de 8s resiliente com proteção de deadlocks, e suporte a edição de contas com preservação de credenciais."
 ---
 
 # Persistência de Sessões em Resgates e Verificador de Contas (`v4.0.1`)
@@ -196,3 +196,23 @@ Todos os requisitos acima possuem suítes determinísticas divididas entre **Rus
 | **TDD-09** | `twitch::tests` | `test_redeem_script_does_not_overwrite_cookies` | O script de inicialização de resgate Twitch contém apenas `AUTO_CLAIM_TWITCH_SCRIPT`, sem `document.cookie`. |
 | **TDD-10** | `StreamRedeemActivityTest.kt` | `testKickCookiesIncludeMaxAgeAndHttpOnly` / `testShouldSeedCookiesProfileFirst` / `testDetectKickCookieRotation` | `buildKickCookies` e `buildTwitchCookieString` incluem `Max-Age=7776000` e `HttpOnly` em `kick_session`; lógica profile-first bloqueia sobrescrita destrutiva; extração detecta rotação para sync-back. |
 | **TDD-11** | `scripts/test-accounts-session.ts` | `npm run test:accounts` | Valida agregação de saúde das 8 contas no frontend, helpers de alerta de UI, bloqueio preventivo no clique de resgate e contrato de resumo `AccountsHealthSummary`. |
+
+---
+
+## 5. Correções de Robustez do Verificador e Edição de Metadados (v4.2.0)
+
+A versão **4.2.0** resolveu as falhas de loop infinito de verificação e adicionou a capacidade de edição de metadados de contas:
+
+### 5.1 Eliminação do Loop Infinito no Verificador
+1. **Debounce Aumentado de Watchers (`handle_watcher_auth_failure`)**:
+   - Anteriormente, o debounce de 30 segundos disparava `verify_single_account` repetidamente toda vez que um watcher recebia HTTP 401/403.
+   - O intervalo mínimo entre verificações automáticas acionadas por watchers foi ampliado para **15 minutos (`15 * 60`)**, interrompendo o ciclo perpétuo.
+2. **Timeout Rígido de 8 Segundos (`tokio::time::timeout`)**:
+   - As chamadas HTTP de probe em `Kick` e `Twitch` agora são envolvidas por timeout de 8 segundos. Se a conexão travar no sistema operacional (DNS ou socket zumbi), a chamada é abortada com estado `NetworkError` em vez de congelar a interface.
+3. **Garantia Anti-Deadlock e Limpeza de Estado `Checking`**:
+   - Ao final de `verify_all_accounts`, um bloco de salvaguarda itera sobre todas as contas para assegurar que nenhuma permaneça presa no estado transitório `Checking`, liberando spinners e botões da interface.
+
+### 5.2 Edição de Rótulo e Username sem Perda de Sessão
+- Novo comando IPC `update_account_info(account_id, label, username)`:
+  - Permite ao usuário personalizar o nome visual e o username da conta.
+  - Preserva 100% dos tokens OAuth, cookies de sessão (`kick_session`, `session_token`, `xsrf_token`) e hashes de sincronização de perfil.

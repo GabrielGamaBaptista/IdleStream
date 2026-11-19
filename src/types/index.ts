@@ -130,6 +130,7 @@ export interface StreamRuntimeStatus {
   stream_id: string;
   status: StatusKind;
   is_live: boolean;
+  is_farming?: boolean;
   message?: string;
   uptime_seconds: number;
   estimated_ram_mb: number;

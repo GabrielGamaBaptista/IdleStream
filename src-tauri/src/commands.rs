@@ -11,7 +11,7 @@ use crate::twitch::run_oauth_flow;
 use std::sync::Arc;
 #[cfg(desktop)]
 use tauri::Manager;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 type StateHandle<'a> = State<'a, Arc<AppState>>;
 
@@ -61,6 +61,14 @@ pub async fn save_config(state: StateHandle<'_>, config: AppConfig) -> Result<()
 
 #[tauri::command]
 pub async fn add_account(state: StateHandle<'_>, account: Account) -> Result<AppConfig, String> {
+    crate::audit_log!(
+        "ACCOUNTS",
+        "INFO",
+        "Conta adicionada: [{}] (@{}) - {:?}",
+        account.label,
+        account.username,
+        account.platform
+    );
     let account_id = account.id.clone();
     let out_cfg = {
         let mut cfg = state.config.lock().await;
@@ -78,6 +86,7 @@ pub async fn add_account(state: StateHandle<'_>, account: Account) -> Result<App
 
 #[tauri::command]
 pub async fn remove_account(state: StateHandle<'_>, account_id: String) -> Result<AppConfig, String> {
+    crate::audit_log!("ACCOUNTS", "INFO", "Conta removida: ID {}", account_id);
     let out_cfg = {
         let mut cfg = state.config.lock().await;
         cfg.accounts.retain(|a| a.id != account_id);
@@ -111,6 +120,54 @@ pub async fn remove_account(state: StateHandle<'_>, account_id: String) -> Resul
 }
 
 #[tauri::command]
+pub async fn update_account_info(
+    state: StateHandle<'_>,
+    account_id: String,
+    label: String,
+    username: String,
+) -> Result<AppConfig, String> {
+    let trimmed_label = label.trim().to_string();
+    let trimmed_username = username.trim().to_string();
+    crate::audit_log!(
+        "ACCOUNTS",
+        "INFO",
+        "Conta atualizada: ID {}, Rótulo: '{}', Usuário: '@{}'",
+        account_id,
+        trimmed_label,
+        trimmed_username
+    );
+
+    let out_cfg = {
+        let mut cfg = state.config.lock().await;
+        let account = cfg
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == account_id)
+            .ok_or_else(|| format!("Conta '{}' não encontrada", account_id))?;
+
+        account.label = trimmed_label.clone();
+        account.username = trimmed_username.clone();
+
+        state.config_store.save(&cfg)?;
+        cfg.clone()
+    };
+
+    // Atualiza também o cache de status de saúde se a conta existir lá
+    {
+        let mut map = state.account_health.lock().await;
+        if let Some(health) = map.get_mut(&account_id) {
+            health.label = trimmed_label;
+            health.username = trimmed_username;
+        }
+    }
+
+    let _ = state.emit_accounts_health().await;
+    let _ = state.app_handle.emit("accounts-config-synced", ());
+
+    Ok(out_cfg)
+}
+
+#[tauri::command]
 pub async fn add_stream(state: StateHandle<'_>, mut stream: StreamConfig) -> Result<AppConfig, String> {
     stream.ensure_migrated();
     let mut cfg = state.config.lock().await;
@@ -126,6 +183,7 @@ pub async fn add_stream(state: StateHandle<'_>, mut stream: StreamConfig) -> Res
                 stream_id: stream.id,
                 status: crate::config::StatusKind::Disconnected,
                 is_live: false,
+                is_farming: false,
                 message: None,
                 uptime_seconds: 0,
                 estimated_ram_mb: 0,
@@ -599,4 +657,42 @@ pub async fn open_stream_redeem(
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+pub async fn get_audit_logs(
+    filter_category: Option<String>,
+    filter_level: Option<String>,
+    search: Option<String>,
+) -> Result<String, String> {
+    if let Some(logger) = crate::logger::get_global_logger() {
+        logger.get_logs(
+            filter_category.as_deref(),
+            filter_level.as_deref(),
+            search.as_deref(),
+        )
+    } else {
+        Err("Logger de auditoria não inicializado".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn clear_audit_logs() -> Result<(), String> {
+    if let Some(logger) = crate::logger::get_global_logger() {
+        logger.clear_logs()
+    } else {
+        Err("Logger de auditoria não inicializado".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn write_audit_log(
+    category: String,
+    level: String,
+    message: String,
+) -> Result<(), String> {
+    if let Some(logger) = crate::logger::get_global_logger() {
+        logger.log(&category, &level, &message);
+    }
+    Ok(())
 }

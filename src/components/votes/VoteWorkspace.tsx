@@ -26,6 +26,7 @@ import {
   Link2,
   Lock,
   Play,
+  QrCode,
   RefreshCw,
   RotateCcw,
   ShieldAlert,
@@ -35,6 +36,8 @@ import {
   Vote,
   X,
 } from 'lucide-react';
+import { voteSyncService } from '../../services/voteSyncService';
+import { VoteSyncModal } from './VoteSyncModal';
 
 function formatLocalTimestamp(unixSec?: number | null): string {
   if (!unixSec) return '—';
@@ -81,8 +84,31 @@ export const VoteWorkspace: React.FC = () => {
   const [editError, setEditError] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [syncId, setSyncId] = useState<string | null>(() => voteSyncService.getSyncId());
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
 
   const webViewMountRef = useRef<HTMLDivElement | null>(null);
+
+  // Sincronização Automática ao Abrir o App (Busca atualizações recentes do outro dispositivo)
+  useEffect(() => {
+    const activeSyncId = voteSyncService.getSyncId();
+    setSyncId(activeSyncId);
+    if (!activeSyncId) return;
+
+    // Executa em segundo plano com reconciliação bidirecional automática
+    voteSyncService
+      .reconcileVotesBidirectional(activeSyncId, voteAccounts, updateVoteAccount)
+      .then(({ updatedCount }) => {
+        if (updatedCount > 0) {
+          setStatusBanner(
+            `Sincronização automática com celular: ${updatedCount} conta(s) atualizada(s) com votos recentes!`
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn('[VoteSync] Falha silenciosa ao sincronizar ao abrir:', err);
+      });
+  }, []);
 
   // Ticker de 1 segundo para atualizar os contadores regressivos (24h 01m)
   useEffect(() => {
@@ -304,6 +330,16 @@ export const VoteWorkspace: React.FC = () => {
       setStatusBanner(
         `Voto registrado para "${account.label}"! Alerta automático programado para daqui a 24h 01m.`
       );
+
+      // Despacha atualização automática para o outro dispositivo se pareado
+      const activeSyncId = voteSyncService.getSyncId();
+      if (activeSyncId) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const updatedAccounts = voteAccounts.map((a) =>
+          a.id === account.id ? { ...a, last_voted_at: nowSec, total_votes: (a.total_votes || 0) + 1 } : a
+        );
+        voteSyncService.pushLocalVotes(activeSyncId, updatedAccounts).catch(() => {});
+      }
 
       if (closeOrAdvanceAfter && activeAccountId === account.id) {
         const nextReady = voteAccounts.find(
@@ -560,14 +596,37 @@ export const VoteWorkspace: React.FC = () => {
               </p>
             </div>
 
-            <button
-              onClick={handleTestNotification}
-              className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold border border-neutral-700/80 transition cursor-pointer shrink-0"
-              title="Enviar notificação de teste no sistema e na interface"
-            >
-              <BellRing className="w-4 h-4 text-amber-400" />
-              <span>Testar Notificação</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              {/* Indicador de Status da Sincronização PC <-> Celular */}
+              <button
+                onClick={() => setIsSyncModalOpen(true)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                  syncId
+                    ? 'bg-emerald-950/70 border-emerald-800 text-emerald-300 hover:bg-emerald-900/60 shadow-xs'
+                    : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
+                }`}
+                title={
+                  syncId
+                    ? 'Sincronizado automaticamente com o celular. Busca atualizações sempre que o app é aberto.'
+                    : 'Clique para sincronizar os timers de votos entre PC e Celular via QR Code'
+                }
+              >
+                <QrCode className="w-4 h-4 text-emerald-400" />
+                <span>
+                  {syncId ? 'Sincronizado com Celular' : 'Parear Celular (QR Code)'}
+                </span>
+                {syncId && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />}
+              </button>
+
+              <button
+                onClick={handleTestNotification}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold border border-neutral-700/80 transition cursor-pointer shrink-0"
+                title="Enviar notificação de teste no sistema e na interface"
+              >
+                <BellRing className="w-4 h-4 text-amber-400" />
+                <span>Testar Notificação</span>
+              </button>
+            </div>
           </div>
 
           {/* Banner de Feedback / Status */}
@@ -988,6 +1047,16 @@ export const VoteWorkspace: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Pareamento via QR Code (PC <-> Celular) */}
+      <VoteSyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        voteAccounts={voteAccounts}
+        onSyncStateChanged={() => {
+          setSyncId(voteSyncService.getSyncId());
+        }}
+      />
     </div>
   );
 };

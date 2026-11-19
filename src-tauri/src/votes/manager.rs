@@ -101,6 +101,13 @@ impl VoteManager {
         account: &VoteAccountConfig,
         bounds: Option<VoteBounds>,
     ) -> Result<String, String> {
+        crate::audit_log!(
+            "VOTES",
+            "INFO",
+            "Abrindo painel TopIdle para conta [{}] (Nick: {})",
+            account.label,
+            account.player_identifier
+        );
         let target_url = build_vote_target_url(&account.base_url, &account.player_identifier)?;
 
         #[cfg(desktop)]
@@ -270,6 +277,7 @@ impl VoteManager {
     }
 
     pub async fn close_vote_webview(&self) -> Result<(), String> {
+        crate::audit_log!("VOTES", "INFO", "Fechando painel TopIdle");
         self.close_tracked_popups();
 
         #[cfg(desktop)]

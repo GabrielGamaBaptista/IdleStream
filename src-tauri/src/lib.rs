@@ -4,6 +4,7 @@ pub mod config;
 pub mod games;
 pub mod kick;
 pub mod live_check;
+pub mod logger;
 pub mod state;
 pub mod twitch;
 pub mod votes;
@@ -112,6 +113,8 @@ pub fn run() {
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(&data_dir);
                 let _ = PANIC_LOG_PATH.set(data_dir.join("panic.log"));
+                logger::init_global_logger(data_dir.join("audit"));
+                audit_log!("SYSTEM", "INFO", "IdleStream inicializado com sucesso (Audit Logger ativo - 6h rotativo em disco)");
             }
             let app_state = Arc::new(AppState::new(app_handle.clone()));
             app.manage(app_state.clone());
@@ -256,6 +259,7 @@ pub fn run() {
             save_config,
             add_account,
             remove_account,
+            update_account_info,
             add_stream,
             update_stream,
             set_selected_account,
@@ -303,6 +307,9 @@ pub fn run() {
             votes::commands::vote_mark_completed,
             votes::commands::vote_reset_timer,
             votes::commands::vote_test_notification,
+            get_audit_logs,
+            clear_audit_logs,
+            write_audit_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

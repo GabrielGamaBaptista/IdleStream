@@ -135,6 +135,10 @@ fn test_hunt_extension_script_contents() {
     let script = include_str!("hunt_extension.js");
     assert!(!script.is_empty(), "O script da extensão /hunt não pode estar vazio");
     assert!(script.contains("__pokeidleHunt") || script.contains("Pokeidle"), "Deve conter o bundle da extensão Pokeidle Hunt");
+    assert!(script.contains("window.top !== window.self"), "Deve conter trava contra injeção em iframes");
+    assert!(script.contains("__pokeidleHuntGlobalLoaded"), "Deve conter trava global estrita de idempotência");
+    assert!(script.contains("ensureHuntStyles"), "Deve conter rotina de injeção resiliente de CSS auto-recuperável");
+    assert!(script.contains("__pokeidle_hunt_style__"), "Deve conter o identificador de estilo do /hunt");
 }
 
 #[test]

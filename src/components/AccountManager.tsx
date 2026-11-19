@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
+import { Account } from '../types';
+import { EditAccountModal } from './EditAccountModal';
 import {
   Users,
   Plus,
   Radio,
   Globe,
   Trash2,
+  Pencil,
   CheckCircle2,
   AlertTriangle,
   ExternalLink,
@@ -39,6 +42,22 @@ export const AccountManager: React.FC = () => {
   const duplicates = findDuplicateAuthenticatedUsernames(accountsHealth);
   const totalCount = accountsHealth?.total ?? config.accounts.length;
   const healthyCount = accountsHealth?.healthy ?? 0;
+
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+
+  // Ordenação: 1º por plataforma (Twitch primeiro, Kick depois), 2º por nome/username em ordem alfabética
+  const sortedAccounts = useMemo(() => {
+    return [...config.accounts].sort((a, b) => {
+      if (a.platform !== b.platform) {
+        return a.platform === 'twitch' ? -1 : 1;
+      }
+      const nameA = (a.username || a.label || '').trim().toLowerCase();
+      const nameB = (b.username || b.label || '').trim().toLowerCase();
+      const nameComp = nameA.localeCompare(nameB);
+      if (nameComp !== 0) return nameComp;
+      return (a.label || '').trim().toLowerCase().localeCompare((b.label || '').trim().toLowerCase());
+    });
+  }, [config.accounts]);
 
   const handleTwitchAuth = async (accountId: string, accountLabel?: string) => {
     if (window.AndroidBridge && typeof window.AndroidBridge.openTwitchLogin === 'function') {
@@ -130,7 +149,7 @@ export const AccountManager: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {config.accounts.map((account) => {
+          {sortedAccounts.map((account) => {
             const isTwitch = account.platform === 'twitch';
             const hasToken = isTwitch && !!account.oauth_token;
             const health = getAccountHealthStatus(accountsHealth, account.id);
@@ -174,6 +193,15 @@ export const AccountManager: React.FC = () => {
                         title="Verificar sessão desta conta agora"
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${isSingleChecking ? 'animate-spin text-sky-400' : ''}`} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditingAccount(account)}
+                        className="text-neutral-500 hover:text-amber-400 transition cursor-pointer p-1"
+                        title="Editar apelido ou username da conta"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
                       </button>
 
                       <button
@@ -339,6 +367,13 @@ export const AccountManager: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Modal de Edição de Conta */}
+      <EditAccountModal
+        account={editingAccount}
+        isOpen={Boolean(editingAccount)}
+        onClose={() => setEditingAccount(null)}
+      />
     </div>
   );
 };

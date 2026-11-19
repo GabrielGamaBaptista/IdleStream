@@ -10,6 +10,8 @@ import {
   RefreshCw,
   ShieldCheck,
   ShieldAlert,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -18,9 +20,12 @@ export const Header: React.FC = () => {
     statuses,
     accountsHealth,
     isVerifyingAccounts,
+    activeTab,
     setActiveTab,
     startAll,
     stopAll,
+    isImmersiveMode,
+    toggleImmersiveMode,
     appVersion,
     updateAvailable,
     updateDownloadProgress,
@@ -50,8 +55,10 @@ export const Header: React.FC = () => {
     .filter((s) => s.status === 'connected')
     .reduce((acc, curr) => acc + curr.estimated_ram_mb, 30);
 
+  const isStreamsTab = activeTab === 'streams';
+
   return (
-    <header className="border-b border-neutral-800 bg-neutral-900/90 backdrop-blur px-4 md:px-6 py-2.5 md:py-0 md:h-16 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+    <header className={`border-b border-neutral-800 bg-neutral-900/90 backdrop-blur px-4 md:px-6 ${isStreamsTab ? 'py-2.5 md:py-0' : 'py-2 md:py-0'} md:h-16 flex flex-col md:flex-row md:items-center justify-between gap-2.5`}>
       {/* Row 1 on mobile: Branding + Global Action Buttons (mobile) */}
       <div className="flex items-center justify-between w-full md:w-auto">
         <div className="flex items-center gap-2.5">
@@ -105,13 +112,13 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* Action buttons visible directly on mobile header top row */}
+        {/* Action buttons + Fullscreen button directly on mobile header top row */}
         <div className="flex md:hidden items-center gap-1.5">
           <button
             onClick={startAll}
             disabled={totalStreams === 0}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/90 active:bg-emerald-500 text-white text-xs font-medium transition shadow-sm disabled:opacity-40"
-            title="Ativar todas"
+            title="Ativar todas as lives"
           >
             <Play className="w-3 h-3 fill-current" />
             <span>Ativar</span>
@@ -120,81 +127,90 @@ export const Header: React.FC = () => {
             onClick={stopAll}
             disabled={activeStreams === 0 && standbyStreams === 0}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-neutral-800 active:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700/60 transition disabled:opacity-40"
-            title="Parar todas"
+            title="Parar todas as lives"
           >
             <Square className="w-3 h-3 fill-current" />
             <span>Parar</span>
+          </button>
+          <button
+            onClick={toggleImmersiveMode}
+            className="flex items-center justify-center p-1.5 rounded-lg bg-neutral-800 active:bg-neutral-700 text-neutral-300 border border-neutral-700/60 transition cursor-pointer"
+            title={isImmersiveMode ? 'Sair da tela cheia' : 'Tela cheia (ocultar menus)'}
+          >
+            {isImmersiveMode ? <Minimize2 className="w-3.5 h-3.5 text-emerald-400" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
 
       {/* Row 2 on mobile: Resource & Status Badges + Desktop Controls */}
-      <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto">
-        {/* Resource & Status Badges */}
-        <div className="flex items-center justify-between md:justify-start gap-2.5 md:gap-4 bg-neutral-950/70 border border-neutral-800/80 px-3 md:px-4 py-1 md:py-1.5 rounded-lg text-xs w-full md:w-auto">
-          <div className="flex items-center gap-1.5">
-            <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-            <span className="text-neutral-400 text-[11px] md:text-xs">Ao Vivo:</span>
-            <span className="font-semibold text-emerald-400 text-xs">
-              {activeStreams}
-            </span>
-            {standbyStreams > 0 && (
-              <span className="text-indigo-400 font-medium text-[11px]">
-                ({standbyStreams} vigília)
+      <div className={`flex items-center ${isStreamsTab ? 'justify-between' : 'justify-end'} md:justify-end gap-3 w-full md:w-auto`}>
+        {/* Resource & Status Badges (exibido apenas na aba de Streams) */}
+        {isStreamsTab && (
+          <div className="flex items-center justify-between md:justify-start gap-2.5 md:gap-4 bg-neutral-950/70 border border-neutral-800/80 px-3 md:px-4 py-1 md:py-1.5 rounded-lg text-xs w-full md:w-auto">
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
+              <span className="text-neutral-400 text-[11px] md:text-xs">Ao Vivo:</span>
+              <span className="font-semibold text-emerald-400 text-xs">
+                {activeStreams}
               </span>
-            )}
-            <span className="text-neutral-600 text-xs">/ {totalStreams}</span>
+              {standbyStreams > 0 && (
+                <span className="text-indigo-400 font-medium text-[11px]">
+                  ({standbyStreams} vigília)
+                </span>
+              )}
+              <span className="text-neutral-600 text-xs">/ {totalStreams}</span>
+            </div>
+
+            <div className="w-px h-3.5 bg-neutral-800 shrink-0" />
+
+            <div className="flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="text-neutral-400 text-[11px] md:text-xs">RAM Est.:</span>
+              <span className="font-semibold text-indigo-300 font-mono text-[11px] md:text-xs">
+                ~{totalRamMb} MB
+              </span>
+            </div>
+
+            <div className="w-px h-3.5 bg-neutral-800 shrink-0" />
+
+            {/* 8-Account Health Pill */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('accounts')}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] md:text-xs font-semibold transition cursor-pointer shrink-0 ${
+                totalAccounts === 0
+                  ? 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200'
+                  : checkingAccounts
+                  ? 'border-sky-800/60 bg-sky-950/50 text-sky-300'
+                  : failingAccountsCount > 0
+                  ? 'border-rose-700/80 bg-rose-950/70 text-rose-300 animate-pulse'
+                  : warningAccountsCount > 0
+                  ? 'border-amber-700/70 bg-amber-950/50 text-amber-300'
+                  : healthyAccounts === totalAccounts
+                  ? 'border-emerald-700/60 bg-emerald-950/50 text-emerald-300 hover:bg-emerald-950/80'
+                  : 'border-neutral-700 bg-neutral-900 text-neutral-300'
+              }`}
+              title="Clique para abrir Contas e ver o estado de autenticação"
+            >
+              {checkingAccounts ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : failingAccountsCount > 0 || warningAccountsCount > 0 ? (
+                <ShieldAlert className="w-3.5 h-3.5" />
+              ) : (
+                <ShieldCheck className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {totalAccounts === 0
+                  ? '0 Contas'
+                  : checkingAccounts
+                  ? `Verificando (${healthyAccounts}/${totalAccounts})`
+                  : `${healthyAccounts}/${totalAccounts} Contas${
+                      failingAccountsCount > 0 ? ' ⚠' : healthyAccounts === totalAccounts ? ' OK' : ''
+                    }`}
+              </span>
+            </button>
           </div>
-
-          <div className="w-px h-3.5 bg-neutral-800 shrink-0" />
-
-          <div className="flex items-center gap-1.5">
-            <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-            <span className="text-neutral-400 text-[11px] md:text-xs">RAM Est.:</span>
-            <span className="font-semibold text-indigo-300 font-mono text-[11px] md:text-xs">
-              ~{totalRamMb} MB
-            </span>
-          </div>
-
-          <div className="w-px h-3.5 bg-neutral-800 shrink-0" />
-
-          {/* 8-Account Health Pill */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('accounts')}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] md:text-xs font-semibold transition cursor-pointer shrink-0 ${
-              totalAccounts === 0
-                ? 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200'
-                : checkingAccounts
-                ? 'border-sky-800/60 bg-sky-950/50 text-sky-300'
-                : failingAccountsCount > 0
-                ? 'border-rose-700/80 bg-rose-950/70 text-rose-300 animate-pulse'
-                : warningAccountsCount > 0
-                ? 'border-amber-700/70 bg-amber-950/50 text-amber-300'
-                : healthyAccounts === totalAccounts
-                ? 'border-emerald-700/60 bg-emerald-950/50 text-emerald-300 hover:bg-emerald-950/80'
-                : 'border-neutral-700 bg-neutral-900 text-neutral-300'
-            }`}
-            title="Clique para abrir Contas e ver o estado de autenticação"
-          >
-            {checkingAccounts ? (
-              <RefreshCw className="w-3 h-3 animate-spin" />
-            ) : failingAccountsCount > 0 || warningAccountsCount > 0 ? (
-              <ShieldAlert className="w-3.5 h-3.5" />
-            ) : (
-              <ShieldCheck className="w-3.5 h-3.5" />
-            )}
-            <span>
-              {totalAccounts === 0
-                ? '0 Contas'
-                : checkingAccounts
-                ? `Verificando (${healthyAccounts}/${totalAccounts})`
-                : `${healthyAccounts}/${totalAccounts} Contas${
-                    failingAccountsCount > 0 ? ' ⚠' : healthyAccounts === totalAccounts ? ' OK' : ''
-                  }`}
-            </span>
-          </button>
-        </div>
+        )}
 
         {/* Global Controls on Desktop */}
         <div className="hidden md:flex items-center gap-2">
@@ -211,9 +227,27 @@ export const Header: React.FC = () => {
             onClick={stopAll}
             disabled={activeStreams === 0 && standbyStreams === 0}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700/60 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Para todas as streams ativas"
           >
             <Square className="w-3.5 h-3.5 fill-current" />
             Parar Todas
+          </button>
+          <button
+            onClick={toggleImmersiveMode}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60 transition cursor-pointer"
+            title={isImmersiveMode ? 'Sair da tela cheia' : 'Tela cheia (ocultar menus)'}
+          >
+            {isImmersiveMode ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden lg:inline">Restaurar</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="hidden lg:inline">Tela Cheia</span>
+              </>
+            )}
           </button>
         </div>
       </div>

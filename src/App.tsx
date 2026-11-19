@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAppStore } from './stores/appStore';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -13,8 +13,9 @@ import { BottomNav } from './components/BottomNav';
 import { BatteryBanner } from './components/BatteryBanner';
 import { GameWorkspace } from './components/games/GameWorkspace';
 import { VoteWorkspace } from './components/votes/VoteWorkspace';
-import { Tv, Plus, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Tv, Plus, ShieldAlert, RefreshCw, ArrowUpDown, Shrink } from 'lucide-react';
 import { StreamConfig } from './types';
+import { getStreamPoints } from './utils/format';
 import {
   findDuplicateAuthenticatedUsernames,
   getFailingAccounts,
@@ -33,6 +34,8 @@ export default function App() {
     setPlatformFilter,
     setAddStreamOpen,
     isImmersiveMode,
+    toggleImmersiveMode,
+    statuses,
   } = useAppStore();
 
   const failingAccounts = getFailingAccounts(accountsHealth);
@@ -40,29 +43,55 @@ export default function App() {
   const duplicateEntries = Object.entries(duplicateUsernames);
 
   const [editingStream, setEditingStream] = useState<StreamConfig | null>(null);
+  const [streamSort, setStreamSort] = useState<'default' | 'points_desc' | 'points_asc' | 'alpha'>('default');
 
   useEffect(() => {
     init();
   }, [init]);
 
-  const isFullscreenGames = isImmersiveMode && activeTab === 'games';
+  const isFullscreen = isImmersiveMode;
 
-  const displayedStreams = config.streams.filter((s) => {
-    if (platformFilter === 'all') return true;
-    return s.platform === platformFilter;
-  });
+  // Filtra e ordena lives: separa Twitch e Kick, com opção de ordenação por saldo de pontos ou nome
+  const displayedStreams = useMemo(() => {
+    const filtered = config.streams.filter((s) => {
+      if (platformFilter === 'all') return true;
+      return s.platform === platformFilter;
+    });
+
+    return [...filtered].sort((a, b) => {
+      // 1. Sempre separa Twitch e Kick quando em exibição conjunta
+      if (platformFilter === 'all' && a.platform !== b.platform) {
+        return a.platform === 'twitch' ? -1 : 1;
+      }
+
+      // 2. Ordenação por pontos ou alfabética
+      if (streamSort === 'points_desc') {
+        const ptsA = getStreamPoints(statuses[a.id]);
+        const ptsB = getStreamPoints(statuses[b.id]);
+        if (ptsB !== ptsA) return ptsB - ptsA;
+      } else if (streamSort === 'points_asc') {
+        const ptsA = getStreamPoints(statuses[a.id]);
+        const ptsB = getStreamPoints(statuses[b.id]);
+        if (ptsA !== ptsB) return ptsA - ptsB;
+      } else if (streamSort === 'alpha') {
+        return a.channel_slug.localeCompare(b.channel_slug);
+      }
+
+      return 0;
+    });
+  }, [config.streams, platformFilter, streamSort, statuses]);
 
   return (
     <div
       className="flex flex-col h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans pt-[env(safe-area-inset-top,0px)]"
     >
       {/* Top Header */}
-      {!isFullscreenGames && <Header />}
+      {!isFullscreen && <Header />}
 
       {/* Main Container */}
       <div className="flex flex-1 min-h-0 overflow-hidden bg-neutral-950">
         {/* Left Sidebar */}
-        {!isFullscreenGames && <Sidebar />}
+        {!isFullscreen && <Sidebar />}
 
         {/* Dynamic Content Area */}
         <main
@@ -146,13 +175,32 @@ export default function App() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => setAddStreamOpen(true)}
-                  className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/20 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Adicionar Stream</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                  {/* Seletor de Ordenação de Lives */}
+                  <div className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 rounded-xl px-2.5 py-1.5 text-xs text-neutral-300 shadow-xs">
+                    <ArrowUpDown className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                    <span className="text-neutral-500 hidden sm:inline">Ordenar:</span>
+                    <select
+                      value={streamSort}
+                      onChange={(e) => setStreamSort(e.target.value as any)}
+                      className="bg-transparent text-white focus:outline-none cursor-pointer text-xs"
+                      title="Ordenar lives (separando Twitch e Kick)"
+                    >
+                      <option value="default" className="bg-neutral-900 text-white">Padrão</option>
+                      <option value="points_desc" className="bg-neutral-900 text-white">Mais Pontos 🪙</option>
+                      <option value="points_asc" className="bg-neutral-900 text-white">Menos Pontos</option>
+                      <option value="alpha" className="bg-neutral-900 text-white">Nome (A-Z)</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => setAddStreamOpen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/20 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Adicionar Stream</span>
+                  </button>
+                </div>
               </div>
 
               {/* Mobile Platform Filter Pills */}
@@ -230,10 +278,22 @@ export default function App() {
       </div>
 
       {/* Bottom Status Bar */}
-      {!isFullscreenGames && <StatusBar />}
+      {!isFullscreen && <StatusBar />}
 
       {/* Mobile Bottom Navigation */}
-      {!isFullscreenGames && <BottomNav />}
+      {!isFullscreen && <BottomNav />}
+
+      {/* Floating button to exit Fullscreen when outside of games */}
+      {isImmersiveMode && activeTab !== 'games' && (
+        <button
+          onClick={() => toggleImmersiveMode()}
+          className="fixed top-3 right-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-900/95 text-neutral-200 border border-neutral-700/80 shadow-2xl backdrop-blur-md text-xs font-semibold hover:bg-neutral-800 transition cursor-pointer animate-in fade-in"
+          title="Restaurar menus do aplicativo"
+        >
+          <Shrink className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Restaurar Menus</span>
+        </button>
+      )}
 
       {/* Modals */}
       <AddStreamModal />

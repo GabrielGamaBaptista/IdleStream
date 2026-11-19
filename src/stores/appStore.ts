@@ -127,6 +127,7 @@ interface AppState {
   verifyAccount: (accountId: string) => Promise<AccountHealthStatus | null>;
 
   addAccount: (account: Account) => Promise<void>;
+  updateAccountInfo: (accountId: string, label: string, username: string) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
   startTwitchOAuth: (accountId: string) => Promise<string>;
   openTwitchLogin: (accountId: string) => Promise<void>;
@@ -153,7 +154,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.1.3',
+  appVersion: '4.2.0',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -612,6 +613,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addAccount: async (account) => {
     const updated = await invoke<AppConfig>('add_account', { account });
+    set({ config: updated });
+    await get().fetchAccountsHealth();
+  },
+
+  updateAccountInfo: async (accountId: string, label: string, username: string) => {
+    const updated = await invoke<AppConfig>('update_account_info', { accountId, label, username });
     set({ config: updated });
     await get().fetchAccountsHealth();
   },

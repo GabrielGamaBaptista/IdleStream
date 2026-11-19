@@ -75,7 +75,7 @@ pub async fn kick_http_request(
     let body = body.map(|b| b.to_string());
     let timeout_ms = (timeout_secs * 1000) as i32;
 
-    tokio::task::spawn_blocking(move || {
+    let blocking_task = move || {
         let vm = JVM.get().ok_or_else(|| {
             "Android JavaVM não registrada no KickHttpBridge".to_string()
         })?;
@@ -150,9 +150,13 @@ pub async fn kick_http_request(
         }
 
         Ok((status as u16, resp_body))
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    };
+
+    let fut = tokio::task::spawn_blocking(blocking_task);
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs + 2), fut).await {
+        Ok(res) => res.map_err(|e| format!("Task join error: {}", e))?,
+        Err(_) => Err(format!("Timeout de {}s esgotado na requisição Kick Android", timeout_secs)),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -172,10 +176,12 @@ pub async fn kick_http_request(
         .collect();
     let body = body.map(|b| b.to_string());
 
-    tokio::task::spawn_blocking(move || {
+    let blocking_task = move || {
         let mut cmd = std::process::Command::new("curl.exe");
         cmd.args([
             "-s",
+            "--connect-timeout",
+            "4",
             "-m",
             &timeout_secs.to_string(),
             "-w",
@@ -215,9 +221,13 @@ pub async fn kick_http_request(
             Ok(out) => Err(format!("curl falhou com status: {}", out.status)),
             Err(e) => Err(format!("Erro ao executar curl: {}", e)),
         }
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    };
+
+    let fut = tokio::task::spawn_blocking(blocking_task);
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs + 2), fut).await {
+        Ok(res) => res.map_err(|e| format!("Task join error: {}", e))?,
+        Err(_) => Err(format!("Timeout de {}s esgotado na requisição Kick Windows", timeout_secs)),
+    }
 }
 
 #[cfg(all(not(target_os = "windows"), not(target_os = "android")))]
@@ -237,10 +247,12 @@ pub async fn kick_http_request(
         .collect();
     let body = body.map(|b| b.to_string());
 
-    tokio::task::spawn_blocking(move || {
+    let blocking_task = move || {
         let mut cmd = std::process::Command::new("curl");
         cmd.args([
             "-s",
+            "--connect-timeout",
+            "4",
             "-m",
             &timeout_secs.to_string(),
             "-w",
@@ -277,9 +289,13 @@ pub async fn kick_http_request(
             Ok(out) => Err(format!("curl falhou com status: {}", out.status)),
             Err(e) => Err(format!("Erro ao executar curl: {}", e)),
         }
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    };
+
+    let fut = tokio::task::spawn_blocking(blocking_task);
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs + 2), fut).await {
+        Ok(res) => res.map_err(|e| format!("Task join error: {}", e))?,
+        Err(_) => Err(format!("Timeout de {}s esgotado na requisição Kick Linux/Unix", timeout_secs)),
+    }
 }
 
 #[cfg(target_os = "android")]

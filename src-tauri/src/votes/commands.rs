@@ -113,6 +113,15 @@ pub async fn vote_mark_completed(
     account.last_notified_for_vote_at = None;
     account.total_votes = account.total_votes.saturating_add(1);
 
+    crate::audit_log!(
+        "VOTES",
+        "INFO",
+        "Voto confirmado para conta [{}] (Nick: {}, Total: {})",
+        account.label,
+        account.player_identifier,
+        account.total_votes
+    );
+
     state.config_store.save(&cfg)?;
     Ok(cfg.clone())
 }
@@ -131,6 +140,13 @@ pub async fn vote_reset_timer(
 
     account.last_voted_at = None;
     account.last_notified_for_vote_at = None;
+
+    crate::audit_log!(
+        "VOTES",
+        "INFO",
+        "Timer de votação resetado manualmente para [{}]",
+        account.label
+    );
 
     state.config_store.save(&cfg)?;
     Ok(cfg.clone())

@@ -21,6 +21,8 @@ import {
   Shrink,
   BarChart3,
   Moon,
+  Zap,
+  Battery,
 } from 'lucide-react';
 
 export const GameWorkspace: React.FC = () => {
@@ -42,13 +44,8 @@ export const GameWorkspace: React.FC = () => {
     } catch (_) {}
     return 'slot-1';
   });
-  const [fpsTier, setFpsTier] = useState<'60' | '30' | '10'>(() => {
-    try {
-      const saved = localStorage.getItem('__idlestream_fps_tier__');
-      if (saved === '60' || saved === '30' || saved === '10') return saved;
-    } catch (_) {}
-    return '30';
-  });
+  const [currentDynamicFps, setCurrentDynamicFps] = useState<number>(60);
+  const currentDynamicFpsRef = useRef<number>(60);
   const [isPokeIdleUltra, setIsPokeIdleUltra] = useState<boolean>(() => {
     try {
       return localStorage.getItem('__idlestream_pokeidle_ultra__') === 'true';
@@ -96,6 +93,11 @@ export const GameWorkspace: React.FC = () => {
   useEffect(() => {
     const handleUserActivity = () => {
       lastActivityTimeRef.current = Date.now();
+      if (currentDynamicFpsRef.current !== 60) {
+        currentDynamicFpsRef.current = 60;
+        setCurrentDynamicFps(60);
+        gamePlatformService.setFps(60).catch(() => {});
+      }
       if (isIdleDimmed) {
         setIsIdleDimmed(false);
       }
@@ -119,13 +121,8 @@ export const GameWorkspace: React.FC = () => {
     };
   }, [isIdleDimmed]);
 
-  // Loop de monitoramento de inatividade do sistema e do aplicativo
+  // Loop de monitoramento de inatividade: 60 FPS ativo -> 10 FPS após 30s -> 1 FPS Sleep
   useEffect(() => {
-    if (inactivityMinutes <= 0) {
-      if (isIdleDimmed) setIsIdleDimmed(false);
-      return;
-    }
-
     const interval = setInterval(async () => {
       const thresholdSeconds = inactivityMinutes * 60;
       const appIdleSec = Math.floor((Date.now() - lastActivityTimeRef.current) / 1000);
@@ -136,15 +133,36 @@ export const GameWorkspace: React.FC = () => {
       } catch (_) {}
 
       // Consideramos inatividade REAL apenas quando AMBOS o app e o sistema estiverem ociosos (mínimo entre ambos)
-      // Isso impede falso sleep se o usuário estiver clicando nos jogos dentro dos WebViews filhos ou no sistema
       const currentIdleSec = Math.min(appIdleSec, systemIdleSec);
       setIdleDurationSec(currentIdleSec);
 
-      if (currentIdleSec >= thresholdSeconds) {
+      if (thresholdSeconds > 0 && currentIdleSec >= thresholdSeconds) {
+        // Modo Sleep profundo configurado pelo usuário (1 FPS + ocultar webviews)
+        if (currentDynamicFpsRef.current !== 1) {
+          currentDynamicFpsRef.current = 1;
+          setCurrentDynamicFps(1);
+          gamePlatformService.setFps(1).catch(() => {});
+        }
         if (!isIdleDimmed && activeSlots.length > 0) {
           setIsIdleDimmed(true);
         }
+      } else if (currentIdleSec >= 30) {
+        // Inatividade após 30s: reduz performance ao mínimo para poupar GPU (10 FPS)
+        if (currentDynamicFpsRef.current !== 10) {
+          currentDynamicFpsRef.current = 10;
+          setCurrentDynamicFps(10);
+          gamePlatformService.setFps(10).catch(() => {});
+        }
+        if (isIdleDimmed) {
+          setIsIdleDimmed(false);
+        }
       } else {
+        // Usuário ativo interagindo: performance aumentada ao máximo (60 FPS)
+        if (currentDynamicFpsRef.current !== 60) {
+          currentDynamicFpsRef.current = 60;
+          setCurrentDynamicFps(60);
+          gamePlatformService.setFps(60).catch(() => {});
+        }
         if (isIdleDimmed) {
           setIsIdleDimmed(false);
         }
@@ -216,37 +234,10 @@ export const GameWorkspace: React.FC = () => {
     return () => clearInterval(interval);
   }, [refreshActiveSlots]);
 
-  // Carregar status do modo econômico do backend apenas se ainda não houver preferência salva
+  // Inicialização padrão com máxima fluidez (60 FPS)
   useEffect(() => {
-    let hasSavedFps = false;
-    try {
-      const saved = localStorage.getItem('__idlestream_fps_tier__');
-      hasSavedFps = saved === '60' || saved === '30' || saved === '10';
-    } catch (_) {}
-
-    if (hasSavedFps) {
-      gamePlatformService.setFps(Number(fpsTier)).catch(() => {});
-    } else {
-      gamePlatformService
-        .getEcoMode()
-        .then((enabled) => {
-          setFpsTier(enabled ? '30' : '60');
-        })
-        .catch((e) => console.warn('Erro ao obter status eco_mode:', e));
-    }
+    gamePlatformService.setFps(60).catch(() => {});
   }, []);
-
-  const handleSetFpsTier = async (tier: '60' | '30' | '10') => {
-    setFpsTier(tier);
-    try {
-      localStorage.setItem('__idlestream_fps_tier__', tier);
-    } catch (_) {}
-    try {
-      await gamePlatformService.setFps(Number(tier));
-    } catch (e) {
-      console.error('Erro ao definir taxa de quadros (FPS):', e);
-    }
-  };
 
   const handleToggleGlobalUltra = async () => {
     const nextState = !isPokeIdleUltra;
@@ -404,8 +395,27 @@ export const GameWorkspace: React.FC = () => {
     }
   };
 
+  const handleSelectLayoutMode = (mode: 'grid' | 'focus' | 'sidebar') => {
+    setLayoutMode(mode);
+    if (mode === 'grid') {
+      activeSlots.forEach((slotId) => {
+        const slot = gameSlots.find((s) => s.id === slotId);
+        if (!slot?.zoom && !slotZooms[slotId]) {
+          gamePlatformService.setSlotZoom(slotId, 0.75).catch(() => {});
+        }
+      });
+    } else if (mode === 'focus') {
+      const targetId = focusedSlotId || activeSlots[0];
+      const slot = gameSlots.find((s) => s.id === targetId);
+      if (targetId && !slot?.zoom && !slotZooms[targetId]) {
+        gamePlatformService.setSlotZoom(targetId, 1.0).catch(() => {});
+      }
+    }
+  };
+
   const handleZoomStep = (slotId: string, direction: 'in' | 'out') => {
-    const currentZoom = slotZooms[slotId] ?? gameSlots.find((s) => s.id === slotId)?.zoom ?? 1.0;
+    const defaultZoom = layoutMode === 'grid' ? 0.75 : 1.0;
+    const currentZoom = slotZooms[slotId] ?? gameSlots.find((s) => s.id === slotId)?.zoom ?? defaultZoom;
     const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
     let closestIndex = 5; // default 1.0
     let minDiff = Infinity;
@@ -430,7 +440,8 @@ export const GameWorkspace: React.FC = () => {
       const nextSlots = activeSlots.includes(slotId) ? activeSlots : [...activeSlots, slotId];
       setActiveSlots(nextSlots);
       const slot = gameSlots.find((s) => s.id === slotId);
-      const zoom = slotZooms[slotId] ?? slot?.zoom ?? 1.0;
+      const defaultZoom = layoutMode === 'grid' ? 0.75 : 1.0;
+      const zoom = slotZooms[slotId] ?? slot?.zoom ?? defaultZoom;
       await gamePlatformService.startSlot(
         slotId,
         url.trim() || 'https://pokeidle.io/app',
@@ -569,54 +580,45 @@ export const GameWorkspace: React.FC = () => {
               </button>
             )}
 
-            {/* Seletor Multi-Nível de FPS e Modo Econômico */}
-            <div className="flex bg-neutral-800/90 rounded-lg p-0.5 border border-neutral-700/80 text-[11px] shrink-0">
-              <button
-                onClick={() => handleSetFpsTier('60')}
-                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
-                  fpsTier === '60'
-                    ? 'bg-neutral-700 text-white shadow-xs'
-                    : 'text-neutral-400 hover:text-neutral-200'
-                }`}
-                title="60 FPS: Taxa cheia de quadros e máxima fluidez"
-              >
-                {isMobile ? '60' : '60 FPS'}
-              </button>
-              <button
-                onClick={() => handleSetFpsTier('30')}
-                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
-                  fpsTier === '30'
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/80 shadow-xs'
-                    : 'text-neutral-400 hover:text-neutral-200'
-                }`}
-                title="30 FPS: Modo Econômico (50% menos CPU/GPU)"
-              >
-                🍃 {isMobile ? '30' : '30 FPS'}
-              </button>
-              <button
-                onClick={() => handleSetFpsTier('10')}
-                className={`px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
-                  fpsTier === '10'
-                    ? 'bg-amber-950 text-amber-300 border border-amber-600/80 shadow-xs'
-                    : 'text-neutral-400 hover:text-neutral-200'
-                }`}
-                title="10 FPS: Modo Super Economia (85% menos CPU/GPU mantendo caça 100%)"
-              >
-                🔋 {isMobile ? '10' : '10 FPS'}
-              </button>
-              <button
-                onClick={handleToggleGlobalUltra}
-                className={`flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded font-semibold transition cursor-pointer ${
-                  isPokeIdleUltra
-                    ? 'bg-purple-950 text-purple-200 border border-purple-600/80 shadow-xs'
-                    : 'text-neutral-400 hover:text-purple-300'
-                }`}
-                title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de estatísticas, desliga Canvas)"
-              >
-                <BarChart3 className="w-3 h-3 text-purple-400" />
-                <span className="hidden sm:inline">Ultra PokeIdle</span>
-              </button>
+            {/* Indicador de Performance Dinâmica Inteligente (60 FPS Ativo / 10 FPS Inativo >30s) */}
+            <div
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-semibold shrink-0 transition-colors ${
+                currentDynamicFps === 60
+                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800/70'
+                  : 'bg-amber-950/70 text-amber-300 border-amber-800/70'
+              }`}
+              title={
+                currentDynamicFps === 60
+                  ? 'Performance Dinâmica: 60 FPS (Ativo). Ao ficar 30s sem mexer, reduz para 10 FPS.'
+                  : 'Performance Dinâmica: 10 FPS (Inativo há >30s). Mexa o mouse ou toque para voltar a 60 FPS.'
+              }
+            >
+              {currentDynamicFps === 60 ? (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  <span>60 FPS <span className="font-normal text-emerald-500/80 hidden sm:inline">(Ativo)</span></span>
+                </>
+              ) : (
+                <>
+                  <Battery className="w-3.5 h-3.5 text-amber-400" />
+                  <span>10 FPS <span className="font-normal text-amber-500/80 hidden sm:inline">(Eco)</span></span>
+                </>
+              )}
             </div>
+
+            {/* Alternador do Modo Ultra PokeIdle */}
+            <button
+              onClick={handleToggleGlobalUltra}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg font-semibold transition cursor-pointer text-[11px] border shrink-0 ${
+                isPokeIdleUltra
+                  ? 'bg-purple-950 text-purple-200 border-purple-600/80 shadow-xs'
+                  : 'bg-neutral-800/90 text-neutral-400 border-neutral-700/80 hover:text-purple-300'
+              }`}
+              title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de estatísticas, desliga Canvas)"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
+              <span className="hidden sm:inline">Ultra PokeIdle</span>
+            </button>
 
             {/* Seletor de Inatividade / Auto-Sleep (Economia de GPU a 1 FPS) */}
             <div className="flex items-center bg-neutral-800/90 rounded-lg p-0.5 border border-neutral-700/80 text-[11px] shrink-0">
@@ -641,7 +643,7 @@ export const GameWorkspace: React.FC = () => {
             {/* Seletores de Layout (Responsivo Mobile vs Desktop) */}
             <div className="flex bg-neutral-800 rounded-lg p-0.5 border border-neutral-700/80 shrink-0">
               <button
-                onClick={() => setLayoutMode('grid')}
+                onClick={() => handleSelectLayoutMode('grid')}
                 className={`p-1 sm:p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
                   layoutMode === 'grid' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
@@ -651,7 +653,7 @@ export const GameWorkspace: React.FC = () => {
                 {isMobile && <span className="text-[10px]">4x</span>}
               </button>
               <button
-                onClick={() => setLayoutMode('focus')}
+                onClick={() => handleSelectLayoutMode('focus')}
                 className={`p-1 sm:p-1.5 rounded-md transition cursor-pointer flex items-center gap-1 ${
                   layoutMode === 'focus' ? 'bg-neutral-700 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
@@ -662,7 +664,7 @@ export const GameWorkspace: React.FC = () => {
               </button>
               {!isMobile && (
                 <button
-                  onClick={() => setLayoutMode('sidebar')}
+                  onClick={() => handleSelectLayoutMode('sidebar')}
                   className={`p-1.5 rounded-md transition cursor-pointer ${
                     layoutMode === 'sidebar' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'
                   }`}
@@ -933,6 +935,7 @@ export const GameWorkspace: React.FC = () => {
   // Renderiza o card individual de um slot com seu header e a div onde a WebView se ancora
   function renderSlotCard(slot: GameSlotConfig, isFocusedMode = false, _isSidebarCard = false) {
     const isRunning = activeSlots.includes(slot.id);
+    const effectiveZoom = slotZooms[slot.id] ?? slot.zoom ?? (layoutMode === 'grid' ? 0.75 : 1.0);
 
     return (
       <div
@@ -977,17 +980,17 @@ export const GameWorkspace: React.FC = () => {
                 -
               </button>
               <select
-                value={Math.round((slotZooms[slot.id] ?? slot.zoom ?? 1.0) * 100)}
+                value={Math.round(effectiveZoom * 100)}
                 onChange={(e) => setZoomForSlot(slot.id, Number(e.target.value) / 100)}
                 className="bg-transparent text-[10px] font-mono font-medium text-neutral-200 px-0.5 sm:px-1 py-0.5 outline-hidden cursor-pointer hover:text-indigo-400 text-center"
                 title="Nível de Zoom da Aba"
               >
                 <option value={50} className="bg-neutral-900 text-white">50%</option>
                 <option value={67} className="bg-neutral-900 text-white">67%</option>
-                <option value={75} className="bg-neutral-900 text-white">75%</option>
+                <option value={75} className="bg-neutral-900 text-white">75% (Auto Grade)</option>
                 <option value={80} className="bg-neutral-900 text-white">80%</option>
                 <option value={90} className="bg-neutral-900 text-white">90%</option>
-                <option value={100} className="bg-neutral-900 text-white">100%</option>
+                <option value={100} className="bg-neutral-900 text-white">100% (Nativo)</option>
                 <option value={110} className="bg-neutral-900 text-white">110%</option>
                 <option value={125} className="bg-neutral-900 text-white">125%</option>
                 <option value={150} className="bg-neutral-900 text-white">150%</option>
@@ -1017,7 +1020,10 @@ export const GameWorkspace: React.FC = () => {
                   <button
                     onClick={() => {
                       setFocusedSlotId(slot.id);
-                      setLayoutMode('focus');
+                      handleSelectLayoutMode('focus');
+                      if (!slot.zoom && !slotZooms[slot.id]) {
+                        gamePlatformService.setSlotZoom(slot.id, 1.0).catch(() => {});
+                      }
                     }}
                     className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
                     title="Maximizar / Foco nesta conta"

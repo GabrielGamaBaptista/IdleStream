@@ -508,12 +508,6 @@ class GameSlotManager(private val app: Application) {
                             if (antiSleep.isNotEmpty()) {
                                 view?.evaluateJavascript(antiSleep, null)
                             }
-                            if (pageUrl != null && pageUrl.contains("pokeidle.io")) {
-                                val hunt = getHuntScript()
-                                if (hunt.isNotEmpty()) {
-                                    view?.evaluateJavascript(hunt, null)
-                                }
-                            }
                         }
 
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -758,11 +752,11 @@ class GameSlotManager(private val app: Application) {
             }
         }
 
-        // 3. Extensão oficial /hunt para PokeIdle
+        // 3. Extensão oficial /hunt para PokeIdle (fallback seguro caso DOCUMENT_START_SCRIPT não tenha sido aplicado)
         if (url != null && url.contains("pokeidle.io")) {
             val huntScript = getHuntScript()
             if (huntScript.isNotEmpty()) {
-                view.evaluateJavascript(huntScript, null)
+                view.evaluateJavascript("if (!window.__pokeidleHuntGlobalLoaded) {\n$huntScript\n}", null)
             }
         }
     }

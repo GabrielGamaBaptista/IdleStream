@@ -62,6 +62,7 @@ impl AppState {
                     stream_id: stream.id.clone(),
                     status: StatusKind::Disconnected,
                     is_live: false,
+                    is_farming: false,
                     message: None,
                     uptime_seconds: 0,
                     estimated_ram_mb: 0,
@@ -249,6 +250,15 @@ impl AppState {
             (stream, accounts, cfg.settings.clone())
         };
 
+        crate::audit_log!(
+            "LIVES",
+            "INFO",
+            "Iniciando monitoramento de stream: [{}] ({:?}) com {} conta(s)",
+            stream.channel_slug,
+            stream.platform,
+            accounts.len()
+        );
+
         // Persiste intenção ativa imediatamente para auto-retomada após recriação/reinício
         self.mark_stream_desired_active(stream_id, true).await;
 
@@ -274,6 +284,7 @@ impl AppState {
                 stream_id: stream_id.to_string(),
                 status: StatusKind::Standby,
                 is_live: false,
+                is_farming: false,
                 message: Some("Canal offline. Em modo vigília aguardando a live iniciar...".into()),
                 uptime_seconds: 0,
                 estimated_ram_mb: 0,
@@ -349,6 +360,7 @@ impl AppState {
                         stream_id: stream_id.to_string(),
                         status: StatusKind::Error,
                         is_live: true,
+                        is_farming: false,
                         message: Some("Nenhuma conta com token OAuth. Faça o login primeiro.".into()),
                         uptime_seconds: 0,
                         estimated_ram_mb: 0,
@@ -417,12 +429,16 @@ impl AppState {
                                 if status_kind == StatusKind::Connected {
                                     current.status = StatusKind::Connected;
                                     current.is_live = true;
-                                    current.message = None;
+                                    current.is_farming = true;
+                                    if msg.is_some() {
+                                        current.message = msg;
+                                    }
                                     if current.connected_at.is_none() {
                                         current.connected_at = connected_at;
                                     }
                                 } else if status_kind == StatusKind::Error && current.status != StatusKind::Connected {
                                     current.status = StatusKind::Error;
+                                    current.is_farming = false;
                                     current.message = msg;
                                 }
                                 let cloned = current.clone();
@@ -489,7 +505,10 @@ impl AppState {
                                         StatusKind::Connected => {
                                             current.status = StatusKind::Connected;
                                             current.is_live = true;
-                                            current.message = None;
+                                            current.is_farming = true;
+                                            if msg.is_some() {
+                                                current.message = msg;
+                                            }
                                             if current.connected_at.is_none() {
                                                 current.connected_at = Some(now);
                                             }
@@ -497,7 +516,10 @@ impl AppState {
                                         StatusKind::Standby => {
                                             if current.status != StatusKind::Connected {
                                                 current.status = StatusKind::Standby;
-                                                current.is_live = false;
+                                                current.is_farming = false;
+                                                // Se mensagem indica fila de espera (streamer online na Twitch), mantém is_live = true
+                                                let is_waiting_in_queue = msg.as_deref().map(|m| m.contains("Fila de espera") || m.contains("fila")).unwrap_or(false);
+                                                current.is_live = is_waiting_in_queue;
                                                 current.message = msg;
                                                 current.connected_at = None;
                                             }
@@ -505,6 +527,7 @@ impl AppState {
                                         StatusKind::Connecting => {
                                             if current.status != StatusKind::Connected {
                                                 current.status = StatusKind::Connecting;
+                                                current.is_farming = false;
                                                 if is_selected_or_first || current.message.is_none() {
                                                     current.message = msg;
                                                 }
@@ -514,6 +537,7 @@ impl AppState {
                                             if current.status != StatusKind::Connected {
                                                 if is_selected_or_first || current.status == StatusKind::Connecting || current.status == StatusKind::Disconnected {
                                                     current.status = StatusKind::Error;
+                                                    current.is_farming = false;
                                                     current.message = msg;
                                                 }
                                             }
@@ -521,6 +545,7 @@ impl AppState {
                                         StatusKind::Disconnected => {
                                             if is_selected_or_first && current.status != StatusKind::Connected {
                                                 current.status = StatusKind::Disconnected;
+                                                current.is_farming = false;
                                                 current.message = msg;
                                             }
                                         }
@@ -566,6 +591,7 @@ impl AppState {
                     stream_id: stream_id.to_string(),
                     status: StatusKind::Connected,
                     is_live: true,
+                    is_farming: true,
                     message: None,
                     uptime_seconds: 0,
                     estimated_ram_mb: ram,
@@ -593,6 +619,7 @@ impl AppState {
                         stream_id: stream_id.to_string(),
                         status: StatusKind::Error,
                         is_live: true,
+                        is_farming: false,
                         message: Some("Nenhuma conta com login da Kick configurado. Vá em 'Contas' e faça o login.".into()),
                         uptime_seconds: 0,
                         estimated_ram_mb: 0,
@@ -620,6 +647,7 @@ impl AppState {
                     stream_id: stream_id.to_string(),
                     status: StatusKind::Connecting,
                     is_live: true,
+                    is_farming: false,
                     message: None,
                     uptime_seconds: 0,
                     estimated_ram_mb: (valid_accounts.len() as u32) * 1,
@@ -697,7 +725,10 @@ impl AppState {
                                             // Se QUALQUER conta conectou com sucesso, a stream está ativa e farmando!
                                             current.status = StatusKind::Connected;
                                             current.is_live = true;
-                                            current.message = None;
+                                            current.is_farming = true;
+                                            if msg.is_some() {
+                                                current.message = msg;
+                                            }
                                             if current.connected_at.is_none() {
                                                 current.connected_at = Some(now);
                                             }
@@ -705,7 +736,10 @@ impl AppState {
                                         StatusKind::Standby => {
                                             if current.status != StatusKind::Connected {
                                                 current.status = StatusKind::Standby;
-                                                current.is_live = false;
+                                                current.is_farming = false;
+                                                // Se mensagem indica fila de vigília Kick (streamer online), mantém is_live = true
+                                                let is_waiting_in_queue = msg.as_deref().map(|m| m.contains("vigília Kick") || m.contains("fila")).unwrap_or(false);
+                                                current.is_live = is_waiting_in_queue;
                                                 current.message = msg;
                                                 current.connected_at = None;
                                             }
@@ -713,6 +747,7 @@ impl AppState {
                                         StatusKind::Connecting => {
                                             if current.status != StatusKind::Connected {
                                                 current.status = StatusKind::Connecting;
+                                                current.is_farming = false;
                                                 if is_selected_or_first || current.message.is_none() {
                                                     current.message = msg;
                                                 }
@@ -722,6 +757,7 @@ impl AppState {
                                             if current.status != StatusKind::Connected {
                                                 if is_selected_or_first || current.status == StatusKind::Connecting || current.status == StatusKind::Disconnected {
                                                     current.status = StatusKind::Error;
+                                                    current.is_farming = false;
                                                     current.message = msg;
                                                 }
                                             }
@@ -729,6 +765,7 @@ impl AppState {
                                         StatusKind::Disconnected => {
                                             if is_selected_or_first && current.status != StatusKind::Connected {
                                                 current.status = StatusKind::Disconnected;
+                                                current.is_farming = false;
                                                 current.message = msg;
                                             }
                                         }
@@ -771,6 +808,7 @@ impl AppState {
     }
 
     pub async fn stop_stream(&self, stream_id: &str) {
+        crate::audit_log!("LIVES", "INFO", "Stream finalizada manualmente: ID {}", stream_id);
         self.mark_stream_desired_active(stream_id, false).await;
 
         {
@@ -847,6 +885,7 @@ impl AppState {
             stream_id: stream_id.to_string(),
             status: StatusKind::Disconnected,
             is_live: false,
+            is_farming: false,
             message: None,
             uptime_seconds: 0,
             estimated_ram_mb: 0,
@@ -899,6 +938,13 @@ impl AppState {
 
                     if (curr.status == StatusKind::Standby || curr.status == StatusKind::Error || curr.status == StatusKind::Connecting) && is_live {
                         // Stream came ONLINE or recovering from temporary error/connecting state
+                        crate::audit_log!(
+                            "LIVES",
+                            "INFO",
+                            "Stream [{}] ({:?}) entrou AO VIVO! Iniciando farm ativo.",
+                            stream.channel_slug,
+                            stream.platform
+                        );
                         let accounts = {
                             let cfg = this.config.lock().await;
                             cfg.accounts
@@ -912,6 +958,13 @@ impl AppState {
                         }
                     } else if (curr.status == StatusKind::Connected || curr.status == StatusKind::Connecting) && !is_live {
                         // Stream went OFFLINE! Stop players to free up RAM, transition to Standby
+                        crate::audit_log!(
+                            "LIVES",
+                            "INFO",
+                            "Stream [{}] ({:?}) encerrou transmissão. Entrando em Modo Vigília (0 MB RAM).",
+                            stream.channel_slug,
+                            stream.platform
+                        );
                         if stream.platform == Platform::Kick {
                             let prefix = format!("{}:", stream.id);
                             let mut watchers = this.kick_watchers.lock().await;
@@ -967,6 +1020,7 @@ impl AppState {
                             stream_id: stream.id.clone(),
                             status: StatusKind::Standby,
                             is_live: false,
+                            is_farming: false,
                             message: Some("Stream encerrou. Em vigília aguardando próximo broadcast...".into()),
                             uptime_seconds: 0,
                             estimated_ram_mb: 0,
@@ -1065,13 +1119,57 @@ impl AppState {
         }
         let _ = self.emit_accounts_health().await;
 
-        let status = match account.platform {
-            Platform::Kick => verify_kick_account(&account).await,
-            Platform::Twitch => verify_twitch_account(&self.http_client, &account).await,
+        let status = match tokio::time::timeout(
+            Duration::from_secs(8),
+            async {
+                match account.platform {
+                    Platform::Kick => verify_kick_account(&account).await,
+                    Platform::Twitch => verify_twitch_account(&self.http_client, &account).await,
+                }
+            },
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(_) => AccountHealthStatus {
+                account_id: account.id.clone(),
+                platform: account.platform,
+                label: account.label.clone(),
+                username: account.username.clone(),
+                state: AccountHealthState::NetworkError,
+                authenticated_username: None,
+                username_matches: None,
+                has_redeem_session: match account.platform {
+                    Platform::Kick => {
+                        account.kick_session.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                            && account.session_token.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                    }
+                    Platform::Twitch => account
+                        .oauth_token
+                        .as_deref()
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false),
+                },
+                http_status: Some(408),
+                message: "Tempo limite (8s) esgotado ao verificar conta com o servidor.".into(),
+                checked_at: now,
+                requires_reauth: false,
+            },
         };
 
         self.maybe_update_account_username(&account.id, status.authenticated_username.as_deref())
             .await;
+
+        let log_level = if status.requires_reauth { "WARN" } else { "INFO" };
+        crate::audit_log!(
+            "ACCOUNTS",
+            log_level,
+            "Verificação [{}] (@{}) -> {:?}: {}",
+            account.label,
+            account.username,
+            status.state,
+            status.message
+        );
 
         {
             let mut map = self.account_health.lock().await;
@@ -1129,13 +1227,57 @@ impl AppState {
                 kick_index += 1;
             }
 
-            let status = match acc.platform {
-                Platform::Kick => verify_kick_account(acc).await,
-                Platform::Twitch => verify_twitch_account(&self.http_client, acc).await,
+            let status = match tokio::time::timeout(
+                Duration::from_secs(8),
+                async {
+                    match acc.platform {
+                        Platform::Kick => verify_kick_account(acc).await,
+                        Platform::Twitch => verify_twitch_account(&self.http_client, acc).await,
+                    }
+                },
+            )
+            .await
+            {
+                Ok(s) => s,
+                Err(_) => AccountHealthStatus {
+                    account_id: acc.id.clone(),
+                    platform: acc.platform,
+                    label: acc.label.clone(),
+                    username: acc.username.clone(),
+                    state: AccountHealthState::NetworkError,
+                    authenticated_username: None,
+                    username_matches: None,
+                    has_redeem_session: match acc.platform {
+                        Platform::Kick => {
+                            acc.kick_session.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                                && acc.session_token.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+                        }
+                        Platform::Twitch => acc
+                            .oauth_token
+                            .as_deref()
+                            .map(|s| !s.trim().is_empty())
+                            .unwrap_or(false),
+                    },
+                    http_status: Some(408),
+                    message: "Tempo limite (8s) esgotado ao verificar conta com o servidor.".into(),
+                    checked_at: Utc::now().timestamp(),
+                    requires_reauth: false,
+                },
             };
 
             self.maybe_update_account_username(&acc.id, status.authenticated_username.as_deref())
                 .await;
+
+            let log_level = if status.requires_reauth { "WARN" } else { "INFO" };
+            crate::audit_log!(
+                "ACCOUNTS",
+                log_level,
+                "Verificação [{}] (@{}) -> {:?}: {}",
+                acc.label,
+                acc.username,
+                status.state,
+                status.message
+            );
 
             {
                 let mut map = self.account_health.lock().await;
@@ -1143,6 +1285,18 @@ impl AppState {
             }
             *self.account_health_last_checked.lock().await = Utc::now().timestamp();
             let _ = self.emit_accounts_health().await;
+        }
+
+        // Cleanup guard: assegurar que nenhuma conta termine o ciclo no estado Checking
+
+        {
+            let mut map = self.account_health.lock().await;
+            for st in map.values_mut() {
+                if st.state == AccountHealthState::Checking {
+                    st.state = AccountHealthState::NetworkError;
+                    st.message = "Verificação interrompida ou com tempo esgotado.".into();
+                }
+            }
         }
 
         self.emit_accounts_health().await
@@ -1207,19 +1361,28 @@ impl AppState {
 
     pub async fn handle_watcher_auth_failure(self: &Arc<Self>, account_id: &str, _reason: String) {
         let now = Utc::now().timestamp();
-        let skip = {
+        let should_verify = {
             let map = self.account_health.lock().await;
-            map.get(account_id).map_or(false, |st| {
-                now - st.checked_at < 30
-                    && matches!(
+            match map.get(account_id) {
+                Some(st) => {
+                    // Se já estiver confirmado como inválida, sem credenciais ou verificando no momento,
+                    // ignora re-verificações automáticas agressivas de watchers para não entrar em loop.
+                    if matches!(
                         st.state,
                         AccountHealthState::Checking
                             | AccountHealthState::Invalid
                             | AccountHealthState::MissingCredentials
-                    )
-            })
+                    ) {
+                        false
+                    } else {
+                        // Se era Healthy, RateLimited ou NetworkError, só re-verifica se passaram mais de 900s (15 min) ou se era Healthy
+                        now - st.checked_at >= 900 || st.state == AccountHealthState::Healthy
+                    }
+                }
+                None => true,
+            }
         };
-        if skip {
+        if !should_verify {
             return;
         }
         let _ = self.verify_single_account(account_id).await;
