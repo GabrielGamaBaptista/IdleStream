@@ -14,7 +14,7 @@ export interface KickStreamerStats {
   currentPoints?: number;
 }
 
-export const MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT = 1;
+export const MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT = 2;
 
 export function computeKickPriorityRanks(streamers: KickStreamerStats[]): void {
   // Ordena decrescente por avgDurationHours (quem mais fica online fica no topo)
@@ -97,8 +97,8 @@ console.log('Test 1: Ranqueamento decrescente por horas médias de live no Kick.
   console.log('  ✓ Streamers ordenados corretamente pelo tempo médio online (#1 streamer_d 12.0h)');
 }
 
-// Teste 2: Limite estrito de 1 slot de mineração ativo por conta na Kick
-console.log('\nTest 2: Limite estrito de 1 vaga ativa simultânea por conta na Kick...');
+// Teste 2: Suporte a 2 slots de mineração ativos por conta na Kick
+console.log('\nTest 2: Suporte a 2 vagas ativas simultâneas por conta na Kick...');
 {
   const streamers: KickStreamerStats[] = [
     { channelSlug: 'top1_streamer', avgDurationHours: 10.0, priorityRank: 1, isLive: true },
@@ -110,7 +110,7 @@ console.log('\nTest 2: Limite estrito de 1 vaga ativa simultânea por conta na K
   const slotMap = reconcileKickAccountSlots(streamers);
 
   assert.strictEqual(slotMap.get('top1_streamer'), 'ActiveMining');
-  assert.strictEqual(slotMap.get('top2_streamer'), 'StandbyVigil', 'Top 2 deve ficar em StandbyVigil no Kick');
+  assert.strictEqual(slotMap.get('top2_streamer'), 'ActiveMining', 'Top 2 agora também recebe ActiveMining na Kick');
   assert.strictEqual(slotMap.get('top3_streamer'), 'StandbyVigil', 'Top 3 deve ficar em StandbyVigil no Kick');
   assert.strictEqual(slotMap.get('offline_streamer'), 'Offline');
 
@@ -119,12 +119,12 @@ console.log('\nTest 2: Limite estrito de 1 vaga ativa simultânea por conta na K
   slotMap.forEach((state) => {
     if (state === 'ActiveMining') activeCount++;
   });
-  assert.strictEqual(activeCount, 1, 'Kick deve alocar EXATAMENTE 1 vaga ativa por conta');
-  console.log('  ✓ Apenas 1 vaga ativa concedida ao Top #1; demais em StandbyVigil');
+  assert.strictEqual(activeCount, 2, 'Kick deve alocar 2 vagas ativas por conta');
+  console.log('  ✓ 2 vagas ativas concedidas ao Top #1 e Top #2; demais em StandbyVigil');
 }
 
-// Teste 3: Promoção instantânea quando o Top 1 vai offline
-console.log('\nTest 3: Promoção dinâmica para ActiveMining quando Top 1 desliga a live...');
+// Teste 3: Promoção instantânea quando um streamer ativo vai offline
+console.log('\nTest 3: Promoção dinâmica para ActiveMining quando streamer ativo desliga a live...');
 {
   const streamers: KickStreamerStats[] = [
     { channelSlug: 'top1_streamer', avgDurationHours: 10.0, priorityRank: 1, isLive: false }, // caiu/offline!
@@ -135,9 +135,9 @@ console.log('\nTest 3: Promoção dinâmica para ActiveMining quando Top 1 desli
   const slotMap = reconcileKickAccountSlots(streamers);
 
   assert.strictEqual(slotMap.get('top1_streamer'), 'Offline');
-  assert.strictEqual(slotMap.get('top2_streamer'), 'ActiveMining', 'Top 2 promovido imediatamente para ActiveMining');
-  assert.strictEqual(slotMap.get('top3_streamer'), 'StandbyVigil');
-  console.log('  ✓ Top #2 assumiu a única vaga ativa com perfeição');
+  assert.strictEqual(slotMap.get('top2_streamer'), 'ActiveMining', 'Top 2 continua em ActiveMining');
+  assert.strictEqual(slotMap.get('top3_streamer'), 'ActiveMining', 'Top 3 promovido imediatamente para ActiveMining');
+  console.log('  ✓ Top #3 promovido dinamicamente para manter 2 vagas ativas');
 }
 
 // Teste 4: Parser de duração de VODs da Kick (ms -> horas médias)

@@ -23,6 +23,31 @@ export interface StreamConfig {
   account_id?: string;
 }
 
+export interface AlertEventConfig {
+  stream_offline: boolean;
+  auth_failure: boolean;
+  redeem_failed: boolean;
+  points_milestone: boolean;
+  points_milestone_value: number;
+}
+
+export interface AlertConfig {
+  desktop_notifications: boolean;
+  ntfy_enabled: boolean;
+  ntfy_topic?: string | null;
+  discord_enabled: boolean;
+  discord_webhook?: string | null;
+  events: AlertEventConfig;
+}
+
+export interface AlertPayload {
+  title: string;
+  body: string;
+  event_type: string;
+  timestamp: number;
+  priority: number;
+}
+
 export interface AppSettings {
   minimize_to_tray: boolean;
   start_with_windows: boolean;
@@ -32,6 +57,15 @@ export interface AppSettings {
   kick_mute_audio: boolean;
   kick_hide_chat: boolean;
   kick_lowest_quality: boolean;
+  alert_config?: AlertConfig;
+  overlay_enabled?: boolean;
+  overlay_port?: number;
+}
+
+export interface OverlayStatus {
+  running: boolean;
+  port: number;
+  url: string;
 }
 
 export interface GameSlotConfig {
@@ -42,6 +76,20 @@ export interface GameSlotConfig {
   auto_start: boolean;
   enable_hunt_extension?: boolean;
   zoom?: number;
+}
+
+export interface PokeIdleGameState {
+  slotId?: string;
+  nick?: string | null;
+  level?: number | null;
+  xp?: number | null;
+  gold?: number | null;
+  diamonds?: number | null;
+  huntSlug?: string | null;
+  bonusTwitchSecs?: number | null;
+  bonusKickSecs?: number | null;
+  xpRatePerHour?: number | null;
+  updatedAt?: number;
 }
 
 export interface SlotBounds {
@@ -111,6 +159,16 @@ export interface AppConfig {
   game_slots?: GameSlotConfig[];
   vote_accounts?: VoteAccountConfig[];
   vote_sync_id?: string | null;
+  device_sync_id?: string | null;
+}
+
+export interface DeviceSyncRemoteState {
+  syncId: string;
+  activeDevice: 'desktop' | 'mobile' | null;
+  lastUpdated: number;
+  isOtherDeviceActive: boolean;
+  isCurrentDeviceActive: boolean;
+  otherDeviceType: 'desktop' | 'mobile';
 }
 
 export interface RuntimeSessionState {
@@ -139,3 +197,46 @@ export interface StreamRuntimeStatus {
   channel_points?: string;
   account_points?: Record<string, string>;
 }
+
+export interface SafetyStartResult {
+  crash_count: number;
+  last_good_version: string | null;
+}
+
+export interface BackupInfo {
+  id: string;
+  created_at: number;
+  version: string;
+  reason: string;
+  file_count: number;
+}
+
+export interface NightStreamSummary {
+  channel: string;
+  platform: string;
+  was_live: boolean;
+}
+
+export interface MorningReport {
+  duration_minutes: number;
+  active_game_slots: string[];
+  streams_summary: NightStreamSummary[];
+}
+
+export interface NightModeStatus {
+  active: boolean;
+  started_at: number | null;
+  duration_minutes: number;
+}
+
+export interface ExportStatus {
+  active: boolean;
+  port: number;
+  local_ip: string;
+  export_url: string;
+  remaining_seconds: number;
+  exports_count: number;
+  max_exports: number;
+}
+
+

@@ -696,3 +696,264 @@ pub async fn write_audit_log(
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_safety_state(
+    safety: State<'_, Arc<crate::safety::SafetyNet>>,
+) -> Result<crate::safety::StartResult, String> {
+    Ok(safety.get_start_result())
+}
+
+#[tauri::command]
+pub async fn backup_configs_now(
+    safety: State<'_, Arc<crate::safety::SafetyNet>>,
+) -> Result<crate::safety::BackupInfo, String> {
+    safety.backup_configs("manual")
+}
+
+#[tauri::command]
+pub async fn list_backups(
+    safety: State<'_, Arc<crate::safety::SafetyNet>>,
+) -> Result<Vec<crate::safety::BackupInfo>, String> {
+    Ok(safety.list_backups())
+}
+
+#[tauri::command]
+pub async fn restore_backup(
+    safety: State<'_, Arc<crate::safety::SafetyNet>>,
+    id: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    safety.restore_backup(&id)?;
+    app.restart();
+}
+
+#[tauri::command]
+pub async fn update_alert_config(
+    state: StateHandle<'_>,
+    config: crate::alerts::AlertConfig,
+) -> Result<(), String> {
+    state.alert_dispatcher.update_config(config.clone()).await;
+    let cfg_to_save = {
+        let mut cfg = state.config.lock().await;
+        cfg.settings.alert_config = config;
+        cfg.clone()
+    };
+    state.config_store.save(&cfg_to_save)
+}
+
+#[tauri::command]
+pub async fn test_alert(state: StateHandle<'_>) -> Result<(), String> {
+    state
+        .alert_dispatcher
+        .send(crate::alerts::AlertEvent::Test)
+        .await;
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NightStreamSummary {
+    pub channel: String,
+    pub platform: String,
+    pub was_live: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MorningReport {
+    pub duration_minutes: u64,
+    pub active_game_slots: Vec<String>,
+    pub streams_summary: Vec<NightStreamSummary>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NightModeStatus {
+    pub active: bool,
+    pub started_at: Option<i64>,
+    pub duration_minutes: u64,
+}
+
+#[tauri::command]
+pub async fn toggle_night_mode(
+    state: StateHandle<'_>,
+    game_state: State<'_, Arc<crate::games::manager::GameLayoutManager>>,
+    enable: bool,
+) -> Result<Option<MorningReport>, String> {
+    let now = chrono::Utc::now().timestamp();
+    if enable {
+        let current_fps = *game_state.current_fps.lock().await;
+        let current_eco = *game_state.eco_mode.lock().await;
+
+        {
+            let mut rt = state.runtime_state.lock().await;
+            rt.night_mode_active = true;
+            rt.night_mode_started_at = Some(now);
+            rt.pre_night_fps = Some(current_fps);
+            rt.pre_night_eco = Some(current_eco);
+            let _ = state.config_store.save_runtime_state(&rt);
+        }
+
+        // Aplicar 10 FPS e Ultra Mode em todos os slots de jogo
+        game_state.set_fps(10).await?;
+        game_state.toggle_pokeidle_ultra(None, Some(true)).await?;
+
+        crate::audit_log!("NIGHT_MODE", "INFO", "Modo Noturno ativado: 10 FPS + Ultra Mode");
+        Ok(None)
+    } else {
+        let (started_at, pre_fps, pre_eco) = {
+            let mut rt = state.runtime_state.lock().await;
+            let started_at = rt.night_mode_started_at;
+            let pre_fps = rt.pre_night_fps.unwrap_or(30);
+            let pre_eco = rt.pre_night_eco.unwrap_or(true);
+
+            rt.night_mode_active = false;
+            rt.night_mode_started_at = None;
+            rt.pre_night_fps = None;
+            rt.pre_night_eco = None;
+            let _ = state.config_store.save_runtime_state(&rt);
+
+            (started_at, pre_fps, pre_eco)
+        };
+
+        // Restaurar FPS e desativar Ultra Mode forçado
+        game_state.set_fps(pre_fps).await?;
+        game_state.set_eco_mode(pre_eco).await?;
+        game_state.toggle_pokeidle_ultra(None, Some(false)).await?;
+
+        let duration_minutes = started_at
+            .map(|st| (now.saturating_sub(st).max(0) / 60) as u64)
+            .unwrap_or(0);
+
+        let active_slots: Vec<String> = {
+            let map = game_state.active_slots.lock().await;
+            map.keys().cloned().collect()
+        };
+
+        let streams_summary: Vec<NightStreamSummary> = {
+            let cfg = state.config.lock().await;
+            let statuses = state.statuses.lock().await;
+            cfg.streams
+                .iter()
+                .map(|s| {
+                    let st = statuses.get(&s.id);
+                    NightStreamSummary {
+                        channel: s.channel_slug.clone(),
+                        platform: format!("{:?}", s.platform),
+                        was_live: st.map(|x| x.is_live).unwrap_or(false),
+                    }
+                })
+                .collect()
+        };
+
+        let report = MorningReport {
+            duration_minutes,
+            active_game_slots: active_slots,
+            streams_summary,
+        };
+
+        crate::audit_log!(
+            "NIGHT_MODE",
+            "INFO",
+            "Modo Noturno desativado após {} min. Relatório: {} slots ativos, {} streams",
+            report.duration_minutes,
+            report.active_game_slots.len(),
+            report.streams_summary.len()
+        );
+
+        Ok(Some(report))
+    }
+}
+
+#[tauri::command]
+pub async fn get_night_mode_status(state: StateHandle<'_>) -> Result<NightModeStatus, String> {
+    let now = chrono::Utc::now().timestamp();
+    let rt = state.runtime_state.lock().await;
+    let duration_minutes = rt
+        .night_mode_started_at
+        .map(|st| (now.saturating_sub(st).max(0) / 60) as u64)
+        .unwrap_or(0);
+
+    Ok(NightModeStatus {
+        active: rt.night_mode_active,
+        started_at: rt.night_mode_started_at,
+        duration_minutes,
+    })
+}
+
+#[tauri::command]
+pub async fn device_set_sync_id(
+    state: StateHandle<'_>,
+    sync_id: Option<String>,
+) -> Result<AppConfig, String> {
+    let sanitized = sync_id.and_then(|s| {
+        let trimmed = s.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+
+    let mut cfg = state.config.lock().await;
+    cfg.device_sync_id = sanitized;
+    state.config_store.save(&cfg)?;
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn device_get_sync_id(state: StateHandle<'_>) -> Result<Option<String>, String> {
+    let cfg = state.config.lock().await;
+    Ok(cfg.device_sync_id.clone())
+}
+
+#[tauri::command]
+pub async fn toggle_overlay_server(
+    overlay: State<'_, Arc<crate::overlay::OverlayServer>>,
+    state: StateHandle<'_>,
+    enable: bool,
+) -> Result<crate::overlay::OverlayStatus, String> {
+    if enable {
+        overlay.start()?;
+    } else {
+        overlay.stop();
+    }
+    {
+        let mut cfg = state.config.lock().await;
+        cfg.settings.overlay_enabled = enable;
+        let _ = state.config_store.save(&cfg);
+    }
+    Ok(overlay.get_status())
+}
+
+#[tauri::command]
+pub async fn get_overlay_status(
+    overlay: State<'_, Arc<crate::overlay::OverlayServer>>,
+) -> Result<crate::overlay::OverlayStatus, String> {
+    Ok(overlay.get_status())
+}
+
+#[tauri::command]
+pub async fn start_session_export(
+    export: State<'_, Arc<crate::session_export::SessionExportServer>>,
+    pin: String,
+) -> Result<crate::session_export::ExportStatus, String> {
+    export.start(pin)
+}
+
+#[tauri::command]
+pub async fn stop_session_export(
+    export: State<'_, Arc<crate::session_export::SessionExportServer>>,
+) -> Result<crate::session_export::ExportStatus, String> {
+    export.stop();
+    Ok(export.get_status())
+}
+
+#[tauri::command]
+pub async fn get_session_export_status(
+    export: State<'_, Arc<crate::session_export::SessionExportServer>>,
+) -> Result<crate::session_export::ExportStatus, String> {
+    Ok(export.get_status())
+}
+
+
+
+

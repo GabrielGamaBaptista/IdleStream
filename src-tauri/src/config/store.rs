@@ -102,8 +102,10 @@ impl ConfigStore {
                             }
                             let vote_sync_id: Option<String> = val.get("vote_sync_id")
                                 .and_then(|v| serde_json::from_value(v.clone()).ok());
+                            let device_sync_id: Option<String> = val.get("device_sync_id")
+                                .and_then(|v| serde_json::from_value(v.clone()).ok());
                             eprintln!("[ConfigStore] Lenient fallback salvaged {} accounts and {} streams", accounts.len(), streams.len());
-                            AppConfig { accounts, streams, settings, game_slots, vote_accounts, vote_sync_id }
+                            AppConfig { accounts, streams, settings, game_slots, vote_accounts, vote_sync_id, device_sync_id }
                         } else {
                             eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED completely: {}! Content: {}", e, clean_content);
                             AppConfig::default()
@@ -334,6 +336,7 @@ mod tests {
             desired_active_stream_ids: vec!["s-1".into(), "s-2".into()],
             desired_active_game_slots: vec!["slot-1".into(), "slot-3".into()],
             last_active_tab: Some("games".into()),
+            ..Default::default()
         };
         store.save_runtime_state(&rt).expect("Save runtime state should succeed");
 

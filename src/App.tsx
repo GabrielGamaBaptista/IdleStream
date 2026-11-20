@@ -9,11 +9,14 @@ import { StatusBar } from './components/StatusBar';
 import { AddStreamModal } from './components/AddStreamModal';
 import { EditStreamModal } from './components/EditStreamModal';
 import { AddAccountModal } from './components/AddAccountModal';
+import { SafetyRecoveryModal } from './components/SafetyRecoveryModal';
+import { MorningReportModal } from './components/MorningReportModal';
+import { SessionExportModal } from './components/SessionExportModal';
 import { BottomNav } from './components/BottomNav';
 import { BatteryBanner } from './components/BatteryBanner';
 import { GameWorkspace } from './components/games/GameWorkspace';
 import { VoteWorkspace } from './components/votes/VoteWorkspace';
-import { Tv, Plus, ShieldAlert, RefreshCw, ArrowUpDown, Shrink } from 'lucide-react';
+import { Tv, Plus, ShieldAlert, RefreshCw, ArrowUpDown, Shrink, Smartphone } from 'lucide-react';
 import { StreamConfig } from './types';
 import { getStreamPoints } from './utils/format';
 import {
@@ -36,6 +39,10 @@ export default function App() {
     isImmersiveMode,
     toggleImmersiveMode,
     statuses,
+    pausedByOtherDevice,
+    claimDeviceActive,
+    isSessionExportOpen,
+    setSessionExportOpen,
   } = useAppStore();
 
   const failingAccounts = getFailingAccounts(accountsHealth);
@@ -164,6 +171,32 @@ export default function App() {
           {activeTab === 'streams' && (
             <div className="space-y-6">
               <BatteryBanner />
+
+              {/* Banner de Exclusão Mútua: Mobile Ativo */}
+              {pausedByOtherDevice && (
+                <div className="rounded-xl border border-amber-600/60 bg-amber-950/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/30 animate-in fade-in">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-300 shrink-0">
+                      <Smartphone className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-amber-200">
+                        📱 Celular farmando no momento
+                      </h4>
+                      <p className="text-xs text-amber-300/80 mt-0.5">
+                        As streams deste computador foram pausadas automaticamente para evitar conflito de IP e suspensão de recompensas.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => claimDeviceActive()}
+                    className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition shrink-0 cursor-pointer shadow-md shadow-amber-700/20"
+                  >
+                    Tomar Farm para o PC
+                  </button>
+                </div>
+              )}
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
@@ -303,6 +336,12 @@ export default function App() {
         onClose={() => setEditingStream(null)}
       />
       <AddAccountModal />
+      <SafetyRecoveryModal />
+      <MorningReportModal />
+      <SessionExportModal
+        isOpen={isSessionExportOpen}
+        onClose={() => setSessionExportOpen(false)}
+      />
     </div>
   );
 }

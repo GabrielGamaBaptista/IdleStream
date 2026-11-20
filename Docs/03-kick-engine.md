@@ -175,19 +175,17 @@ Após conectar em `wss://websockets.kick.com/viewer/v1/connect?token={ws_token}`
 
 Assim como a Twitch possui um coordenador para 2 vagas, a Kick agora conta com o `KickPriorityCoordinator`, respeitando o limite arquitetural da plataforma:
 
-1. **Limite Estrito de 1 Vaga Ativa por Conta (`MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT = 1`)**:
-   Diferente da Twitch (que aceita 2 visualizações simultâneas contabilizando watch-time), a Kick rastreia estritamente **1 stream ativa por conta**. A tentativa de abrir múltiplos WebSockets de visualizadores em paralelo com a mesma conta acarreta:
-   - Bloqueio imediato por **Rate-Limit HTTP 429** no endpoint de token (`/viewer/v1/token`).
-   - Descarte silencioso (*silent drop*) do acúmulo de pontos no servidor.
+1. **Suporte a 2 Vagas Ativas Concorrentes por Conta (`MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT = 2`)**:
+   Assim como na Twitch, a Kick suporta até **2 streams ativas simultâneas por conta** acumulando watch-time e pontos de canal. Para evitar rate-limits de token (`HTTP 429` no endpoint `/viewer/v1/token`), o watcher aplica um escalonamento (*stagger*) suave de requisições baseado no rank do streamer.
 
 2. **Cálculo de Prioridade pelo Tempo Médio Online**:
    - A função `fetch_kick_streamer_uptime_avg` consulta `GET /api/v2/channels/{slug}/videos` e converte o campo `"duration"` (em milissegundos) dos VODs recentes em horas médias de live.
    - O algoritmo `compute_kick_priority_ranks` ordena os streamers de forma decrescente: o streamer com maior histórico de horas online recebe o **Rank #1**.
 
 3. **Fila Reativa Tokio MPSC (`MiningSlotState`)**:
-   - **`ActiveMining`**: Apenas o streamer online de maior prioridade (Rank 1) recebe a vaga ativa de mineração, conectando o Viewer WebSocket e disparando o tracking a cada 10s.
+   - **`ActiveMining`**: Os streamers online de maior prioridade (Top 2) recebem as vagas ativas de mineração, conectando os respectivos Viewer WebSockets e disparando o tracking a cada 10s.
    - **`StandbyVigil`**: Os demais canais online (ou offline) entram em modo vigília reativa com **0 MB de RAM e 0% de CPU**. Ao detectar democao, o WebSocket anterior é encerrado de forma graciosa.
-   - **Promoção Dinâmica Instantânea**: Se o streamer Rank 1 encerrar a transmissão, o Coordenador envia instantaneamente uma notificação via MPSC promovendo o Rank 2 para `ActiveMining`, sem interrupção para o usuário.
+   - **Promoção Dinâmica Instantânea**: Se um dos streamers ativos encerrar a transmissão, o Coordenador envia instantaneamente uma notificação via MPSC promovendo o próximo streamer da fila para `ActiveMining`, sem interrupção para o usuário.
 
 ---
 

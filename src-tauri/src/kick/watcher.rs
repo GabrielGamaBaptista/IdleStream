@@ -395,7 +395,7 @@ pub fn start_kick_watcher(
                 MiningSlotState::StandbyVigil => {
                     apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
 
-                    // Em StandbyVigil, aguarda vaga no Top 1 online sem abrir viewer WebSocket (0 MB extra)
+                    // Em StandbyVigil, aguarda vaga no Top 2 online sem abrir viewer WebSocket (0 MB extra)
                     let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(30));
                     tokio::pin!(sleep);
                     loop {
@@ -424,6 +424,11 @@ pub fn start_kick_watcher(
                 }
                 MiningSlotState::ActiveMining => {
                     apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+
+                    // Escalonamento suave para evitar requisições concorrentes de token simultâneas (HTTP 429)
+                    if rank > 1 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1500 * (rank as u64 - 1))).await;
+                    }
 
                     // Conecta no Viewer WebSocket para computar pontos
                     let ws_token = match fetch_viewer_ws_token(&session_token, &clean_slug, channel_id, user_id).await {

@@ -1,10 +1,38 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 #[cfg(desktop)]
 use tauri::{LogicalPosition, LogicalSize, Rect, WebviewBuilder, WebviewUrl};
 use tokio::sync::Mutex;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PokeIdleGameState {
+    #[serde(default)]
+    pub slot_id: String,
+    #[serde(default)]
+    pub nick: Option<String>,
+    #[serde(default)]
+    pub level: Option<u32>,
+    #[serde(default)]
+    pub xp: Option<u64>,
+    #[serde(default)]
+    pub gold: Option<u64>,
+    #[serde(default)]
+    pub diamonds: Option<u64>,
+    #[serde(default)]
+    pub hunt_slug: Option<String>,
+    #[serde(default)]
+    pub bonus_twitch_secs: Option<u64>,
+    #[serde(default)]
+    pub bonus_kick_secs: Option<u64>,
+    #[serde(default)]
+    pub xp_rate_per_hour: Option<u64>,
+    #[serde(default)]
+    pub updated_at: u64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewportRect {
@@ -45,6 +73,8 @@ pub struct GameSlotInfo {
 pub struct GameLayoutManager {
     app: AppHandle,
     pub active_slots: Mutex<HashMap<String, String>>, // slot_id -> url
+    pub game_states: Arc<Mutex<HashMap<String, PokeIdleGameState>>>, // slot_id -> game_state
+    pub slot_snapshots: Arc<Mutex<HashMap<String, String>>>, // slot_id -> base64 dataUrl
     pub current_layout: Mutex<ViewLayoutMode>,
     pub current_rect: Mutex<Option<ViewportRect>>,
     pub eco_mode: Mutex<bool>,
@@ -56,6 +86,8 @@ impl GameLayoutManager {
         Self {
             app,
             active_slots: Mutex::new(HashMap::new()),
+            game_states: Arc::new(Mutex::new(HashMap::new())),
+            slot_snapshots: Arc::new(Mutex::new(HashMap::new())),
             current_layout: Mutex::new(ViewLayoutMode::Grid2x2),
             current_rect: Mutex::new(None),
             eco_mode: Mutex::new(true),
@@ -104,9 +136,47 @@ impl GameLayoutManager {
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
             }
 
+            let app_title = self.app.clone();
+            let slot_id_title = slot_id.to_string();
+            let states_clone = self.game_states.clone();
+            let snapshots_clone = self.slot_snapshots.clone();
+
             let builder = WebviewBuilder::new(slot_id, WebviewUrl::External(parsed_url))
                 .data_directory(profile_dir)
-                .initialization_script(&full_init_script);
+                .initialization_script(&full_init_script)
+                .on_document_title_changed(move |_wv, title| {
+                    if let Some(json_str) = title.strip_prefix("__IDLESTREAM_GAME_STATE__|") {
+                        if let Ok(mut state) = serde_json::from_str::<PokeIdleGameState>(json_str) {
+                            state.slot_id = slot_id_title.clone();
+                            let state_clone = state.clone();
+                            let states_lock = states_clone.clone();
+                            let app_emit = app_title.clone();
+                            let sid = slot_id_title.clone();
+                            tauri::async_runtime::spawn(async move {
+                                {
+                                    let mut map = states_lock.lock().await;
+                                    map.insert(sid, state_clone.clone());
+                                }
+                                let _ = app_emit.emit("game-state-update", &state_clone);
+                            });
+                        }
+                    } else if let Some(snap_data) = title.strip_prefix("__IDLESTREAM_SLOT_SNAPSHOT__|") {
+                        let sid = slot_id_title.clone();
+                        let snap_str = snap_data.to_string();
+                        let snapshots_lock = snapshots_clone.clone();
+                        let app_emit = app_title.clone();
+                        tauri::async_runtime::spawn(async move {
+                            {
+                                let mut map = snapshots_lock.lock().await;
+                                map.insert(sid.clone(), snap_str.clone());
+                            }
+                            let _ = app_emit.emit("slot-snapshot-update", serde_json::json!({
+                                "slotId": sid,
+                                "snapshot": snap_str,
+                            }));
+                        });
+                    }
+                });
 
             // Adiciona a Child Webview à janela principal
             win.add_child(
@@ -432,5 +502,54 @@ impl GameLayoutManager {
             }
         }
         Ok(())
+    }
+
+    /// Retorna o estado lido do PokeIdle para um slot específico
+    pub async fn get_game_state(&self, slot_id: &str) -> Option<PokeIdleGameState> {
+        let map = self.game_states.lock().await;
+        map.get(slot_id).cloned()
+    }
+
+    /// Retorna todos os estados ativos de jogos PokeIdle
+    pub async fn get_all_game_states(&self) -> HashMap<String, PokeIdleGameState> {
+        let map = self.game_states.lock().await;
+        map.clone()
+    }
+
+    /// Congela um slot individual: força captura de snapshot, move offscreen e suspende ticks (0% GPU)
+    pub async fn freeze_slot(&self, slot_id: &str) -> Result<Option<String>, String> {
+        crate::audit_log!("GAMES", "INFO", "Congelando slot [{}] (0% GPU)", slot_id);
+        #[cfg(desktop)]
+        if let Some(wv) = self.app.get_webview(slot_id) {
+            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+            let _ = wv.set_bounds(Rect {
+                position: LogicalPosition::new(-99999.0, -99999.0).into(),
+                size: LogicalSize::new(1.0, 1.0).into(),
+            });
+        }
+        let map = self.slot_snapshots.lock().await;
+        Ok(map.get(slot_id).cloned())
+    }
+
+    /// Descongela um slot: restaura ticks e reaplica o layout
+    pub async fn unfreeze_slot(&self, slot_id: &str) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "Descongelando slot [{}]", slot_id);
+        #[cfg(desktop)]
+        if let Some(wv) = self.app.get_webview(slot_id) {
+            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
+        }
+        self.restore_current_layout().await
+    }
+
+    /// Retorna o último snapshot base64 capturado para um slot
+    pub async fn get_slot_snapshot(&self, slot_id: &str) -> Option<String> {
+        let map = self.slot_snapshots.lock().await;
+        map.get(slot_id).cloned()
+    }
+
+    /// Retorna todos os snapshots capturados
+    pub async fn get_all_snapshots(&self) -> HashMap<String, String> {
+        let map = self.slot_snapshots.lock().await;
+        map.clone()
     }
 }

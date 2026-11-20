@@ -77,8 +77,15 @@ pub struct AppSettings {
     pub kick_hide_chat: bool,
     #[serde(default = "default_kick_lowest_quality")]
     pub kick_lowest_quality: bool,
+    #[serde(default)]
+    pub alert_config: crate::alerts::AlertConfig,
+    #[serde(default)]
+    pub overlay_enabled: bool,
+    #[serde(default = "default_overlay_port")]
+    pub overlay_port: u16,
 }
 
+fn default_overlay_port() -> u16 { 47850 }
 fn default_minimize_to_tray() -> bool { true }
 fn default_auto_reconnect() -> bool { true }
 fn default_reconnect_delay_secs() -> u64 { 10 }
@@ -98,6 +105,9 @@ impl Default for AppSettings {
             kick_mute_audio: true,
             kick_hide_chat: true,
             kick_lowest_quality: true,
+            alert_config: crate::alerts::AlertConfig::default(),
+            overlay_enabled: false,
+            overlay_port: 47850,
         }
     }
 }
@@ -282,6 +292,8 @@ pub struct AppConfig {
     pub vote_accounts: Vec<VoteAccountConfig>,
     #[serde(default)]
     pub vote_sync_id: Option<String>,
+    #[serde(default)]
+    pub device_sync_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -290,6 +302,10 @@ pub struct RuntimeSessionState {
     pub desired_active_stream_ids: Vec<String>,
     pub desired_active_game_slots: Vec<String>,
     pub last_active_tab: Option<String>,
+    pub night_mode_active: bool,
+    pub night_mode_started_at: Option<i64>,
+    pub pre_night_fps: Option<u32>,
+    pub pre_night_eco: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -301,6 +317,7 @@ impl Default for AppConfig {
             game_slots: default_game_slots(),
             vote_accounts: default_vote_accounts(),
             vote_sync_id: None,
+            device_sync_id: None,
         }
     }
 }

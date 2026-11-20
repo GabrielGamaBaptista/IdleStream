@@ -1,5 +1,5 @@
 use crate::config::{default_game_slots, GameSlotConfig};
-use crate::games::manager::{SlotBounds, ViewLayoutMode, ViewportRect};
+use crate::games::manager::{PokeIdleGameState, SlotBounds, ViewLayoutMode, ViewportRect};
 use std::path::PathBuf;
 
 #[test]
@@ -221,4 +221,32 @@ fn test_config_store_game_slots_persistence() {
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_pokeidle_game_state_deserialization() {
+    let raw_json = r#"{
+        "nick": "AshKetchum",
+        "level": 85,
+        "xp": 9845120,
+        "gold": 450200,
+        "diamonds": 120,
+        "huntSlug": "mewtwo-cave",
+        "bonusTwitchSecs": 1800,
+        "bonusKickSecs": 3600,
+        "xpRatePerHour": 254000,
+        "updatedAt": 1700000000
+    }"#;
+
+    let parsed: PokeIdleGameState = serde_json::from_str(raw_json).expect("Falha ao desserializar PokeIdleGameState");
+    assert_eq!(parsed.nick.as_deref(), Some("AshKetchum"));
+    assert_eq!(parsed.level, Some(85));
+    assert_eq!(parsed.xp, Some(9845120));
+    assert_eq!(parsed.gold, Some(450200));
+    assert_eq!(parsed.diamonds, Some(120));
+    assert_eq!(parsed.hunt_slug.as_deref(), Some("mewtwo-cave"));
+    assert_eq!(parsed.bonus_twitch_secs, Some(1800));
+    assert_eq!(parsed.bonus_kick_secs, Some(3600));
+    assert_eq!(parsed.xp_rate_per_hour, Some(254000));
+    assert_eq!(parsed.updated_at, 1700000000);
 }

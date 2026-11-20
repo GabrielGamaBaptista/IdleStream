@@ -306,6 +306,16 @@
       if (htmlEl) {
         if (isSlotHidden) {
           htmlEl.classList.add('idlestream-slot-hidden');
+          // Feature 6: Captura snapshot do canvas do jogo antes de suspender
+          try {
+            const canvas = document.querySelector('canvas');
+            if (canvas && typeof canvas.toDataURL === 'function') {
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+              if (dataUrl && dataUrl.length > 50) {
+                document.title = '__IDLESTREAM_SLOT_SNAPSHOT__|' + dataUrl;
+              }
+            }
+          } catch (_) {}
           // Força coleta de lixo JS para liberar memória quando ocultado
           if (typeof window.gc === 'function') {
             try {
@@ -324,6 +334,20 @@
         scheduleNextFlush();
       }, delay);
       console.log('[IdleStream] Slot hidden state alterado:', { isSlotHidden });
+    };
+
+    window.__idlestreamCaptureSlotSnapshot = function () {
+      try {
+        const canvas = document.querySelector('canvas');
+        if (canvas && typeof canvas.toDataURL === 'function') {
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+          if (dataUrl && dataUrl.length > 50) {
+            document.title = '__IDLESTREAM_SLOT_SNAPSHOT__|' + dataUrl;
+            return dataUrl;
+          }
+        }
+      } catch (_) {}
+      return null;
     };
 
     try {
@@ -523,6 +547,173 @@
     ['mousedown', 'touchstart', 'keydown', 'wheel', 'pointerdown'].forEach((evtName) => {
       window.addEventListener(evtName, reportUserActivity, { passive: true, capture: true });
     });
+
+    // ============================================================
+    // 11. POKEIDLE WEBSOCKET & STATE INTERCEPTOR (FEATURE 7)
+    // ============================================================
+    try {
+      const isPokeIdle = /(^|\.)pokeidle\.io$/.test(location.hostname) || /localhost/.test(location.hostname);
+      if (isPokeIdle) {
+        window.__idlestream_game_state = window.__idlestream_game_state || {
+          nick: null,
+          level: null,
+          xp: null,
+          gold: null,
+          diamonds: null,
+          huntSlug: null,
+          bonusTwitchSecs: null,
+          bonusKickSecs: null,
+          xpRatePerHour: 0,
+          updatedAt: Date.now(),
+        };
+
+        let xpHistory = []; // { xp, time }
+        let lastTitleEmit = 0;
+        let emitTimer = null;
+
+        const emitGameStateToHost = () => {
+          try {
+            const st = window.__idlestream_game_state;
+            // Fallback para window.estado do PokeIdle se campos estiverem vazios
+            const est = window.estado;
+            if (est && typeof est === 'object') {
+              const tr = est.treinador || est.jogador || est;
+              if (!st.nick && tr.nick) st.nick = String(tr.nick);
+              if (!st.nick && tr.nome) st.nick = String(tr.nome);
+              if (st.level === null && tr.level !== undefined) st.level = Number(tr.level);
+              if (st.level === null && tr.nivel !== undefined) st.level = Number(tr.nivel);
+              if (st.xp === null && tr.xp !== undefined) st.xp = Number(tr.xp);
+              if (st.gold === null && tr.gold !== undefined) st.gold = Number(tr.gold);
+              if (st.gold === null && tr.ouro !== undefined) st.gold = Number(tr.ouro);
+              if (st.diamonds === null && tr.diamantes !== undefined) st.diamonds = Number(tr.diamantes);
+              if (st.diamonds === null && tr.diamonds !== undefined) st.diamonds = Number(tr.diamonds);
+              if (!st.huntSlug && est.huntSlug) st.huntSlug = String(est.huntSlug);
+              if (!st.huntSlug && est.hunt) st.huntSlug = String(est.hunt);
+            }
+
+            const payload = {
+              nick: st.nick,
+              level: st.level,
+              xp: st.xp,
+              gold: st.gold,
+              diamonds: st.diamonds,
+              huntSlug: st.huntSlug,
+              bonusTwitchSecs: st.bonusTwitchSecs,
+              bonusKickSecs: st.bonusKickSecs,
+              xpRatePerHour: st.xpRatePerHour,
+              updatedAt: Math.floor(st.updatedAt / 1000),
+            };
+
+            const serialized = JSON.stringify(payload);
+            document.title = '__IDLESTREAM_GAME_STATE__|' + serialized;
+            lastTitleEmit = Date.now();
+          } catch (_) {}
+        };
+
+        window.__emitIdleStreamGameState = emitGameStateToHost;
+
+        const scheduleEmit = (immediate) => {
+          const now = Date.now();
+          if (immediate || now - lastTitleEmit >= 3000) {
+            clearTimeout(emitTimer);
+            emitGameStateToHost();
+          } else if (!emitTimer) {
+            emitTimer = setTimeout(() => {
+              emitTimer = null;
+              emitGameStateToHost();
+            }, 3000);
+          }
+        };
+
+        const processMessageData = (raw) => {
+          if (!raw || typeof raw !== 'object') return;
+          const st = window.__idlestream_game_state;
+          const now = Date.now();
+          let changed = false;
+
+          const extractFrom = (obj) => {
+            if (!obj || typeof obj !== 'object') return;
+            if (obj.nick !== undefined && obj.nick !== st.nick) { st.nick = String(obj.nick); changed = true; }
+            if (obj.nome !== undefined && obj.nome !== st.nick) { st.nick = String(obj.nome); changed = true; }
+            if (obj.level !== undefined && obj.level !== st.level) { st.level = Number(obj.level); changed = true; }
+            if (obj.nivel !== undefined && obj.nivel !== st.level) { st.level = Number(obj.nivel); changed = true; }
+            if (obj.gold !== undefined && obj.gold !== st.gold) { st.gold = Number(obj.gold); changed = true; }
+            if (obj.ouro !== undefined && obj.ouro !== st.gold) { st.gold = Number(obj.ouro); changed = true; }
+            if (obj.diamantes !== undefined && obj.diamantes !== st.diamonds) { st.diamonds = Number(obj.diamantes); changed = true; }
+            if (obj.diamonds !== undefined && obj.diamonds !== st.diamonds) { st.diamonds = Number(obj.diamonds); changed = true; }
+            if (obj.huntSlug !== undefined && obj.huntSlug !== st.huntSlug) { st.huntSlug = String(obj.huntSlug); changed = true; }
+            if (obj.hunt !== undefined && typeof obj.hunt === 'string' && obj.hunt !== st.huntSlug) { st.huntSlug = obj.hunt; changed = true; }
+
+            // Bônus Twitch / Kick
+            if (obj.bonusXp && typeof obj.bonusXp === 'object') {
+              const bx = obj.bonusXp;
+              if (bx.twitchSecs !== undefined) { st.bonusTwitchSecs = Number(bx.twitchSecs); changed = true; }
+              else if (bx.twitch !== undefined) { st.bonusTwitchSecs = Number(bx.twitch); changed = true; }
+              if (bx.kickSecs !== undefined) { st.bonusKickSecs = Number(bx.kickSecs); changed = true; }
+              else if (bx.kick !== undefined) { st.bonusKickSecs = Number(bx.kick); changed = true; }
+            }
+
+            if (typeof obj.xp === 'number') {
+              st.xp = obj.xp;
+              changed = true;
+              xpHistory.push({ xp: obj.xp, time: now });
+              const cutoff = now - 5 * 60 * 1000;
+              xpHistory = xpHistory.filter(h => h.time >= cutoff);
+              if (xpHistory.length >= 2) {
+                const oldest = xpHistory[0];
+                const newest = xpHistory[xpHistory.length - 1];
+                const deltaXp = newest.xp - oldest.xp;
+                const deltaHours = (newest.time - oldest.time) / 3600000;
+                if (deltaHours > 0.0005 && deltaXp >= 0) {
+                  st.xpRatePerHour = Math.round(deltaXp / deltaHours);
+                }
+              }
+            }
+          };
+
+          extractFrom(raw);
+          if (raw.data) extractFrom(raw.data);
+          if (raw.treinador) extractFrom(raw.treinador);
+          if (raw.jogador) extractFrom(raw.jogador);
+
+          if (changed) {
+            st.updatedAt = now;
+            scheduleEmit(false);
+          }
+        };
+
+        // Interceptar WebSocket nativo
+        const _NativeWS = window.WebSocket;
+        if (_NativeWS && !window.__idlestream_ws_hooked) {
+          window.__idlestream_ws_hooked = true;
+          window.WebSocket = function (url, protocols) {
+            const sock = protocols ? new _NativeWS(url, protocols) : new _NativeWS(url);
+            sock.addEventListener('message', (ev) => {
+              try {
+                if (typeof ev.data === 'string') {
+                  const parsed = JSON.parse(ev.data);
+                  processMessageData(parsed);
+                }
+              } catch (_) {}
+            });
+            return sock;
+          };
+          Object.setPrototypeOf(window.WebSocket, _NativeWS);
+          window.WebSocket.prototype = _NativeWS.prototype;
+          window.WebSocket.CONNECTING = _NativeWS.CONNECTING;
+          window.WebSocket.OPEN = _NativeWS.OPEN;
+          window.WebSocket.CLOSING = _NativeWS.CLOSING;
+          window.WebSocket.CLOSED = _NativeWS.CLOSED;
+        }
+
+        // Heartbeat de emissão do estado: a cada 15 segundos força um emit
+        setInterval(() => {
+          scheduleEmit(true);
+        }, 15000);
+      }
+    } catch (err) {
+      console.warn('[IdleStream] Erro ao inicializar PokeIdle WebSocket hook:', err);
+    }
 
     console.log('[IdleStream] Hi-Performance & Anti-Sleep engine ativo.');
   } catch (e) {

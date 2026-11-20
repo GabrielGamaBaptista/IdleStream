@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { SlotBounds } from '../types';
+import { PokeIdleGameState, SlotBounds } from '../types';
 
 export const isAndroidPlatform = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -161,5 +161,63 @@ export const gamePlatformService = {
     try {
       window.AndroidBridge?.setFarmingActive?.(active);
     } catch (_) {}
+  },
+
+  async readSlotState(slotId: string): Promise<PokeIdleGameState | null> {
+    const bridge = getAndroidBridge();
+    if (bridge) return null;
+    try {
+      return await invoke<PokeIdleGameState | null>('game_read_slot_state', { slotId });
+    } catch {
+      return null;
+    }
+  },
+
+  async getAllGameStates(): Promise<Record<string, PokeIdleGameState>> {
+    const bridge = getAndroidBridge();
+    if (bridge) return {};
+    try {
+      return await invoke<Record<string, PokeIdleGameState>>('game_get_all_states');
+    } catch {
+      return {};
+    }
+  },
+
+  async freezeSlot(slotId: string): Promise<string | null> {
+    const bridge = getAndroidBridge();
+    if (bridge) return null;
+    try {
+      return await invoke<string | null>('game_freeze_slot', { slotId });
+    } catch {
+      return null;
+    }
+  },
+
+  async unfreezeSlot(slotId: string): Promise<void> {
+    const bridge = getAndroidBridge();
+    if (bridge) return;
+    try {
+      await invoke('game_unfreeze_slot', { slotId });
+    } catch (_) {}
+  },
+
+  async getSlotSnapshot(slotId: string): Promise<string | null> {
+    const bridge = getAndroidBridge();
+    if (bridge) return null;
+    try {
+      return await invoke<string | null>('game_get_slot_snapshot', { slotId });
+    } catch {
+      return null;
+    }
+  },
+
+  async getAllSnapshots(): Promise<Record<string, string>> {
+    const bridge = getAndroidBridge();
+    if (bridge) return {};
+    try {
+      return await invoke<Record<string, string>>('game_get_all_snapshots');
+    } catch {
+      return {};
+    }
   },
 };

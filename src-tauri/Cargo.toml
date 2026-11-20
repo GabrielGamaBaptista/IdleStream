@@ -1,6 +1,6 @@
 [package]
 name = "idlestream"
-version = "4.2.5"
+version = "4.3.0"
 description = "IdleStream - Multi-Platform Stream Presence & XP Manager"
 authors = ["ggb"]
 edition = "2021"
@@ -32,6 +32,9 @@ url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
 urlencoding = "2"
 base64 = "0.22"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha2 = "0.10"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2.14.1"

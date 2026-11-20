@@ -45,6 +45,7 @@ pub struct AppState {
     pub account_health_last_checked: Mutex<i64>,
     pub verify_all_lock: Mutex<()>,
     pub http_client: reqwest::Client,
+    pub alert_dispatcher: Arc<crate::alerts::AlertDispatcher>,
     pub app_handle: AppHandle,
 }
 
@@ -78,6 +79,11 @@ impl AppState {
             .build()
             .unwrap_or_default();
 
+        let alert_dispatcher = crate::alerts::AlertDispatcher::new(
+            app_handle.clone(),
+            config.settings.alert_config.clone(),
+        );
+
         Self {
             config: Mutex::new(config),
             runtime_state: Mutex::new(runtime_state),
@@ -92,6 +98,7 @@ impl AppState {
             account_health_last_checked: Mutex::new(0),
             verify_all_lock: Mutex::new(()),
             http_client,
+            alert_dispatcher,
             app_handle,
         }
     }
@@ -131,6 +138,30 @@ impl AppState {
             let cloned = status.clone();
             drop(map);
             self.emit_status(&cloned).await;
+
+            let clean_num: String = points.chars().filter(|c| c.is_ascii_digit()).collect();
+            if let Ok(num_pts) = clean_num.parse::<u64>() {
+                let alert_disp = self.alert_dispatcher.clone();
+                let acc_label = {
+                    let cfg = self.config.lock().await;
+                    cfg.accounts
+                        .iter()
+                        .find(|a| a.id == account_id)
+                        .map(|a| a.label.clone())
+                        .unwrap_or_else(|| account_id.to_string())
+                };
+                tauri::async_runtime::spawn(async move {
+                    let cfg = alert_disp.get_config().await;
+                    if cfg.events.points_milestone && num_pts >= cfg.events.points_milestone_value {
+                        alert_disp
+                            .send(crate::alerts::AlertEvent::PointsMilestone {
+                                account_label: acc_label,
+                                points: num_pts,
+                            })
+                            .await;
+                    }
+                });
+            }
         }
     }
 
@@ -515,6 +546,7 @@ impl AppState {
                                         }
                                         StatusKind::Standby => {
                                             if is_selected_or_first {
+                                                let was_connected_before = current.status == StatusKind::Connected;
                                                 current.status = StatusKind::Standby;
                                                 current.is_farming = false;
                                                 // Se mensagem indica fila de espera (streamer online na Twitch), mantém is_live = true
@@ -522,6 +554,16 @@ impl AppState {
                                                 current.is_live = is_waiting_in_queue;
                                                 current.message = msg;
                                                 current.connected_at = None;
+
+                                                if was_connected_before && !is_waiting_in_queue {
+                                                    let stream_slug = current.stream_id.clone();
+                                                    this_cb.alert_dispatcher
+                                                        .send(crate::alerts::AlertEvent::StreamOffline {
+                                                            channel: stream_slug,
+                                                            platform: "Twitch".into(),
+                                                        })
+                                                        .await;
+                                                }
                                             }
                                         }
                                         StatusKind::Connecting => {
@@ -743,6 +785,7 @@ impl AppState {
                                         }
                                         StatusKind::Standby => {
                                             if is_selected_or_first {
+                                                let was_connected_before = current.status == StatusKind::Connected;
                                                 current.status = StatusKind::Standby;
                                                 current.is_farming = false;
                                                 // Se mensagem indica fila de vigília Kick (streamer online), mantém is_live = true
@@ -750,6 +793,16 @@ impl AppState {
                                                 current.is_live = is_waiting_in_queue;
                                                 current.message = msg;
                                                 current.connected_at = None;
+
+                                                if was_connected_before && !is_waiting_in_queue {
+                                                    let stream_slug = current.stream_id.clone();
+                                                    this_cb.alert_dispatcher
+                                                        .send(crate::alerts::AlertEvent::StreamOffline {
+                                                            channel: stream_slug,
+                                                            platform: "Kick".into(),
+                                                        })
+                                                        .await;
+                                                }
                                             }
                                         }
                                         StatusKind::Connecting => {
@@ -1191,6 +1244,20 @@ impl AppState {
             status.message
         );
 
+        if status.requires_reauth {
+            let alert_disp = self.alert_dispatcher.clone();
+            let label = account.label.clone();
+            let plat = format!("{:?}", account.platform);
+            tauri::async_runtime::spawn(async move {
+                alert_disp
+                    .send(crate::alerts::AlertEvent::AuthFailure {
+                        account_label: label,
+                        platform: plat,
+                    })
+                    .await;
+            });
+        }
+
         {
             let mut map = self.account_health.lock().await;
             map.insert(account.id.clone(), status.clone());
@@ -1456,6 +1523,7 @@ mod tests {
             ],
             desired_active_game_slots: vec!["slot-1".into()],
             last_active_tab: Some("games".into()),
+            ..Default::default()
         };
 
         let result = compute_streams_to_restore(&cfg, &rt);

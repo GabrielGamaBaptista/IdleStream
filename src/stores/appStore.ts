@@ -7,10 +7,19 @@ import {
   AccountHealthStatus,
   AccountsHealthSummary,
   AppConfig,
+  AlertConfig,
+  AlertPayload,
   AppSettings,
+  BackupInfo,
+  DeviceSyncRemoteState,
   GameSlotConfig,
+  MorningReport,
+  NightModeStatus,
+  OverlayStatus,
   Platform,
+  PokeIdleGameState,
   RuntimeSessionState,
+  SafetyStartResult,
   StreamConfig,
   StreamRuntimeStatus,
   VoteAccountConfig,
@@ -20,6 +29,7 @@ import { checkForAppUpdates, installAppUpdate, UnifiedUpdateResult } from '../se
 import { gamePlatformService } from '../services/gamePlatformService';
 import { votePlatformService } from '../services/votePlatformService';
 import { voteSyncService } from '../services/voteSyncService';
+import { deviceSyncService } from '../services/deviceSyncService';
 
 const VALID_TABS = ['streams', 'games', 'votes', 'accounts', 'settings'] as const;
 const ACTIVE_TAB_STORAGE_KEY = '__idlestream_active_tab__';
@@ -102,6 +112,7 @@ interface AppState {
   platformFilter: 'all' | Platform;
   isAddStreamOpen: boolean;
   isAddAccountOpen: boolean;
+  isSessionExportOpen: boolean;
   isInitialized: boolean;
   visibleKickWindows: Record<string, boolean>;
   isImmersiveMode: boolean;
@@ -112,6 +123,7 @@ interface AppState {
   setPlatformFilter: (filter: 'all' | Platform) => void;
   setAddStreamOpen: (open: boolean) => void;
   setAddAccountOpen: (open: boolean) => void;
+  setSessionExportOpen: (open: boolean) => void;
   toggleImmersiveMode: () => void;
   setImmersiveMode: (val: boolean) => void;
   dismissVoteAlert: (accountId: string, lastVotedAt?: number) => void;
@@ -154,6 +166,55 @@ interface AppState {
   testVoteNotification: (accountId?: string) => Promise<VoteReadyNotificationPayload | null>;
   setVoteSyncId: (syncId: string | null) => Promise<void>;
   reconcileVotesWithCloud: () => Promise<{ updatedCount: number; pushedToRemote: boolean }>;
+
+  // SafetyNet & Backups
+  crashLoopDetected: boolean;
+  crashLoopData: SafetyStartResult | null;
+  backups: BackupInfo[];
+  lastBackupInfo: BackupInfo | null;
+  isLoadingBackups: boolean;
+  dismissCrashLoopModal: () => void;
+  fetchBackups: () => Promise<void>;
+  createBackupNow: (reason?: string) => Promise<BackupInfo | null>;
+  restoreBackupById: (id: string) => Promise<void>;
+
+  // Alertas Multicanal
+  recentAlerts: AlertPayload[];
+  updateAlertConfig: (alertConfig: AlertConfig) => Promise<void>;
+  testAlert: () => Promise<void>;
+  dismissAlert: (timestamp: number) => void;
+
+  // Modo Noturno + Relatório Matinal
+  nightModeActive: boolean;
+  nightModeStartedAt: number | null;
+  nightModeDurationMinutes: number;
+  pendingMorningReport: MorningReport | null;
+  toggleNightMode: (enable?: boolean) => Promise<MorningReport | null>;
+  fetchNightModeStatus: () => Promise<NightModeStatus>;
+  dismissMorningReport: () => void;
+
+  // Elo PC↔Mobile (Cloud Sync)
+  deviceSyncRemoteState: DeviceSyncRemoteState | null;
+  pausedByOtherDevice: boolean;
+  setDeviceSyncId: (syncId: string | null) => Promise<void>;
+  claimDeviceActive: () => Promise<boolean>;
+  releaseDeviceActive: () => Promise<boolean>;
+  checkDeviceSync: () => Promise<DeviceSyncRemoteState | null>;
+
+  // Leitura de Estado do Jogo (Feature 7)
+  gameStates: Record<string, PokeIdleGameState>;
+  fetchGameStates: () => Promise<void>;
+
+  // Overlay OBS (Feature 5)
+  overlayStatus: OverlayStatus | null;
+  fetchOverlayStatus: () => Promise<OverlayStatus | null>;
+  toggleOverlayServer: (enable: boolean) => Promise<OverlayStatus | null>;
+
+  // Freeze de Slots Inativos (Feature 6)
+  slotSnapshots: Record<string, string>;
+  fetchSlotSnapshots: () => Promise<void>;
+  freezeSlot: (slotId: string) => Promise<string | null>;
+  unfreezeSlot: (slotId: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -188,11 +249,39 @@ export const useAppStore = create<AppState>((set, get) => ({
   platformFilter: 'all',
   isAddStreamOpen: false,
   isAddAccountOpen: false,
+  isSessionExportOpen: false,
   isInitialized: false,
   visibleKickWindows: {},
   isImmersiveMode: false,
   voteAlerts: [],
   pendingVoteOpenAccountId: null,
+
+  // SafetyNet & Backups
+  crashLoopDetected: false,
+  crashLoopData: null,
+  backups: [],
+  lastBackupInfo: null,
+  isLoadingBackups: false,
+  recentAlerts: [],
+
+  // Modo Noturno
+  nightModeActive: false,
+  nightModeStartedAt: null,
+  nightModeDurationMinutes: 0,
+  pendingMorningReport: null,
+
+  // Elo PC↔Mobile
+  deviceSyncRemoteState: null,
+  pausedByOtherDevice: false,
+
+  // Leitura de Estado do Jogo (Feature 7)
+  gameStates: {},
+
+  // Overlay OBS (Feature 5)
+  overlayStatus: null,
+
+  // Freeze de Slots Inativos (Feature 6)
+  slotSnapshots: {},
 
   setActiveTab: (tab) => {
     try {
@@ -238,6 +327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPlatformFilter: (filter) => set({ platformFilter: filter }),
   setAddStreamOpen: (open) => set({ isAddStreamOpen: open }),
   setAddAccountOpen: (open) => set({ isAddAccountOpen: open }),
+  setSessionExportOpen: (open) => set({ isSessionExportOpen: open }),
   toggleImmersiveMode: () => set((state) => ({ isImmersiveMode: !state.isImmersiveMode })),
   setImmersiveMode: (val) => set({ isImmersiveMode: val }),
 
@@ -619,6 +709,112 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       });
 
+      // Listen to backend crash-loop safety alerts
+      await listen<SafetyStartResult>('crash-loop-detected', (event) => {
+        console.warn('[SafetyNet] Crash-loop detectado!', event.payload);
+        set({
+          crashLoopDetected: true,
+          crashLoopData: event.payload,
+        });
+        get().fetchBackups().catch(() => {});
+      });
+
+      // Listen to multitype app alerts (stream offline, auth failure, milestone, test)
+      await listen<AlertPayload>('app-alert', (event) => {
+        const payload = event.payload;
+        set((state) => ({
+          recentAlerts: [payload, ...state.recentAlerts.slice(0, 19)],
+        }));
+
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification(payload.title, {
+              body: payload.body,
+              icon: '/icons/128x128.png',
+            });
+          } catch (_) {}
+        }
+      });
+
+      // Carregar lista de backups em background para exibição rápida nas configurações
+      get().fetchBackups().catch(() => {});
+
+      // Carregar status do Modo Noturno
+      get().fetchNightModeStatus().catch(() => {});
+
+      // Se a janela for restaurada e o modo noturno estiver ativo -> encerrar e exibir relatório matinal
+      await listen('window-restored', () => {
+        if (get().nightModeActive) {
+          get().toggleNightMode(false).catch(() => {});
+        }
+      });
+
+      // Inicializar Elo PC↔Mobile via Cloud Sync
+      const activeDeviceSyncId =
+        (await invoke<string | null>('device_get_sync_id').catch(() => null)) ||
+        deviceSyncService.getSyncId();
+
+      if (activeDeviceSyncId) {
+        deviceSyncService.setSyncId(activeDeviceSyncId);
+        deviceSyncService.startPolling(60, (remoteState) => {
+          set({ deviceSyncRemoteState: remoteState });
+
+          // Se o outro dispositivo assumiu o farm:
+          if (remoteState.isOtherDeviceActive) {
+            if (!get().pausedByOtherDevice) {
+              set({ pausedByOtherDevice: true });
+              // Pausar streams locais para evitar conflito de IP
+              get().stopAll().catch(() => {});
+              console.warn(
+                `[DeviceSync] ${remoteState.otherDeviceType === 'mobile' ? 'Celular' : 'Computador'} assumiu o farm. Streams locais pausadas.`
+              );
+            }
+          } else {
+            if (get().pausedByOtherDevice) {
+              set({ pausedByOtherDevice: false });
+              console.info('[DeviceSync] Outro dispositivo offline. Farm liberado.');
+            }
+          }
+        });
+
+        if (typeof window !== 'undefined') {
+          window.addEventListener('beforeunload', () => {
+            deviceSyncService.releaseActive().catch(() => {});
+          });
+        }
+      }
+
+      // Escutar atualizações em tempo real do estado dos jogos PokeIdle (Feature 7)
+      get().fetchGameStates().catch(() => {});
+      await listen<PokeIdleGameState>('game-state-update', (event) => {
+        const state = event.payload;
+        if (state && state.slotId) {
+          set((prev) => ({
+            gameStates: {
+              ...prev.gameStates,
+              [state.slotId!]: state,
+            },
+          }));
+        }
+      });
+
+      // Carregar status do servidor de Overlay OBS (Feature 5)
+      get().fetchOverlayStatus().catch(() => {});
+
+      // Escutar snapshots de congelamento de slots (Feature 6)
+      get().fetchSlotSnapshots().catch(() => {});
+      await listen<{ slotId: string; snapshot: string }>('slot-snapshot-update', (event) => {
+        const payload = event.payload;
+        if (payload && payload.slotId && payload.snapshot) {
+          set((prev) => ({
+            slotSnapshots: {
+              ...prev.slotSnapshots,
+              [payload.slotId]: payload.snapshot,
+            },
+          }));
+        }
+      });
+
       set({ isInitialized: true });
     } catch (err) {
       console.error('Failed to initialize IdleStream store:', err);
@@ -766,6 +962,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   startStream: async (streamId) => {
+    deviceSyncService.claimActive().catch(() => {});
     await invoke('start_stream', { streamId });
     await get().fetchStatuses();
   },
@@ -776,11 +973,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   startAll: async () => {
+    deviceSyncService.claimActive().catch(() => {});
     await invoke('start_all_streams');
     await get().fetchStatuses();
   },
 
   stopAll: async () => {
+    deviceSyncService.releaseActive().catch(() => {});
     await invoke('stop_all_streams');
     await get().fetchStatuses();
   },
@@ -908,5 +1107,232 @@ export const useAppStore = create<AppState>((set, get) => ({
     return await voteSyncService.reconcileVotesBidirectional(activeSyncId, accounts, (acc) => {
       get().updateVoteAccount(acc);
     });
+  },
+
+  dismissCrashLoopModal: () => set({ crashLoopDetected: false }),
+
+  fetchBackups: async () => {
+    try {
+      set({ isLoadingBackups: true });
+      const list = await invoke<BackupInfo[]>('list_backups');
+      set({
+        backups: list,
+        lastBackupInfo: list.length > 0 ? list[0] : null,
+        isLoadingBackups: false,
+      });
+    } catch (e) {
+      console.warn('[SafetyNet] Falha ao listar backups:', e);
+      set({ isLoadingBackups: false });
+    }
+  },
+
+  createBackupNow: async () => {
+    try {
+      const bkp = await invoke<BackupInfo>('backup_configs_now');
+      await get().fetchBackups();
+      return bkp;
+    } catch (e) {
+      console.error('[SafetyNet] Falha ao criar backup:', e);
+      return null;
+    }
+  },
+
+  restoreBackupById: async (id: string) => {
+    try {
+      await invoke('restore_backup', { id });
+    } catch (e) {
+      console.error('[SafetyNet] Falha ao restaurar backup:', e);
+      throw e;
+    }
+  },
+
+  updateAlertConfig: async (alertConfig: AlertConfig) => {
+    try {
+      await invoke('update_alert_config', { config: alertConfig });
+      set((state) => ({
+        config: {
+          ...state.config,
+          settings: {
+            ...state.config.settings,
+            alert_config: alertConfig,
+          },
+        },
+      }));
+    } catch (e) {
+      console.error('[Alerts] Falha ao atualizar configurações de alerta:', e);
+      throw e;
+    }
+  },
+
+  testAlert: async () => {
+    try {
+      await invoke('test_alert');
+    } catch (e) {
+      console.error('[Alerts] Falha ao disparar alerta de teste:', e);
+      throw e;
+    }
+  },
+
+  dismissAlert: (timestamp: number) => {
+    set((state) => ({
+      recentAlerts: state.recentAlerts.filter((a) => a.timestamp !== timestamp),
+    }));
+  },
+
+  toggleNightMode: async (enable?: boolean) => {
+    try {
+      const targetState = enable !== undefined ? enable : !get().nightModeActive;
+      const report = await invoke<MorningReport | null>('toggle_night_mode', {
+        enable: targetState,
+      });
+
+      set({
+        nightModeActive: targetState,
+        nightModeStartedAt: targetState ? Math.floor(Date.now() / 1000) : null,
+        nightModeDurationMinutes: 0,
+        pendingMorningReport: report || null,
+      });
+
+      return report;
+    } catch (e) {
+      console.error('[NightMode] Falha ao alternar Modo Noturno:', e);
+      return null;
+    }
+  },
+
+  fetchNightModeStatus: async () => {
+    try {
+      const status = await invoke<NightModeStatus>('get_night_mode_status');
+      set({
+        nightModeActive: status.active,
+        nightModeStartedAt: status.started_at,
+        nightModeDurationMinutes: status.duration_minutes,
+      });
+      return status;
+    } catch (e) {
+      console.warn('[NightMode] Falha ao buscar status do Modo Noturno:', e);
+      return { active: false, started_at: null, duration_minutes: 0 };
+    }
+  },
+
+  dismissMorningReport: () => set({ pendingMorningReport: null }),
+
+  setDeviceSyncId: async (syncId: string | null) => {
+    const sanitized = syncId?.trim() || null;
+    deviceSyncService.setSyncId(sanitized);
+    try {
+      const updated = await invoke<AppConfig>('device_set_sync_id', { syncId: sanitized });
+      set((state) => ({
+        config: updated,
+        deviceSyncRemoteState: sanitized ? state.deviceSyncRemoteState : null,
+        pausedByOtherDevice: false,
+      }));
+
+      if (sanitized) {
+        deviceSyncService.startPolling(60, (remoteState) => {
+          set({ deviceSyncRemoteState: remoteState });
+          if (remoteState.isOtherDeviceActive) {
+            if (!get().pausedByOtherDevice) {
+              set({ pausedByOtherDevice: true });
+              get().stopAll().catch(() => {});
+            }
+          } else {
+            if (get().pausedByOtherDevice) {
+              set({ pausedByOtherDevice: false });
+            }
+          }
+        });
+      } else {
+        deviceSyncService.stopPolling();
+      }
+    } catch (e) {
+      console.warn('[DeviceSync] Falha ao persistir device_sync_id no backend:', e);
+      set((state) => ({
+        config: { ...state.config, device_sync_id: sanitized },
+      }));
+    }
+  },
+
+  claimDeviceActive: async () => {
+    const ok = await deviceSyncService.claimActive();
+    if (ok) {
+      await get().checkDeviceSync();
+    }
+    return ok;
+  },
+
+  releaseDeviceActive: async () => {
+    const ok = await deviceSyncService.releaseActive();
+    if (ok) {
+      await get().checkDeviceSync();
+    }
+    return ok;
+  },
+
+  checkDeviceSync: async () => {
+    const state = await deviceSyncService.fetchRemoteState();
+    if (state) {
+      set({ deviceSyncRemoteState: state });
+      if (state.isOtherDeviceActive) {
+        if (!get().pausedByOtherDevice) {
+          set({ pausedByOtherDevice: true });
+          get().stopAll().catch(() => {});
+        }
+      } else {
+        if (get().pausedByOtherDevice) {
+          set({ pausedByOtherDevice: false });
+        }
+      }
+    }
+    return state;
+  },
+
+  fetchGameStates: async () => {
+    try {
+      const states = await gamePlatformService.getAllGameStates();
+      set({ gameStates: states });
+    } catch (_) {}
+  },
+
+  fetchOverlayStatus: async () => {
+    try {
+      const status = await invoke<OverlayStatus>('get_overlay_status');
+      set({ overlayStatus: status });
+      return status;
+    } catch {
+      return null;
+    }
+  },
+
+  toggleOverlayServer: async (enable: boolean) => {
+    try {
+      const status = await invoke<OverlayStatus>('toggle_overlay_server', { enable });
+      set({ overlayStatus: status });
+      return status;
+    } catch (e) {
+      console.error('Falha ao alternar servidor de overlay:', e);
+      return null;
+    }
+  },
+
+  fetchSlotSnapshots: async () => {
+    try {
+      const map = await gamePlatformService.getAllSnapshots();
+      set({ slotSnapshots: map });
+    } catch (_) {}
+  },
+
+  freezeSlot: async (slotId: string) => {
+    const snap = await gamePlatformService.freezeSlot(slotId);
+    if (snap) {
+      set((prev) => ({
+        slotSnapshots: { ...prev.slotSnapshots, [slotId]: snap },
+      }));
+    }
+    return snap;
+  },
+
+  unfreezeSlot: async (slotId: string) => {
+    await gamePlatformService.unfreezeSlot(slotId);
   },
 }));

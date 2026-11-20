@@ -1,10 +1,14 @@
 pub mod accounts;
+pub mod alerts;
 pub mod commands;
 pub mod config;
 pub mod games;
 pub mod kick;
 pub mod live_check;
 pub mod logger;
+pub mod overlay;
+pub mod safety;
+pub mod session_export;
 pub mod state;
 pub mod twitch;
 pub mod votes;
@@ -20,7 +24,6 @@ static PANIC_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-#[cfg(desktop)]
 use tauri::Emitter;
 use tauri::Manager;
 #[cfg(desktop)]
@@ -98,6 +101,9 @@ pub fn run() {
                                 });
                             }
                         } else {
+                            if let Some(safety) = app.try_state::<Arc<safety::SafetyNet>>() {
+                                safety.mark_ok();
+                            }
                             std::process::exit(0);
                         }
                     }
@@ -116,6 +122,70 @@ pub fn run() {
                 logger::init_global_logger(data_dir.join("audit"));
                 audit_log!("SYSTEM", "INFO", "IdleStream inicializado com sucesso (Audit Logger ativo - 6h rotativo em disco)");
             }
+
+            let config_dir = app
+                .path()
+                .app_config_dir()
+                .unwrap_or_else(|_| PathBuf::from("./config"));
+            let safety = safety::SafetyNet::new(config_dir, env!("CARGO_PKG_VERSION").to_string());
+            app.manage(safety.clone());
+
+            let start_result = safety.before_start();
+            audit_log!(
+                "SAFETY",
+                "INFO",
+                "SafetyNet ativo: crash_count={}, last_good_version={:?}",
+                start_result.crash_count,
+                start_result.last_good_version
+            );
+
+            // Backup diário automático se necessário
+            if safety.needs_daily_backup() {
+                match safety.backup_configs("daily") {
+                    Ok(bkp) => {
+                        audit_log!(
+                            "SAFETY",
+                            "INFO",
+                            "Backup diário automático criado com sucesso: id={}, arquivos={}",
+                            bkp.id,
+                            bkp.file_count
+                        );
+                    }
+                    Err(e) => {
+                        audit_log!(
+                            "SAFETY",
+                            "WARN",
+                            "Falha ao criar backup diário automático: {}",
+                            e
+                        );
+                    }
+                }
+            }
+
+            // Marcar como OK após 120s de estabilidade
+            let safety_ok = safety.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                safety_ok.mark_ok();
+                audit_log!("SAFETY", "INFO", "Sessão marcada como estável (crash_count resetado a 0)");
+            });
+
+            // Crash-loop guard: avisar frontend se crash_count >= 3
+            if start_result.crash_count >= 3 {
+                let app_clone = app_handle.clone();
+                let result_clone = start_result.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    let _ = app_clone.emit("crash-loop-detected", &result_clone);
+                    audit_log!(
+                        "SAFETY",
+                        "WARN",
+                        "Crash-loop detectado! {} crashes consecutivos sem estabilidade",
+                        result_clone.crash_count
+                    );
+                });
+            }
+
             let app_state = Arc::new(AppState::new(app_handle.clone()));
             app.manage(app_state.clone());
 
@@ -124,6 +194,22 @@ pub fn run() {
 
             let vote_manager = Arc::new(votes::manager::VoteManager::new(app_handle.clone()));
             app.manage(vote_manager.clone());
+
+            let overlay_server = Arc::new(overlay::OverlayServer::new(app_handle.clone(), None));
+            app.manage(overlay_server.clone());
+
+            let session_export = Arc::new(session_export::SessionExportServer::new(app_handle.clone()));
+            app.manage(session_export.clone());
+            {
+                let cfg_overlay = app_state.clone();
+                let srv_overlay = overlay_server.clone();
+                tauri::async_runtime::spawn(async move {
+                    let enabled = cfg_overlay.config.lock().await.settings.overlay_enabled;
+                    if enabled {
+                        let _ = srv_overlay.start();
+                    }
+                });
+            }
 
             // Start background vigilance loop (Auto-Live detection & standby recovery)
             app_state.start_vigilance_loop();
@@ -195,6 +281,9 @@ pub fn run() {
                                     });
                                 }
                                 "quit" => {
+                                    if let Some(safety) = app_handle_tray.try_state::<Arc<safety::SafetyNet>>() {
+                                        safety.mark_ok();
+                                    }
                                     std::process::exit(0);
                                 }
                                 _ => {}
@@ -296,6 +385,12 @@ pub fn run() {
             games::commands::game_hide_all,
             games::commands::game_get_active_slots,
             games::commands::game_get_system_idle_seconds,
+            games::commands::game_read_slot_state,
+            games::commands::game_get_all_states,
+            games::commands::game_freeze_slot,
+            games::commands::game_unfreeze_slot,
+            games::commands::game_get_slot_snapshot,
+            games::commands::game_get_all_snapshots,
             votes::commands::vote_update_account,
             votes::commands::vote_open_webview,
             votes::commands::vote_close_webview,
@@ -312,6 +407,21 @@ pub fn run() {
             get_audit_logs,
             clear_audit_logs,
             write_audit_log,
+            get_safety_state,
+            backup_configs_now,
+            list_backups,
+            restore_backup,
+            update_alert_config,
+            test_alert,
+            toggle_night_mode,
+            get_night_mode_status,
+            device_set_sync_id,
+            device_get_sync_id,
+            toggle_overlay_server,
+            get_overlay_status,
+            start_session_export,
+            stop_session_export,
+            get_session_export_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

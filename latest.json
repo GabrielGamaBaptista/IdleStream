@@ -1,11 +1,11 @@
 {
-  "version": "4.2.5",
-  "notes": "IdleStream v4.2.5 — Cabeçalho ultra-compacto nos slots de jogos com prevenção de overflow e colisão (botões Parar e Configurações sempre visíveis, nome e status desacoplados do zoom), unificação de Tela Cheia com minimização automática da barra de ferramentas e 1 único botão flutuante de Restaurar Menus (sem duplicação/sobreposição), e injeção nativa de zoom em tempo real no Android via document.body.style.zoom e re-aplicação no carregamento.",
-  "pub_date": "2026-11-19T16:55:00Z",
+  "version": "4.3.0",
+  "notes": "IdleStream v4.3.0 — Suporte a 2 lives simultâneas por conta na Kick; Sistema de Alertas Multicanal (Desktop, ntfy.sh e Discord Webhook); Rede de Segurança com Crash-loop Guard e Backups rotativos; Elo PC↔Mobile com exclusão mútua em nuvem; Modo Noturno com dimmer inteligente e Relatório Matinal; Overlay OBS via servidor HTTP local; Freeze de slots inativos para 0% GPU; Hook WebSocket do PokeIdle para telemetria em tempo real (XP/h, nível e bônus); e Exportação segura P2P de sessões para celular via QR Code (AES-256-GCM + PIN).",
+  "pub_date": "2026-11-19T23:48:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjlSVjgyWSs4QzZRenJ5LzNNMjVhWi9aVng3NXQ1VjBYbDZrOExFMXcrSDMrQVBSUnBOU2RxODZwbUt5Ym1ibWZGOGUwbWtGaHZFR3RQZkRlb0xyOVE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTA3MDczCWZpbGU6SWRsZVN0cmVhbV80LjIuNV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4yLjUKYnhTcHlCaURKZEdkVGx5cDUwdFBvNUcrNkozdDkxbWppRy9LSG4yZ3Ivbk1EamtGbld6YlZBQyttb0QzUFpycVJHaEduQ0IvOFZvdHJhcUYyUTFzQWc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.2.5/IdleStream_4.2.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjhBN0E3eDNQVVIvb2JkaGRJOEEyY09xQ25rVHExcHpFV2taZnNaVi9iSWJEVmc0TERHR3F6OGZtUFFUaTRtZ2JGTlVWTUlmWngwRStZTTY0YmFxZVFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTMyMDU2CWZpbGU6SWRsZVN0cmVhbV80LjMuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjAKN1dMUE9UQUhxTGpMSnFqUFphbmc0SW5sNWRIK2Uvbks5U2dadDNISTN3czV0aDF1QnM0Q1NjNUord1pCeEtON0NFKzFCODhWYUl1QzRRSjJtR0xYQ0E9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.0/IdleStream_4.3.0_x64-setup.exe"
     }
   }
 }

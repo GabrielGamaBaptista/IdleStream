@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
-/// Na Kick, a infraestrutura de watch time computa pontos e presença ativa para no máximo 1 live por conta simultaneamente.
-pub const MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT: usize = 1;
+/// Na Kick, o coordenador permite o acúmulo de watch time e pontos para até 2 lives simultâneas por conta.
+pub const MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT: usize = 2;
 
 #[derive(Default)]
 struct KickAccountState {
@@ -30,7 +30,7 @@ pub fn compute_kick_priority_ranks(streamers: &mut [KickStreamerStats]) {
 }
 
 /// Reconcilia os slots de mineração para uma conta Kick:
-/// - Apenas a live #1 na prioridade (dentre as que estão ONLINE) conta pontos (`ActiveMining`)
+/// - As lives top 2 na prioridade (dentre as que estão ONLINE) contam pontos (`ActiveMining`)
 /// - Demais lives online aguardam vaga em `StandbyVigil` sem consumir conexão de viewer
 /// - Lives offline permanecem em `Offline`
 pub fn reconcile_kick_account_slots(
@@ -47,7 +47,7 @@ pub fn reconcile_kick_account_slots(
     // Ordena os online pelo rank de prioridade (rank 1, 2, 3...)
     online_streamers.sort_by_key(|s| s.priority_rank);
 
-    // Identifica o slug do top 1 online na Kick
+    // Identifica os slugs dos top 2 online na Kick
     let active_slugs: Vec<String> = online_streamers
         .iter()
         .take(MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT)
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn test_kick_reconcile_only_single_active_slot() {
+    fn test_kick_reconcile_dual_active_slots() {
         let mut streamers = vec![
             KickStreamerStats {
                 channel_slug: "streamer_1".into(),
@@ -287,6 +287,14 @@ mod tests {
                 channel_id: None,
                 avg_duration_hours: 4.0,
                 priority_rank: 3,
+                is_live: true,
+                current_points: None,
+            },
+            KickStreamerStats {
+                channel_slug: "streamer_4".into(),
+                channel_id: None,
+                avg_duration_hours: 2.0,
+                priority_rank: 4,
                 is_live: false,
                 current_points: None,
             },
@@ -296,10 +304,12 @@ mod tests {
 
         // streamer_1 (Rank 1 e online) -> ActiveMining
         assert_eq!(states.get("streamer_1"), Some(&MiningSlotState::ActiveMining));
-        // streamer_2 (Rank 2 e online) -> StandbyVigil (Aguardando vaga única da Kick)
-        assert_eq!(states.get("streamer_2"), Some(&MiningSlotState::StandbyVigil));
-        // streamer_3 (offline) -> Offline
-        assert_eq!(states.get("streamer_3"), Some(&MiningSlotState::Offline));
+        // streamer_2 (Rank 2 e online) -> ActiveMining (2 slots simultâneos)
+        assert_eq!(states.get("streamer_2"), Some(&MiningSlotState::ActiveMining));
+        // streamer_3 (Rank 3 e online) -> StandbyVigil (Aguardando vaga no Top 2)
+        assert_eq!(states.get("streamer_3"), Some(&MiningSlotState::StandbyVigil));
+        // streamer_4 (offline) -> Offline
+        assert_eq!(states.get("streamer_4"), Some(&MiningSlotState::Offline));
 
         // Se streamer_1 cair (offline):
         streamers[0].is_live = false;
@@ -307,7 +317,9 @@ mod tests {
 
         // streamer_1 -> Offline
         assert_eq!(states_after.get("streamer_1"), Some(&MiningSlotState::Offline));
-        // streamer_2 é promovido imediatamente para ActiveMining!
+        // streamer_2 continua em ActiveMining
         assert_eq!(states_after.get("streamer_2"), Some(&MiningSlotState::ActiveMining));
+        // streamer_3 é promovido imediatamente para ActiveMining!
+        assert_eq!(states_after.get("streamer_3"), Some(&MiningSlotState::ActiveMining));
     }
 }

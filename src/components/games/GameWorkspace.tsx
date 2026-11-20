@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 export const GameWorkspace: React.FC = () => {
-  const { config, updateGameSlot, isImmersiveMode, setImmersiveMode } = useAppStore();
+  const { config, updateGameSlot, isImmersiveMode, setImmersiveMode, gameStates, slotSnapshots } = useAppStore();
   const gameSlots = config.game_slots || [];
 
   const [activeSlots, setActiveSlots] = useState<string[]>([]);
@@ -716,6 +716,7 @@ export const GameWorkspace: React.FC = () => {
           {gameSlots.map((slot, idx) => {
             const isRunning = activeSlots.includes(slot.id);
             const isFocused = focusedSlotId === slot.id;
+            const slotState = gameStates?.[slot.id];
             return (
               <button
                 key={slot.id}
@@ -730,7 +731,13 @@ export const GameWorkspace: React.FC = () => {
                   className={`w-2 h-2 rounded-full ${isRunning ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-600'}`}
                 />
                 <span className="truncate max-w-[90px] sm:max-w-none">{slot.label || `Conta ${idx + 1}`}</span>
-                <span className="text-[10px] opacity-60 font-mono">#{idx + 1}</span>
+                {slotState?.level ? (
+                  <span className="text-[10px] font-mono px-1 rounded bg-black/40 text-indigo-200">
+                    Lv.{slotState.level}
+                  </span>
+                ) : (
+                  <span className="text-[10px] opacity-60 font-mono">#{idx + 1}</span>
+                )}
               </button>
             );
           })}
@@ -972,6 +979,7 @@ export const GameWorkspace: React.FC = () => {
   // Renderiza o card individual de um slot com seu header e a div onde a WebView se ancora
   function renderSlotCard(slot: GameSlotConfig, isFocusedMode = false, _isSidebarCard = false) {
     const isRunning = activeSlots.includes(slot.id);
+    const gameState = gameStates?.[slot.id];
 
     return (
       <div
@@ -996,6 +1004,35 @@ export const GameWorkspace: React.FC = () => {
             >
               {slot.label || slot.id}
             </span>
+            {gameState?.level ? (
+              <span className="px-1.5 py-0.5 rounded bg-indigo-950/80 border border-indigo-700/50 text-[10px] text-indigo-300 font-mono font-medium shrink-0">
+                Lv.{gameState.level}
+              </span>
+            ) : null}
+            {gameState?.xpRatePerHour && gameState.xpRatePerHour > 0 ? (
+              <span
+                className="hidden sm:inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-950/70 border border-emerald-700/50 text-[10px] text-emerald-300 font-mono shrink-0"
+                title="Taxa de ganho de XP por hora estimada"
+              >
+                +{(gameState.xpRatePerHour >= 1000 ? `${(gameState.xpRatePerHour / 1000).toFixed(1)}k` : gameState.xpRatePerHour)}/h
+              </span>
+            ) : null}
+            {gameState?.bonusTwitchSecs && gameState.bonusTwitchSecs > 0 ? (
+              <span
+                className="hidden md:inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-purple-950/70 border border-purple-700/50 text-[10px] text-purple-300 font-mono shrink-0"
+                title="Bônus de XP Twitch ativo no PokeIdle"
+              >
+                ⚡Twitch {Math.ceil(gameState.bonusTwitchSecs / 60)}m
+              </span>
+            ) : null}
+            {gameState?.bonusKickSecs && gameState.bonusKickSecs > 0 ? (
+              <span
+                className="hidden md:inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-950/70 border border-emerald-700/50 text-[10px] text-emerald-300 font-mono shrink-0"
+                title="Bônus de XP Kick ativo no PokeIdle"
+              >
+                ⚡Kick {Math.ceil(gameState.bonusKickSecs / 60)}m
+              </span>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
@@ -1107,6 +1144,20 @@ export const GameWorkspace: React.FC = () => {
           }}
           className="flex-1 w-full h-full relative bg-black flex items-center justify-center overflow-hidden"
         >
+          {/* Feature 6: Snapshot visual quando a WebView está em suspensão (0% GPU) */}
+          {isRunning && slotSnapshots[slot.id] && (
+            <div className="absolute inset-0 z-0 flex items-center justify-center">
+              <img
+                src={slotSnapshots[slot.id]}
+                alt="Slot congelado"
+                className="w-full h-full object-cover filter brightness-90 select-none pointer-events-none"
+              />
+              <div className="absolute bottom-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-950/80 border border-blue-600/50 text-[10px] text-blue-200 font-medium backdrop-blur-xs shadow-md pointer-events-none">
+                <span>🧊 0% GPU (Congelado)</span>
+              </div>
+            </div>
+          )}
+
           {!isRunning && (
             <div className="text-center p-4">
               <Flame className="w-8 h-8 text-neutral-600 mx-auto mb-2" />

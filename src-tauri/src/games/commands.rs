@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
-use super::manager::{GameLayoutManager, SlotBounds, ViewLayoutMode, ViewportRect};
+use super::manager::{GameLayoutManager, PokeIdleGameState, SlotBounds, ViewLayoutMode, ViewportRect};
 
 #[tauri::command]
 pub async fn game_start_slot(
@@ -99,6 +100,52 @@ pub async fn game_toggle_pokeidle_ultra(
     enabled: Option<bool>,
 ) -> Result<(), String> {
     state.toggle_pokeidle_ultra(slot_id.as_deref(), enabled).await
+}
+
+#[tauri::command]
+pub async fn game_read_slot_state(
+    state: State<'_, Arc<GameLayoutManager>>,
+    slot_id: String,
+) -> Result<Option<PokeIdleGameState>, String> {
+    Ok(state.get_game_state(&slot_id).await)
+}
+
+#[tauri::command]
+pub async fn game_get_all_states(
+    state: State<'_, Arc<GameLayoutManager>>,
+) -> Result<HashMap<String, PokeIdleGameState>, String> {
+    Ok(state.get_all_game_states().await)
+}
+
+#[tauri::command]
+pub async fn game_freeze_slot(
+    state: State<'_, Arc<GameLayoutManager>>,
+    slot_id: String,
+) -> Result<Option<String>, String> {
+    state.freeze_slot(&slot_id).await
+}
+
+#[tauri::command]
+pub async fn game_unfreeze_slot(
+    state: State<'_, Arc<GameLayoutManager>>,
+    slot_id: String,
+) -> Result<(), String> {
+    state.unfreeze_slot(&slot_id).await
+}
+
+#[tauri::command]
+pub async fn game_get_slot_snapshot(
+    state: State<'_, Arc<GameLayoutManager>>,
+    slot_id: String,
+) -> Result<Option<String>, String> {
+    Ok(state.get_slot_snapshot(&slot_id).await)
+}
+
+#[tauri::command]
+pub async fn game_get_all_snapshots(
+    state: State<'_, Arc<GameLayoutManager>>,
+) -> Result<HashMap<String, String>, String> {
+    Ok(state.get_all_snapshots().await)
 }
 
 #[tauri::command]

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IdleStream OBS Overlay</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      background-color: transparent !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #f1f5f9;
+      overflow: hidden;
+      user-select: none;
+    }
+    .overlay-container {
+      padding: 14px;
+      display: inline-flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 480px;
+    }
+    .widget-panel {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 10px 14px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+    }
+    .brand-tag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-tag svg {
+      width: 14px;
+      height: 14px;
+      fill: #6366f1;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+    .items-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .stream-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .channel-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .platform-badge {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge-twitch {
+      background: rgba(147, 51, 234, 0.3);
+      border: 1px solid rgba(147, 51, 234, 0.6);
+      color: #c084fc;
+    }
+    .badge-kick {
+      background: rgba(16, 185, 129, 0.3);
+      border: 1px solid rgba(16, 185, 129, 0.6);
+      color: #34d399;
+    }
+    .channel-name {
+      font-weight: 600;
+      color: #f8fafc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stats-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      shrink-0: 0;
+    }
+    .points-tag {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700;
+      color: #fbbf24;
+      font-size: 12px;
+    }
+    .game-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .trainer-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .level-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: rgba(99, 102, 241, 0.25);
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      color: #a5b4fc;
+    }
+    .xp-rate {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: #4ade80;
+    }
+    .bonus-pill {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .bonus-twitch {
+      background: rgba(147, 51, 234, 0.25);
+      color: #d8b4fe;
+      border: 1px solid rgba(147, 51, 234, 0.4);
+    }
+    .bonus-kick {
+      background: rgba(16, 185, 129, 0.25);
+      color: #86efac;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .empty-state {
+      font-size: 11px;
+      color: #64748b;
+      font-style: italic;
+      text-align: center;
+      padding: 6px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay-container">
+    <!-- Painel de Streams Ativas -->
+    <div class="widget-panel" id="streams-panel">
+      <div class="panel-header">
+        <div class="brand-tag">
+          <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          <span>IdleStream • Lives</span>
+        </div>
+        <div class="pulse-dot" id="stream-pulse" title="Sincronização Ativa"></div>
+      </div>
+      <div class="items-list" id="streams-list">
+        <div class="empty-state">Conectando ao IdleStream...</div>
+      </div>
+    </div>
+
+    <!-- Painel de Slots PokeIdle (exibido apenas se houver slots com dados) -->
+    <div class="widget-panel" id="games-panel" style="display: none;">
+      <div class="panel-header">
+        <div class="brand-tag">
+          <span>🎮 PokeIdle • Treinadores</span>
+        </div>
+      </div>
+      <div class="items-list" id="games-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const streamsListEl = document.getElementById('streams-list');
+    const gamesPanelEl = document.getElementById('games-panel');
+    const gamesListEl = document.getElementById('games-list');
+    const pulseEl = document.getElementById('stream-pulse');
+
+    function formatNumber(num) {
+      if (!num || isNaN(num)) return '0';
+      return Number(num).toLocaleString('pt-BR');
+    }
+
+    function formatRate(num) {
+      if (!num || num <= 0) return '';
+      if (num >= 1000) {
+        return '+' + (num / 1000).toFixed(1) + 'k/h';
+      }
+      return '+' + num + '/h';
+    }
+
+    function formatMins(secs) {
+      if (!secs || secs <= 0) return '';
+      const m = Math.ceil(secs / 60);
+      return m + 'm';
+    }
+
+    async function fetchOverlayData() {
+      try {
+        const res = await fetch('/overlay/data');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        renderOverlay(data);
+        pulseEl.style.background = '#10b981';
+        pulseEl.style.boxShadow = '0 0 8px #10b981';
+      } catch (err) {
+        pulseEl.style.background = '#ef4444';
+        pulseEl.style.boxShadow = '0 0 8px #ef4444';
+      }
+    }
+
+    function renderOverlay(data) {
+      // 1. Render Streams
+      const streams = data.streams || [];
+      if (streams.length === 0) {
+        streamsListEl.innerHTML = '<div class="empty-state">Nenhuma stream conectada no momento</div>';
+      } else {
+        streamsListEl.innerHTML = streams.map(s => {
+          const isTwitch = s.platform.toLowerCase() === 'twitch';
+          const badgeClass = isTwitch ? 'badge-twitch' : 'badge-kick';
+          const platformLabel = isTwitch ? 'Twitch' : 'Kick';
+          const isLiveDot = s.isLive ? '🟢' : '⚪';
+
+          return `
+            <div class="stream-row">
+              <div class="channel-info">
+                <span class="platform-badge ${badgeClass}">${platformLabel}</span>
+                <span class="channel-name">${escapeHtml(s.channel)}</span>
+              </div>
+              <div class="stats-group">
+                <span class="points-tag">🪙 ${formatNumber(s.points)}</span>
+                <span title="${s.status}">${isLiveDot}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 2. Render Game Slots
+      const gameSlots = (data.gameSlots || []).filter(g => g.nick || g.level || g.xpRatePerHour);
+      if (gameSlots.length > 0) {
+        gamesPanelEl.style.display = 'block';
+        gamesListEl.innerHTML = gameSlots.map(g => {
+          const trainerLabel = g.nick || g.slotId;
+          const levelTag = g.level ? `<span class="level-badge">Lv.${g.level}</span>` : '';
+          const rateTag = g.xpRatePerHour ? `<span class="xp-rate">${formatRate(g.xpRatePerHour)}</span>` : '';
+          const twitchBonus = g.bonusTwitchSecs > 0 ? `<span class="bonus-pill bonus-twitch">⚡Twitch ${formatMins(g.bonusTwitchSecs)}</span>` : '';
+          const kickBonus = g.bonusKickSecs > 0 ? `<span class="bonus-pill bonus-kick">⚡Kick ${formatMins(g.bonusKickSecs)}</span>` : '';
+
+          return `
+            <div class="game-row">
+              <div class="trainer-info">
+                <span style="font-weight: 600; color: #f8fafc;">${escapeHtml(trainerLabel)}</span>
+                ${levelTag}
+              </div>
+              <div class="stats-group">
+                ${rateTag}
+                ${twitchBonus}
+                ${kickBonus}
+              </div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        gamesPanelEl.style.display = 'none';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Polling a cada 2 segundos
+    fetchOverlayData();
+    setInterval(fetchOverlayData, 2000);
+  </script>
+</body>
+</html>
