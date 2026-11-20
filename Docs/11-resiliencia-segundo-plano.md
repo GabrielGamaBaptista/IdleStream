@@ -28,9 +28,10 @@ wiki_links:
   - "[[06-frontend]]"
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
+  - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.1.3"
-last_updated: "2026-11-16"
+version: "4.3.0"
+last_updated: "2026-11-19"
 summary: "Arquitetura multicamadas de sobrevivência em segundo plano e tela bloqueada no Android (v4.1.1 a v4.1.3): desacoplamento do GameSlotManager para Application, modo econômico de 1 FPS + liberação de GPU, otimização extrema de bateria (WIFI_MODE_FULL, suspensão de áudio contínuo, congelamento de UI em background), recuperação de renderer Chromium, persistência atômica runtime_state.json e distinção rigorosa entre fechamento manual e morte por GC OEM."
 ---
 
@@ -187,3 +188,18 @@ sequenceDiagram
 - **Relatório de Diagnóstico (`SettingsTab.tsx` & `LifecycleLogger.kt`)**:
   - Registra em `lifecycle.log` rotativo (máx. 64 KB) eventos de criação/parada de serviço, `SCREEN_OFF`/`ON`, `BACKGROUND_10S`, `ON_RENDER_PROCESS_GONE`, `WATCHDOG_REVIVE` e `MANUAL_STOP`.
   - Na aba **Configurações → Diagnóstico**, consolida `ApplicationExitInfo` (Android 11+), status de `WakeLock`/`WifiLock`/permissões, `crash.log` (Java), `panic.log` (Rust) e eventos recentes em um único relatório copiável.
+
+---
+
+## 8. Rede de Segurança Nativa: Crash-loop Guard e Backups Rotativos (v4.3.0)
+
+A partir da versão **v4.3.0**, a camada nativa em Rust do host Tauri foi munida de proteção de boot de baixo nível contra falhas em loop e corrupção de arquivos de estado:
+1. **`CrashLoopGuard` (`safety/mod.rs`)**:
+   - Registra no disco os instantes de inicialização (`crash_guard.json`).
+   - Caso sejam detectados 3 encerramentos/crashes anormais em um intervalo menor que 60 segundos, o app aborta o boot convencional e inicializa em **Modo de Segurança**.
+   - Emite o evento `crash-loop-detected` para que o frontend abra imediatamente o **`SafetyRecoveryModal.tsx`**, impedindo que um arquivo de configuração inválido gere falha contínua.
+2. **Backups Rotativos Atômicos**:
+   - A cada salvamento íntegro do `config.json`, é arquivado um snapshot no diretório `backups/config_backup_TIMESTAMP.json`.
+   - Mantém uma lista circular dos últimos 8 backups, permitindo restauração instantânea com 1 clique.
+
+> Detalhes arquiteturais aprofundados sobre a máquina de segurança estão documentados em: **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.

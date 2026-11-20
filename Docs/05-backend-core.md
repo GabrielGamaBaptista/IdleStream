@@ -23,9 +23,10 @@ wiki_links:
   - "[[10-sessoes-resgates-e-verificador]]"
   - "[[11-resiliencia-segundo-plano]]"
   - "[[12-sistema-de-auditoria]]"
+  - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.2.0"
-last_updated: "2026-11-18"
+version: "4.3.0"
+last_updated: "2026-11-19"
 summary: "Referência completa do Rust Core: modelo de dados e store tolerante a falhas, ciclo de vida de streams e modo vigília a cada 300s, sistema de auditoria 6h rotativo em disco (0 MB RAM) e dicionário exaustivo de comandos IPC Tauri."
 ---
 
@@ -270,7 +271,29 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `clear_audit_logs` | Nenhum | `Result<(), String>` | Deleta todos os 6 arquivos de log rotativos do disco, reinicia o slot para a Hora 1 e recria o arquivo inicial. |
 | `write_audit_log` | `category: String`, `level: String`, `message: String` | `Result<(), String>` | Permite registrar um evento arbitrário de auditoria diretamente nos arquivos em disco do backend. |
 
-> Detalhes arquiteturais aprofundados sobre a máquina de rotação horária e política de zero-RAM estão documentados em: **[[12-sistema-de-auditoria]] — Sistema de Auditoria e Logs Rotativos em Disco**.
+### 4.7 Comandos dos Novos Subsistemas da v4.3.0 (`safety`, `alerts`, `overlay`, `session_export`, `freeze` e `pokeidle state`)
+
+| Comando IPC | Parâmetros e Tipos | Retorno | Descrição & Efeitos Colaterais |
+| :--- | :--- | :--- | :--- |
+| `get_safety_status` | Nenhum | `Result<SafetyStatus, String>` | Retorna status de crash loop, contagem de falhas recentes e lista de backups disponíveis. |
+| `restore_config_backup` | `backup_path: String` | `Result<AppConfig, String>` | Restaura um snapshot íntegro de backup de configuração substituindo o `config.json`. |
+| `reset_crash_guard` | Nenhum | `Result<(), String>` | Zera a contagem e histórico de crash loops no `crash_guard.json`. |
+| `reset_to_factory_config` | Nenhum | `Result<AppConfig, String>` | Redefine todas as configurações para o estado de fábrica. |
+| `dispatch_test_alert` | `channel: String` | `Result<bool, String>` | Dispara um alerta de teste para o canal especificado (`desktop`, `ntfy`, `discord`). |
+| `toggle_overlay_server` | `enabled: bool`, `port: Option<u16>` | `Result<bool, String>` | Inicia ou encerra o servidor HTTP local do Overlay OBS (porta padrão 47850). |
+| `get_overlay_status` | Nenhum | `Result<OverlayStatus, String>` | Retorna se o servidor HTTP do Overlay está ativo e a porta em execução. |
+| `start_session_export` | `pin: String` | `Result<ExportStatus, String>` | Inicia o servidor HTTP temporário P2P criptografado na porta 47811 com timeout de 5 minutos. |
+| `stop_session_export` | Nenhum | `Result<(), String>` | Interrompe o servidor de exportação de sessão P2P. |
+| `get_session_export_status` | Nenhum | `Result<ExportStatus, String>` | Consulta o status do servidor de exportação e tempo restante de vida do token. |
+| `device_set_sync_id` | `sync_id: Option<String>` | `Result<Option<String>, String>` | Persiste o `device_sync_id` no `config.json` para o Elo PC ↔ Celular. |
+| `game_freeze_slot` | `slot_id: String` | `Result<(), String>` | Oculta o webview do slot e congela a execução gráfica para 0% GPU com snapshot em canvas. |
+| `game_unfreeze_slot` | `slot_id: String` | `Result<(), String>` | Restaura o webview do slot retornando à execução interativa. |
+| `game_get_slot_snapshot` | `slot_id: String` | `Result<Option<String>, String>` | Retorna a captura estática em base64 do slot congelado. |
+| `game_get_all_snapshots` | Nenhum | `Result<HashMap<String, String>, String>` | Retorna o dicionário de snapshots de todos os slots congelados. |
+| `game_read_slot_state` | `slot_id: String` | `Result<Option<PokeIdleGameState>, String>` | Retorna o estado teleférico extraído via WebSocket Hook (XP/h, nível, bônus). |
+| `game_get_all_states` | Nenhum | `Result<HashMap<String, PokeIdleGameState>, String>` | Retorna o estado de telemetria de todos os slots ativos. |
+
+> Detalhes técnicos e diagramas desses fluxos estão disponíveis em: **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.
 
 ---
 

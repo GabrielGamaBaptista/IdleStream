@@ -15,9 +15,10 @@ wiki_links:
   - "[[01-arquitetura]]"
   - "[[05-backend-core]]"
   - "[[06-frontend]]"
+  - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.2.0"
-last_updated: "2026-11-18"
+version: "4.3.0"
+last_updated: "2026-11-19"
 summary: "Documentação do ecossistema de jogos ociosos (PokeIdle) do IdleStream: orquestração de Child Webviews nativas no Tauri v2, layouts geométricos dinâmicos com auto-fit adaptativo, performance dinâmica automatizada (60 -> 10 -> 1 FPS), motor anti-sleep JS de 6 camadas e extensão /hunt com injeção idempotente e CSS resiliente."
 ---
 
@@ -260,7 +261,26 @@ A versão **v4.2.1** aperfeiçoou a experiência de jogos em telas verticais de 
 
 ---
 
-## 8. Próximos Passos & Documentos Relacionados
+## 8. Freeze de Slots Inativos (0% GPU) e Hook WebSocket de Telemetria (v4.3.0)
+
+A versão **v4.3.0** introduz dois marcos fundamentais de integração e eficiência no Game Workspace:
+
+### 8.1. Freeze de Slots (0% GPU com Snapshot Estático)
+Ao operar múltiplos slots ou em momentos de sobrecarga de hardware, o usuário pode congelar slots inativos:
+1. **Captura em Canvas**: A injeção em `anti_sleep.js` executa `canvas.toDataURL('image/jpeg', 0.7)` instantaneamente na instância do jogo.
+2. **Transferência de Alta Velocidade**: O base64 é despachado via título do documento (`__IDLESTREAM_SLOT_SNAPSHOT__|...`), capturado pelo hook nativo do Tauri em `games/manager.rs`.
+3. **Desacoplamento Gráfico**: A Child WebView subjacente é escondida (`set_visible(false)`) e movida para fora da área visível, eliminando 100% da renderização do Chromium/WebGL na placa de vídeo.
+4. **Exibição Frontend**: Uma imagem estática é renderizada no lugar com o selo de `🧊 0% GPU (Congelado)`, podendo ser descongelada com 1 clique a qualquer momento.
+
+### 8.2. Hook WebSocket do PokeIdle (Telemetria em Tempo Real)
+O script `anti_sleep.js` intercepta o construtor `window.WebSocket` da página do jogo PokeIdle:
+- **Extração Passiva**: Monitora mensagens de handshake e pacotes de sincronização do jogo contendo nível atual, XP acumulado, taxa de XP/hora e bônus multiplicadores ativos de Twitch e Kick.
+- **Cache Centralizado**: Armazena no `GameSessionManager` do Rust e expõe via comando IPC `game_get_all_states`.
+- **Badges no Header**: O `GameWorkspace.tsx` renderiza badges dinâmicos no header de cada slot exibindo level, XP/h e bônus ativos sem precisar inspecionar a interface interna do jogo.
+
+---
+
+## 9. Próximos Passos & Documentos Relacionados
 
 Para compreender a estrutura interna do estado global em Rust (`AppState`), a persistência em `config.json` e consultar o dicionário exaustivo de comandos IPC:
-👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC**.
+👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC** e **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.

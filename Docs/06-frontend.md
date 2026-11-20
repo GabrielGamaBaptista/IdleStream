@@ -25,9 +25,10 @@ wiki_links:
   - "[[10-sessoes-resgates-e-verificador]]"
   - "[[11-resiliencia-segundo-plano]]"
   - "[[12-sistema-de-auditoria]]"
+  - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.2.0"
-last_updated: "2026-11-18"
+version: "4.3.0"
+last_updated: "2026-11-19"
 summary: "Especificação completa da interface visual do IdleStream v4.2.0: arquitetura da store global Zustand 5, Header adaptativo, badge Farmando vs Ao Vivo, ordenação por pontos, VoteSyncModal com QR Code, AuditLogViewer e serviços híbridos Desktop/Mobile."
 ---
 
@@ -244,9 +245,17 @@ export interface StreamRuntimeStatus {
 - `formatPoints(val)`: Converte números brutos em notação brasileira legível (ex: `154200` $\to$ `"154.200"` ou `"154,2k"`).
 - `formatUptime(seconds)`: Converte segundos acumulados em strings temporais estruturadas (ex: `7320` $\to$ `"2h 02m"`).
 
+### 4.3 Novos Componentes de Interface da v4.3.0
+- **`AlertSettingsCard.tsx`**: Painel na aba de Configurações para gerenciar notificações nativas, tópicos no ntfy.sh e Webhook do Discord, com teste imediato de disparo.
+- **`DeviceSyncCard.tsx`**: Card para gerenciar o Elo PC ↔ Celular com geração e leitura de QR Code de pareamento do `device_sync_id`.
+- **`MorningReportModal.tsx`**: Modal com resumo automático ao despertar, compilando horas em modo noturno, pontos acumulados, claims e drops coletados.
+- **`OverlaySettingsCard.tsx`**: Card para configurar o servidor de Overlay OBS (`http://127.0.0.1:47850/overlay`), botão de cópia de URL e status de serviço.
+- **`SafetyRecoveryModal.tsx`**: Modal de Modo de Segurança acionado em caso de crash-loop repetido, permitindo restaurar backups íntegros rotativos do `config.json`.
+- **`SessionExportModal.tsx`**: Modal de exportação de sessões para celular via QR Code local temporário com criptografia AES-256-GCM protegida por PIN.
+
 ---
 
 ## 5. Próximos Passos & Documentos Relacionados
 
 Para compreender como a infraestrutura nativa do Android opera, incluindo serviços em primeiro plano, compilação cruzada em Rust e o pipeline de empacotamento:
-👉 Prossiga para: **[[07-multiplataforma-android]] — Multiplataforma, Android Bridge e Build System**.
+👉 Prossiga para: **[[07-multiplataforma-android]] — Multiplataforma, Android Bridge e Build System** e **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.
