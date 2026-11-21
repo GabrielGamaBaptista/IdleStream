@@ -271,7 +271,7 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `clear_audit_logs` | Nenhum | `Result<(), String>` | Deleta todos os 6 arquivos de log rotativos do disco, reinicia o slot para a Hora 1 e recria o arquivo inicial. |
 | `write_audit_log` | `category: String`, `level: String`, `message: String` | `Result<(), String>` | Permite registrar um evento arbitrário de auditoria diretamente nos arquivos em disco do backend. |
 
-### 4.7 Comandos dos Novos Subsistemas da v4.3.0 (`safety`, `alerts`, `overlay`, `session_export`, `freeze` e `pokeidle state`)
+### 4.7 Comandos dos Novos Subsistemas da v4.3.0 (`safety`, `session_export`, `freeze` e `pokeidle state`)
 
 | Comando IPC | Parâmetros e Tipos | Retorno | Descrição & Efeitos Colaterais |
 | :--- | :--- | :--- | :--- |
@@ -279,9 +279,6 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `restore_config_backup` | `backup_path: String` | `Result<AppConfig, String>` | Restaura um snapshot íntegro de backup de configuração substituindo o `config.json`. |
 | `reset_crash_guard` | Nenhum | `Result<(), String>` | Zera a contagem e histórico de crash loops no `crash_guard.json`. |
 | `reset_to_factory_config` | Nenhum | `Result<AppConfig, String>` | Redefine todas as configurações para o estado de fábrica. |
-| `dispatch_test_alert` | `channel: String` | `Result<bool, String>` | Dispara um alerta de teste para o canal especificado (`desktop`, `ntfy`, `discord`). |
-| `toggle_overlay_server` | `enabled: bool`, `port: Option<u16>` | `Result<bool, String>` | Inicia ou encerra o servidor HTTP local do Overlay OBS (porta padrão 47850). |
-| `get_overlay_status` | Nenhum | `Result<OverlayStatus, String>` | Retorna se o servidor HTTP do Overlay está ativo e a porta em execução. |
 | `start_session_export` | `pin: String` | `Result<ExportStatus, String>` | Inicia o servidor HTTP temporário P2P criptografado na porta 47811 com timeout de 5 minutos. |
 | `stop_session_export` | Nenhum | `Result<(), String>` | Interrompe o servidor de exportação de sessão P2P. |
 | `get_session_export_status` | Nenhum | `Result<ExportStatus, String>` | Consulta o status do servidor de exportação e tempo restante de vida do token. |

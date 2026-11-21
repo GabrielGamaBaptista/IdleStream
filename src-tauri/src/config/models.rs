@@ -77,15 +77,8 @@ pub struct AppSettings {
     pub kick_hide_chat: bool,
     #[serde(default = "default_kick_lowest_quality")]
     pub kick_lowest_quality: bool,
-    #[serde(default)]
-    pub alert_config: crate::alerts::AlertConfig,
-    #[serde(default)]
-    pub overlay_enabled: bool,
-    #[serde(default = "default_overlay_port")]
-    pub overlay_port: u16,
 }
 
-fn default_overlay_port() -> u16 { 47850 }
 fn default_minimize_to_tray() -> bool { true }
 fn default_auto_reconnect() -> bool { true }
 fn default_reconnect_delay_secs() -> u64 { 10 }
@@ -105,9 +98,6 @@ impl Default for AppSettings {
             kick_mute_audio: true,
             kick_hide_chat: true,
             kick_lowest_quality: true,
-            alert_config: crate::alerts::AlertConfig::default(),
-            overlay_enabled: false,
-            overlay_port: 47850,
         }
     }
 }

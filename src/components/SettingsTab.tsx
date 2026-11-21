@@ -18,8 +18,6 @@ import {
 } from 'lucide-react';
 import { BatteryBanner } from './BatteryBanner';
 import { DeviceSyncCard } from './DeviceSyncCard';
-import { OverlaySettingsCard } from './OverlaySettingsCard';
-import { AlertSettingsCard } from './AlertSettingsCard';
 import { AuditLogViewer } from './AuditLogViewer';
 
 export const SettingsTab: React.FC = () => {
@@ -559,12 +557,6 @@ export const SettingsTab: React.FC = () => {
 
       {/* Elo PC ↔ Celular (Exclusão Mútua Cloud) */}
       <DeviceSyncCard />
-
-      {/* Overlay OBS (Servidor HTTP Local) */}
-      <OverlaySettingsCard />
-
-      {/* Alertas e Notificações Multicanal */}
-      <AlertSettingsCard />
 
       {/* Diagnóstico e Relatório de Auditoria (Rotativo 6h em Disco) */}
       <AuditLogViewer />

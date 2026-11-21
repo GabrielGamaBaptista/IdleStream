@@ -13,10 +13,10 @@
 | # | Feature | Sprint | Status |
 |---|---------|--------|--------|
 | 1 | 🛡️ Rede de Segurança (Crash-loop Guard + Backup) | 1 | ✅ Concluído |
-| 2 | 📋 Sistema de Alertas Multicanal (ntfy.sh + Discord) | 1 | ✅ Concluído |
+| 2 | 📋 Sistema de Alertas Multicanal (ntfy.sh + Discord) | 1 | ❌ Descartado (Removido a pedido do usuário) |
 | 3 | 🌙 Modo Noturno + Relatório Matinal | 1 | ✅ Concluído |
 | 4 | 🔗 Elo PC↔Mobile (Exclusão Mútua Bidirecional) | 1 | ✅ Concluído |
-| 5 | 📺 Overlay OBS (Servidor HTTP local) | 2 | ✅ Concluído |
+| 5 | 📺 Overlay OBS (Servidor HTTP local) | 2 | ❌ Descartado (Removido a pedido do usuário) |
 | 6 | 🧊 Freeze de Slots Inativos (Screenshot + 0% GPU) | 2 | ✅ Concluído |
 | 7 | 🎮 Hook WebSocket do PokeIdle (Leitura de estado) | 2 | ✅ Concluído |
 | 8 | 🏠 QR Code P2P de Exportação de Sessão Mobile | 2 | ✅ Concluído |

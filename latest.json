@@ -1,11 +1,11 @@
 {
-  "version": "4.3.0",
-  "notes": "IdleStream v4.3.0 — Suporte a 2 lives simultâneas por conta na Kick; Sistema de Alertas Multicanal (Desktop, ntfy.sh e Discord Webhook); Rede de Segurança com Crash-loop Guard e Backups rotativos; Elo PC↔Mobile com exclusão mútua em nuvem; Modo Noturno com dimmer inteligente e Relatório Matinal; Overlay OBS via servidor HTTP local; Freeze de slots inativos para 0% GPU; Hook WebSocket do PokeIdle para telemetria em tempo real (XP/h, nível e bônus); e Exportação segura P2P de sessões para celular via QR Code (AES-256-GCM + PIN).",
-  "pub_date": "2026-11-19T23:48:00Z",
+  "version": "4.3.1",
+  "notes": "IdleStream v4.3.1 — Remoção e limpeza de módulos obsoletos (Overlay OBS e Alertas Multicanal); consolidação dos 6 subsistemas estáveis (2 lives simultâneas na Kick, SafetyNet com Crash-loop Guard e Backups rotativos, Elo PC↔Mobile via Cloud Sync, Modo Noturno inteligente, Freeze de Slots 0% GPU, Hook WebSocket do PokeIdle e Exportação P2P AES-256-GCM); melhorias de estabilidade e higiene de código.",
+  "pub_date": "2026-11-21T07:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjhBN0E3eDNQVVIvb2JkaGRJOEEyY09xQ25rVHExcHpFV2taZnNaVi9iSWJEVmc0TERHR3F6OGZtUFFUaTRtZ2JGTlVWTUlmWngwRStZTTY0YmFxZVFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTMyMDU2CWZpbGU6SWRsZVN0cmVhbV80LjMuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjAKN1dMUE9UQUhxTGpMSnFqUFphbmc0SW5sNWRIK2Uvbks5U2dadDNISTN3czV0aDF1QnM0Q1NjNUord1pCeEtON0NFKzFCODhWYUl1QzRRSjJtR0xYQ0E9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.0/IdleStream_4.3.0_x64-setup.exe"
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.1/IdleStream_4.3.1_x64-setup.exe"
     }
   }
 }

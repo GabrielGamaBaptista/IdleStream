@@ -728,29 +728,6 @@ pub async fn restore_backup(
     app.restart();
 }
 
-#[tauri::command]
-pub async fn update_alert_config(
-    state: StateHandle<'_>,
-    config: crate::alerts::AlertConfig,
-) -> Result<(), String> {
-    state.alert_dispatcher.update_config(config.clone()).await;
-    let cfg_to_save = {
-        let mut cfg = state.config.lock().await;
-        cfg.settings.alert_config = config;
-        cfg.clone()
-    };
-    state.config_store.save(&cfg_to_save)
-}
-
-#[tauri::command]
-pub async fn test_alert(state: StateHandle<'_>) -> Result<(), String> {
-    state
-        .alert_dispatcher
-        .send(crate::alerts::AlertEvent::Test)
-        .await;
-    Ok(())
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NightStreamSummary {
     pub channel: String,
@@ -903,32 +880,6 @@ pub async fn device_set_sync_id(
 pub async fn device_get_sync_id(state: StateHandle<'_>) -> Result<Option<String>, String> {
     let cfg = state.config.lock().await;
     Ok(cfg.device_sync_id.clone())
-}
-
-#[tauri::command]
-pub async fn toggle_overlay_server(
-    overlay: State<'_, Arc<crate::overlay::OverlayServer>>,
-    state: StateHandle<'_>,
-    enable: bool,
-) -> Result<crate::overlay::OverlayStatus, String> {
-    if enable {
-        overlay.start()?;
-    } else {
-        overlay.stop();
-    }
-    {
-        let mut cfg = state.config.lock().await;
-        cfg.settings.overlay_enabled = enable;
-        let _ = state.config_store.save(&cfg);
-    }
-    Ok(overlay.get_status())
-}
-
-#[tauri::command]
-pub async fn get_overlay_status(
-    overlay: State<'_, Arc<crate::overlay::OverlayServer>>,
-) -> Result<crate::overlay::OverlayStatus, String> {
-    Ok(overlay.get_status())
 }
 
 #[tauri::command]

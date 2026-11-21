@@ -246,10 +246,8 @@ export interface StreamRuntimeStatus {
 - `formatUptime(seconds)`: Converte segundos acumulados em strings temporais estruturadas (ex: `7320` $\to$ `"2h 02m"`).
 
 ### 4.3 Novos Componentes de Interface da v4.3.0
-- **`AlertSettingsCard.tsx`**: Painel na aba de Configurações para gerenciar notificações nativas, tópicos no ntfy.sh e Webhook do Discord, com teste imediato de disparo.
 - **`DeviceSyncCard.tsx`**: Card para gerenciar o Elo PC ↔ Celular com geração e leitura de QR Code de pareamento do `device_sync_id`.
 - **`MorningReportModal.tsx`**: Modal com resumo automático ao despertar, compilando horas em modo noturno, pontos acumulados, claims e drops coletados.
-- **`OverlaySettingsCard.tsx`**: Card para configurar o servidor de Overlay OBS (`http://127.0.0.1:47850/overlay`), botão de cópia de URL e status de serviço.
 - **`SafetyRecoveryModal.tsx`**: Modal de Modo de Segurança acionado em caso de crash-loop repetido, permitindo restaurar backups íntegros rotativos do `config.json`.
 - **`SessionExportModal.tsx`**: Modal de exportação de sessões para celular via QR Code local temporário com criptografia AES-256-GCM protegida por PIN.
 

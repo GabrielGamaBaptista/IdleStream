@@ -1,12 +1,10 @@
 pub mod accounts;
-pub mod alerts;
 pub mod commands;
 pub mod config;
 pub mod games;
 pub mod kick;
 pub mod live_check;
 pub mod logger;
-pub mod overlay;
 pub mod safety;
 pub mod session_export;
 pub mod state;
@@ -195,21 +193,8 @@ pub fn run() {
             let vote_manager = Arc::new(votes::manager::VoteManager::new(app_handle.clone()));
             app.manage(vote_manager.clone());
 
-            let overlay_server = Arc::new(overlay::OverlayServer::new(app_handle.clone(), None));
-            app.manage(overlay_server.clone());
-
             let session_export = Arc::new(session_export::SessionExportServer::new(app_handle.clone()));
             app.manage(session_export.clone());
-            {
-                let cfg_overlay = app_state.clone();
-                let srv_overlay = overlay_server.clone();
-                tauri::async_runtime::spawn(async move {
-                    let enabled = cfg_overlay.config.lock().await.settings.overlay_enabled;
-                    if enabled {
-                        let _ = srv_overlay.start();
-                    }
-                });
-            }
 
             // Start background vigilance loop (Auto-Live detection & standby recovery)
             app_state.start_vigilance_loop();
@@ -411,14 +396,10 @@ pub fn run() {
             backup_configs_now,
             list_backups,
             restore_backup,
-            update_alert_config,
-            test_alert,
             toggle_night_mode,
             get_night_mode_status,
             device_set_sync_id,
             device_get_sync_id,
-            toggle_overlay_server,
-            get_overlay_status,
             start_session_export,
             stop_session_export,
             get_session_export_status,

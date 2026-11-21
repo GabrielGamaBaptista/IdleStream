@@ -23,31 +23,6 @@ export interface StreamConfig {
   account_id?: string;
 }
 
-export interface AlertEventConfig {
-  stream_offline: boolean;
-  auth_failure: boolean;
-  redeem_failed: boolean;
-  points_milestone: boolean;
-  points_milestone_value: number;
-}
-
-export interface AlertConfig {
-  desktop_notifications: boolean;
-  ntfy_enabled: boolean;
-  ntfy_topic?: string | null;
-  discord_enabled: boolean;
-  discord_webhook?: string | null;
-  events: AlertEventConfig;
-}
-
-export interface AlertPayload {
-  title: string;
-  body: string;
-  event_type: string;
-  timestamp: number;
-  priority: number;
-}
-
 export interface AppSettings {
   minimize_to_tray: boolean;
   start_with_windows: boolean;
@@ -57,15 +32,6 @@ export interface AppSettings {
   kick_mute_audio: boolean;
   kick_hide_chat: boolean;
   kick_lowest_quality: boolean;
-  alert_config?: AlertConfig;
-  overlay_enabled?: boolean;
-  overlay_port?: number;
-}
-
-export interface OverlayStatus {
-  running: boolean;
-  port: number;
-  url: string;
 }
 
 export interface GameSlotConfig {

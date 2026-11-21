@@ -1,19 +1,15 @@
 ---
 id: "DOC-13-NOVOS-SUBSISTEMAS-V4-3"
-title: "Novos Subsistemas v4.3.0: Segurança, Alertas, Overlay OBS, Elo PC-Mobile e Exportação P2P"
+title: "Novos Subsistemas v4.3.0: Segurança, Elo PC-Mobile, Freeze de GPU e Exportação P2P"
 category: "architecture"
-tags: [idlestream, v4.3.0, safety, crash-loop, alerts, ntfy, discord, overlay-obs, elo-pc-mobile, session-export, aes-256-gcm, kick-dual]
+tags: [idlestream, v4.3.0, safety, crash-loop, elo-pc-mobile, session-export, aes-256-gcm, kick-dual]
 related_code:
   - "src-tauri/src/safety/mod.rs"
-  - "src-tauri/src/alerts/mod.rs"
-  - "src-tauri/src/overlay/mod.rs"
   - "src-tauri/src/session_export/mod.rs"
   - "src-tauri/src/kick/coordinator.rs"
   - "src/services/deviceSyncService.ts"
-  - "src/components/AlertSettingsCard.tsx"
   - "src/components/DeviceSyncCard.tsx"
   - "src/components/MorningReportModal.tsx"
-  - "src/components/OverlaySettingsCard.tsx"
   - "src/components/SafetyRecoveryModal.tsx"
   - "src/components/SessionExportModal.tsx"
 wiki_links:
@@ -27,11 +23,11 @@ wiki_links:
   - "[[11-resiliencia-segundo-plano]]"
 status: "completed"
 version: "4.3.0"
-last_updated: "2026-11-19"
-summary: "Especificação e arquitetura detalhada dos 8 novos subsistemas introduzidos na versão 4.3.0: Crash-loop Guard e Backups rotativos (Safety), Despachador de Alertas Multicanal (Desktop/ntfy/Discord), Servidor HTTP de Overlay para OBS, Elo de Exclusão Mútua PC-Mobile em nuvem, Exportador P2P de Sessões com AES-256-GCM + PBKDF2 e Kick Engine com suporte a 2 lives concorrentes por conta."
+last_updated: "2026-11-21"
+summary: "Especificação e arquitetura detalhada dos 6 subsistemas consolidados na versão 4.3.0: Crash-loop Guard e Backups rotativos (Safety), Elo de Exclusão Mútua PC-Mobile em nuvem, Freeze de Slots para 0% GPU, Telemetria Hook WebSocket do PokeIdle, Exportador P2P de Sessões com AES-256-GCM + PBKDF2 e Kick Engine com suporte a 2 lives concorrentes por conta."
 ---
 
-# Novos Subsistemas v4.3.0: Segurança, Alertas, Overlay OBS, Elo PC-Mobile e Exportação P2P
+# Novos Subsistemas v4.3.0: Segurança, Elo PC-Mobile, Freeze de GPU e Exportação P2P
 
 A versão **v4.3.0** introduz uma expansão arquitetural de grande escala no IdleStream, motivada por análise comparativa competitiva e refinamentos de experiência de uso contínuo 24/7. Este documento descreve as especificações técnicas, fluxos criptográficos e modelos de dados desses novos subsistemas.
 
@@ -85,29 +81,7 @@ stateDiagram-v2
 
 ---
 
-## 3. Despachador de Alertas Multicanal (`alerts/mod.rs` & `AlertSettingsCard.tsx`)
-
-Módulo assíncrono em Rust desacoplado que centraliza e despacha notificações de eventos críticos para múltiplos destinos:
-
-| Destino | Mecanismo | Formato / Headers |
-|---|---|---|
-| **Desktop Nativo** | Tauri Notification API | Notificação nativa do sistema operacional |
-| **ntfy.sh** | HTTP POST `https://ntfy.sh/{topic}` | Headers `Title`, `Priority` (`urgent`/`default`), `Tags` |
-| **Discord Webhook** | HTTP POST Discord Webhook URL | Payload JSON com `embeds`, cores temáticas e campos de dados |
-
-### Eventos Monitorados
-- `stream_offline`: Queda imprevista de transmissão em monitoramento.
-- `auth_failure`: Expiração ou invalidação de token OAuth/Session Token.
-- `redeem_failed`: Erro no resgate de recompensa ou pontos.
-- `points_milestone`: Conquista de marco relevante de pontos acumulados.
-
-### Rate-Limiting e Deduplicação
-- Cache em memória com `last_sent: HashMap<(AlertChannel, AlertEventKind), Instant>`.
-- Intervalo mínimo de **30 segundos** entre alertas idênticos para evitar saturação de push no celular ou webhook de Discord.
-
----
-
-## 4. Elo PC ↔ Celular (Exclusão Mútua Bidirecional)
+## 3. Elo PC ↔ Celular (Exclusão Mútua Bidirecional)
 
 Garante que o usuário nunca tenha simultaneamente o aplicativo rodando no PC e no Celular coletando pontos e jogos na mesma rede ou conta, o que geraria descarte de sessões ou desconfiança pelas plataformas.
 
@@ -132,15 +106,7 @@ sequenceDiagram
 
 ---
 
-## 5. Overlay OBS Local (`overlay/mod.rs` & `OverlaySettingsCard.tsx`)
-
-Servidor micro-HTTP local alimentado por `tiny_http` rodando em thread separada na porta `47850`:
-- **`GET /overlay`**: Retorna uma página HTML moderna com fundo transparente (`background: rgba(0,0,0,0)`), projetada para ser adicionada como **Navegador (Browser Source)** no OBS Studio.
-- **`GET /overlay/data`**: Retorna um payload JSON em tempo real com o status dos streams, pontos acumulados por hora, contas ativas e telemetria do jogo PokeIdle.
-
----
-
-## 6. Freeze de Slots Inativos (0% GPU) (`games/manager.rs` & `anti_sleep.js`)
+## 4. Freeze de Slots Inativos (0% GPU) (`games/manager.rs` & `anti_sleep.js`)
 
 Solução técnica para máquinas com GPU integrada ou uso de múltiplos slots de jogos simultâneos:
 1. Ao acionar o botão de congelamento de um slot inativo, o script de injeção captura um snapshot estático do `<canvas>` do jogo via `toDataURL('image/jpeg', 0.7)`.
@@ -150,7 +116,7 @@ Solução técnica para máquinas com GPU integrada ou uso de múltiplos slots d
 
 ---
 
-## 7. Telemetria Hook WebSocket do PokeIdle (`games/anti_sleep.js`)
+## 5. Telemetria Hook WebSocket do PokeIdle (`games/anti_sleep.js`)
 
 A injeção de script monitora o tráfego do jogo PokeIdle através de um Proxy no `window.WebSocket`:
 - Intercepta pacotes de inicialização e sincronização contendo level, XP atual, XP/hora e multiplicadores de bônus obtidos ao vincular a conta da Twitch e Kick.
@@ -159,7 +125,7 @@ A injeção de script monitora o tráfego do jogo PokeIdle através de um Proxy 
 
 ---
 
-## 8. Exportação P2P de Sessões Mobile (`session_export/mod.rs`)
+## 6. Exportação P2P de Sessões Mobile (`session_export/mod.rs`)
 
 Permite transferir todas as contas configuradas no Desktop para o Celular sem digitar credenciais, cookies ou senhas manualmente, e sem enviar nenhum dado para a nuvem pública.
 

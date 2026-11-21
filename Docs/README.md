@@ -41,7 +41,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 | Componente | Especificação de Engenharia | Detalhes de Implementação |
 | :--- | :--- | :--- |
-| **Versão Corrente** | `4.3.0` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
+| **Versão Corrente** | `4.3.1` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
 | **Framework Host** | **Tauri v2** (`@tauri-apps/cli ^2.0`, `@tauri-apps/api ^2.0`) | Modelo multi-janela, Child Webviews nativas (`wry`), IPC binário e JSON |
 | **Runtime Rust Core** | **Rust 2021 Edition** | Assíncrono com `tokio 1.0` (Full), `tokio-tungstenite 0.24`, `futures-util 0.3` |
 | **Camada HTTP / Web** | **Reqwest 0.12** (`rustls-tls`), `tiny_http 0.12` | Subprocesso `curl.exe` (Windows) e OkHttp Bridge (Android) para bypass TLS |
@@ -72,7 +72,7 @@ A documentação divide-se em 12 documentos técnicos especializados e este índ
 | **[[10-sessoes-resgates-e-verificador]]** | Sessões Persistentes & Verificador de Contas | Estratégia Profile-First (cookies nativos `Max-Age=90d` + `HttpOnly`), sync-back de rotação e verificador contínuo das 8 contas Twitch/Kick. | `src-tauri/src/accounts/`<br/>`src/utils/accountHealth.ts` | **Concluído** |
 | **[[11-resiliencia-segundo-plano]]** | Resiliência em Segundo Plano & Modo 1 FPS | `IdleStreamApplication`, modo 1 FPS (tela desligada / 10s fundo), `runtime_state.json`, `onRenderProcessGone` e saída manual vs kill OEM (`ApplicationExitInfo`). | `IdleStreamForegroundService.kt`<br/>`LifecycleLogger.kt`, `config/store.rs` | **Concluído** |
 | **[[12-sistema-de-auditoria]]** | Sistema de Auditoria e Logs em Disco | Persistência estrita em disco (0 MB em RAM), 6 arquivos rotativos de 1h com limite circular de sobrescrita e visualizador integrado. | `src-tauri/src/logger/`<br/>`src/components/AuditLogViewer.tsx` | **Concluído** |
-| **[[13-melhorias-v4.3-novos-subsistemas]]** | Novos Subsistemas v4.3.0 | Segurança com Crash-loop Guard e Backups (8 slots), Alertas Multicanal (Desktop/ntfy/Discord), Overlay OBS (HTTP 47850), Elo PC-Mobile em nuvem, Freeze 0% GPU, Hook WS e Exportação P2P AES-256-GCM. | `src-tauri/src/safety/`<br/>`src-tauri/src/alerts/`<br/>`src-tauri/src/overlay/`<br/>`src-tauri/src/session_export/` | **Concluído** |
+| **[[13-melhorias-v4.3-novos-subsistemas]]** | Novos Subsistemas v4.3.0 | Segurança com Crash-loop Guard e Backups (8 slots), Elo PC-Mobile em nuvem, Freeze 0% GPU, Hook WS e Exportação P2P AES-256-GCM. | `src-tauri/src/safety/`<br/>`src-tauri/src/session_export/` | **Concluído** |
 
 ---
 
@@ -101,8 +101,6 @@ C:\Projetos\Chatter\
 │   │   ├── votes\                          ──> [[09-sistema-de-votos]]
 │   │   │   ├── manager.rs, policy.rs, notifier.rs, commands.rs, vote_observer.js
 │   │   ├── safety\                         ──> [[13-melhorias-v4.3-novos-subsistemas]]
-│   │   ├── alerts\                         ──> [[13-melhorias-v4.3-novos-subsistemas]]
-│   │   ├── overlay\                        ──> [[13-melhorias-v4.3-novos-subsistemas]]
 │   │   ├── session_export\                 ──> [[13-melhorias-v4.3-novos-subsistemas]]
 │   │   └── logger\                         ──> [[12-sistema-de-auditoria]]
 │   │       ├── mod.rs, tests.rs

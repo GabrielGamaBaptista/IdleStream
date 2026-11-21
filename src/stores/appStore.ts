@@ -7,15 +7,12 @@ import {
   AccountHealthStatus,
   AccountsHealthSummary,
   AppConfig,
-  AlertConfig,
-  AlertPayload,
   AppSettings,
   BackupInfo,
   DeviceSyncRemoteState,
   GameSlotConfig,
   MorningReport,
   NightModeStatus,
-  OverlayStatus,
   Platform,
   PokeIdleGameState,
   RuntimeSessionState,
@@ -178,12 +175,6 @@ interface AppState {
   createBackupNow: (reason?: string) => Promise<BackupInfo | null>;
   restoreBackupById: (id: string) => Promise<void>;
 
-  // Alertas Multicanal
-  recentAlerts: AlertPayload[];
-  updateAlertConfig: (alertConfig: AlertConfig) => Promise<void>;
-  testAlert: () => Promise<void>;
-  dismissAlert: (timestamp: number) => void;
-
   // Modo Noturno + Relatório Matinal
   nightModeActive: boolean;
   nightModeStartedAt: number | null;
@@ -205,11 +196,6 @@ interface AppState {
   gameStates: Record<string, PokeIdleGameState>;
   fetchGameStates: () => Promise<void>;
 
-  // Overlay OBS (Feature 5)
-  overlayStatus: OverlayStatus | null;
-  fetchOverlayStatus: () => Promise<OverlayStatus | null>;
-  toggleOverlayServer: (enable: boolean) => Promise<OverlayStatus | null>;
-
   // Freeze de Slots Inativos (Feature 6)
   slotSnapshots: Record<string, string>;
   fetchSlotSnapshots: () => Promise<void>;
@@ -218,7 +204,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.2.4',
+  appVersion: '4.3.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -262,7 +248,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   backups: [],
   lastBackupInfo: null,
   isLoadingBackups: false,
-  recentAlerts: [],
 
   // Modo Noturno
   nightModeActive: false,
@@ -276,9 +261,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Leitura de Estado do Jogo (Feature 7)
   gameStates: {},
-
-  // Overlay OBS (Feature 5)
-  overlayStatus: null,
 
   // Freeze de Slots Inativos (Feature 6)
   slotSnapshots: {},
@@ -719,23 +701,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().fetchBackups().catch(() => {});
       });
 
-      // Listen to multitype app alerts (stream offline, auth failure, milestone, test)
-      await listen<AlertPayload>('app-alert', (event) => {
-        const payload = event.payload;
-        set((state) => ({
-          recentAlerts: [payload, ...state.recentAlerts.slice(0, 19)],
-        }));
-
-        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          try {
-            new Notification(payload.title, {
-              body: payload.body,
-              icon: '/icons/128x128.png',
-            });
-          } catch (_) {}
-        }
-      });
-
       // Carregar lista de backups em background para exibição rápida nas configurações
       get().fetchBackups().catch(() => {});
 
@@ -797,9 +762,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           }));
         }
       });
-
-      // Carregar status do servidor de Overlay OBS (Feature 5)
-      get().fetchOverlayStatus().catch(() => {});
 
       // Escutar snapshots de congelamento de slots (Feature 6)
       get().fetchSlotSnapshots().catch(() => {});
@@ -1146,39 +1108,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateAlertConfig: async (alertConfig: AlertConfig) => {
-    try {
-      await invoke('update_alert_config', { config: alertConfig });
-      set((state) => ({
-        config: {
-          ...state.config,
-          settings: {
-            ...state.config.settings,
-            alert_config: alertConfig,
-          },
-        },
-      }));
-    } catch (e) {
-      console.error('[Alerts] Falha ao atualizar configurações de alerta:', e);
-      throw e;
-    }
-  },
-
-  testAlert: async () => {
-    try {
-      await invoke('test_alert');
-    } catch (e) {
-      console.error('[Alerts] Falha ao disparar alerta de teste:', e);
-      throw e;
-    }
-  },
-
-  dismissAlert: (timestamp: number) => {
-    set((state) => ({
-      recentAlerts: state.recentAlerts.filter((a) => a.timestamp !== timestamp),
-    }));
-  },
-
   toggleNightMode: async (enable?: boolean) => {
     try {
       const targetState = enable !== undefined ? enable : !get().nightModeActive;
@@ -1292,27 +1221,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       const states = await gamePlatformService.getAllGameStates();
       set({ gameStates: states });
     } catch (_) {}
-  },
-
-  fetchOverlayStatus: async () => {
-    try {
-      const status = await invoke<OverlayStatus>('get_overlay_status');
-      set({ overlayStatus: status });
-      return status;
-    } catch {
-      return null;
-    }
-  },
-
-  toggleOverlayServer: async (enable: boolean) => {
-    try {
-      const status = await invoke<OverlayStatus>('toggle_overlay_server', { enable });
-      set({ overlayStatus: status });
-      return status;
-    } catch (e) {
-      console.error('Falha ao alternar servidor de overlay:', e);
-      return null;
-    }
   },
 
   fetchSlotSnapshots: async () => {
