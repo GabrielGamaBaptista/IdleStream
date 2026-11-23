@@ -313,7 +313,34 @@ stateDiagram-v2
 
 ---
 
-## 10. Próximos Passos & Documentos Relacionados
+## 10. Resolução de Loop de Inicialização no PokeIdle Ultra e Modo Sleep em Segundo Plano com Filtro Anti-Jitter (v4.3.3)
+
+A versão **v4.3.3** corrige três comportamentos críticos relacionados à estabilidade de inicialização e gerenciamento de energia a longo prazo:
+
+### 10.1. Correção do Loop Infinito de Inicialização no PokeIdle Ultra
+- **Causa Raiz do Bug**: Ao iniciar a aplicação com a opção de Ultra Economia ativa nas configurações, o script de injeção `anti_sleep.js` disparava repetidamente cliques indiscriminados no checkbox `#cfg-ultra` e forçava mutações no `localStorage` emitindo eventos sintéticos `storage`. Isso engilhava uma corrida com os handlers nativos do PokeIdle (que abrem o modal `.modal-fechar` e alternam a visualização de tela cheia), fazendo com que a WebView entrasse em um loop infinito piscando entre a tela de batalha e o painel laranja de Ultra Economia, travando o Chromium.
+- **Idempotência Estrita no Checkbox**:
+  - `__isPokeIdleUltraActive()`: Avalia com precisão se o modo ultra está ativo inspecionando classes no nó raiz, visibilidade real do container `#ultra` (`aria-hidden !== 'true'` e `display !== 'none'`) ou botão `#ultra-sair` visível.
+  - `__togglePokeIdleUltra(forceState)`: Verifica se o elemento `#cfg-ultra` é um checkbox e apenas efetua `.click()` se seu estado atual for divergente do desejado (`cfgUltra.checked !== forceState`). Em seguida, fecha o modal nativo via `.modal-fechar` caso tenha sido aberto, e não re-despacha eventos redundantes de storage.
+  - No frontend (`appStore.ts`), a restauração inicial do modo ultra foi adiada para **3.000 ms** após o startup, garantindo que o DOM e os scripts internos do PokeIdle estejam 100% carregados e estáveis antes de aplicar a flag.
+
+### 10.2. Modo Sleep Total (1 FPS) em Segundo Plano com Detecção de Ociosidade do SO
+- **Problema do Travamento em 10 FPS**: Anteriormente, quando o IdleStream ficava sem foco (em segundo plano), o loop de temporização do `GameWorkspace.tsx` continha um retorno antecipado que forçava a taxa de quadros a **10 FPS** e impedia a avaliação do temporizador de sleep configurado (ex: 1 minuto). Com isso, mesmo deixando o computador completamente ocioso durante a noite, o app nunca descia para 1 FPS nem liberava a memória via `game_trim_memory`.
+- **Cálculo de Ociosidade Efetiva**:
+  $$\text{effectiveIdleSec} = \begin{cases} \text{appIdleSec}, & \text{se a janela estiver em foco} \\ \max(\text{systemIdleSec}, \text{appIdleSec}), & \text{se sem foco (em segundo plano)} \end{cases}$$
+  - Se a janela estiver em segundo plano mas o usuário estiver ativo em outro software no PC ($\text{systemIdleSec} < \text{threshold}$), o app roda no patamar intermediário de **10 FPS** sem penalizar a GPU.
+  - Assim que o usuário se afasta do computador ($\text{systemIdleSec} \ge \text{threshold}$, ex: 1 minuto), o app entra automaticamente em **Sleep Total (1 FPS)**, oculta canvas/vídeos e executa a purga de memória física NT (`trimMemory()`), mesmo estando em segundo plano!
+
+### 10.3. Filtro Anti-Jitter contra Despertares Espontâneos do Modo Sleep
+- **Sintoma**: O aplicativo entrava em modo de repouso (1 FPS) mas acordava sozinho após alguns minutos, sem qualquer toque humano no mouse ou teclado.
+- **Causas Identificadas e Corrigidas**:
+  1. **Eventos Sintéticos do Chromium**: A renderização da camada de overlay escurecido (`isIdleDimmed`) sob o cursor do mouse parado acionava um evento sintético `mousemove` com `onMouseMove={wakeUpFromIdle}` no próprio overlay, acordando o app imediatamente. O handler foi completamente removido do overlay.
+  2. **Micro-vibrações do Sensor Óptico**: Sensores de alta precisão registram variações térmicas ou vibrações de mesa de $\pm 1$ a $\pm 2$ pixels. O `GameWorkspace.tsx` agora mantém `lastMousePosRef` e exige deslocamento euclidiano $\ge 20\text{px}$ ($\sqrt{\Delta x^2 + \Delta y^2} \ge 20$) para registrar atividade.
+  3. **Imunidade Durante Sleep**: Quando o app já está no estado de tela escurecida/sleep (`isIdleDimmed === true`), eventos de movimento de mouse são estritamente ignorados; o despertar exige clique explícito ou toque de teclado.
+
+---
+
+## 11. Próximos Passos & Documentos Relacionados
 
 Para compreender a estrutura interna do estado global em Rust (`AppState`), a persistência em `config.json` e consultar o dicionário exaustivo de comandos IPC:
 👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC** e **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.

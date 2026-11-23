@@ -1,11 +1,11 @@
 {
-  "version": "4.3.2",
-  "notes": "IdleStream v4.3.2 — Migração oficial da plataforma de votos diários para o IdleHub (com suporte a login individual por conta Google por slot e cooldown de 24h 01m); estabilização da telemetria de níveis de contas via WebSocket hook (descarte de pacotes de campo/monstros selvagens e monotonicidade); otimização radical de performance e consumo de recursos (60 FPS VSync nativo por hardware em foco; queda instantânea para 10 FPS sem foco e 1 FPS / 0% GPU ao minimizar; suspensão de áudio para estancar audiodg.exe; e purga de memória física de SO com SetProcessWorkingSetSize para sessões contínuas de 300h).",
-  "pub_date": "2026-11-23T13:25:00Z",
+  "version": "4.3.3",
+  "notes": "IdleStream v4.3.3 — Restrição arquitetural de QR Code e exportação no mobile (Android estritamente receptor/cliente); resolução definitiva de loop infinito de inicialização no PokeIdle Ultra (idempotência no checkbox e fechamento de modal); modo Sleep total (1 FPS) em segundo plano com verificação de ociosidade do SO; filtro anti-jitter de mouse (deslocamento euclidiano >= 20px) para evitar despertares espontâneos.",
+  "pub_date": "2026-11-23T19:30:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjB1bGUvb25Sb3dhbWVFaUxOYW5HL0ZWaTNOc2ZaR1AyMmYrM1dtb1BEbi9XRmFTTGgwS29lMkgrUjIwMkdwZ1d1eVlDdnAyK2NMbWk1blg3MmxuSnc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NDQwMzE4CWZpbGU6SWRsZVN0cmVhbV80LjMuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjIKMmVnMm5BaVovWmZkcGpOZXArcC9CelB2UkxYeVZGcGZCb20rYVI4VTVJU0dVTS85RVZYbnlUZkZGYm5vc0JwaGwxektqNDJVemxUK2lESXhPMEtDRGc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.2/IdleStream_4.3.2_x64-setup.exe"
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.3/IdleStream_4.3.3_x64-setup.exe"
     }
   }
 }

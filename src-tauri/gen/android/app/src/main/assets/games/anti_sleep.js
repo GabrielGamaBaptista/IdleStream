@@ -530,10 +530,11 @@
     window.__isPokeIdleUltraActive = function () {
       try {
         const rootHasClass = document.documentElement.classList.contains('modo-ultra');
-        const btnSairExists = !!document.getElementById('ultra-sair');
         const ultraDiv = document.getElementById('ultra');
-        const ultraVisible = ultraDiv && ultraDiv.getAttribute('aria-hidden') === 'false';
-        return rootHasClass || btnSairExists || !!ultraVisible;
+        const isUltraVisible = ultraDiv && ultraDiv.getAttribute('aria-hidden') !== 'true' && ultraDiv.style.display !== 'none';
+        const btnSair = document.getElementById('ultra-sair');
+        const isBtnSairVisible = btnSair && btnSair.offsetParent !== null;
+        return rootHasClass || Boolean(isUltraVisible) || Boolean(isBtnSairVisible);
       } catch (_) {
         return false;
       }
@@ -562,7 +563,13 @@
           // Caso 1: O modal de configurações já está aberto no DOM
           let cfgUltra = document.getElementById('cfg-ultra');
           if (cfgUltra) {
-            cfgUltra.click();
+            if (cfgUltra.type === 'checkbox') {
+              if (!cfgUltra.checked) {
+                cfgUltra.click();
+              }
+            } else {
+              cfgUltra.click();
+            }
             console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #cfg-ultra');
             return true;
           }
@@ -574,16 +581,30 @@
             btnConfig.click();
             cfgUltra = document.getElementById('cfg-ultra');
             if (cfgUltra) {
-              cfgUltra.click(); // Ao clicar, o PokeIdle liga o Ultra e fecha o modal automaticamente
+              if (cfgUltra.type === 'checkbox') {
+                if (!cfgUltra.checked) {
+                  cfgUltra.click();
+                }
+              } else {
+                cfgUltra.click();
+              }
+              const btnClose = document.getElementById('btn-config-fechar') ||
+                (typeof document.querySelector === 'function' ? document.querySelector('.modal-fechar') : null);
+              if (btnClose && typeof btnClose.click === 'function') {
+                btnClose.click();
+              }
               console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #btn-config -> #cfg-ultra');
               return true;
             }
           }
         }
 
-        // Fallback de contingência (persiste preferência no storage do slot)
-        localStorage.setItem('cfg-ultra', targetState ? '1' : '0');
-        window.dispatchEvent(new Event('storage'));
+        // Fallback de contingência idempotente (sem dispatch repetitivo de storage)
+        const currentStored = localStorage.getItem('cfg-ultra');
+        const nextStored = targetState ? '1' : '0';
+        if (currentStored !== nextStored) {
+          localStorage.setItem('cfg-ultra', nextStored);
+        }
         document.documentElement.classList.toggle('modo-ultra', targetState);
         console.log('[IdleStream] PokeIdle Ultra alternado via fallback:', targetState);
         return true;

@@ -104,6 +104,7 @@ export const GameWorkspace: React.FC = () => {
   });
   const [isWindowMinimized, setIsWindowMinimized] = useState<boolean>(false);
   const lastActivityTimeRef = useRef<number>(Date.now());
+  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleInactivityChange = (mins: number) => {
     setInactivityMinutes(mins);
@@ -194,9 +195,29 @@ export const GameWorkspace: React.FC = () => {
       }
     };
 
+    const handleMouseMove = (e: MouseEvent) => {
+      // Se a tela de Sleep (isIdleDimmed) estiver ativa, NÃO acordar apenas passando o mouse por cima
+      if (isIdleDimmed) return;
+
+      if (!lastMousePosRef.current) {
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      const dx = e.clientX - lastMousePosRef.current.x;
+      const dy = e.clientY - lastMousePosRef.current.y;
+      const distance = Math.hypot(dx, dy);
+
+      // Filtro anti-jitter: ignora micro-vibrações de sensores ópticos (<= 20 pixels)
+      if (distance < 20) return;
+
+      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+      handleUserActivity();
+    };
+
     (window as any).__onUserActivity = handleUserActivity;
 
-    window.addEventListener('mousemove', handleUserActivity, { passive: true });
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mousedown', handleUserActivity, { passive: true });
     window.addEventListener('keydown', handleUserActivity, { passive: true });
     window.addEventListener('touchstart', handleUserActivity, { passive: true });
@@ -204,7 +225,7 @@ export const GameWorkspace: React.FC = () => {
 
     return () => {
       delete (window as any).__onUserActivity;
-      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleUserActivity);
       window.removeEventListener('keydown', handleUserActivity);
       window.removeEventListener('touchstart', handleUserActivity);
@@ -232,30 +253,52 @@ export const GameWorkspace: React.FC = () => {
         return;
       }
 
-      // 2. Janela em segundo plano (usuário mexendo em outro app, navegador ou jogando outro jogo):
-      // Reduz imediatamente para 10 FPS (alivia GPU em 85% e não disputa recursos do PC)
-      if (!isWindowFocused) {
-        if (currentDynamicFpsRef.current !== 10 && currentDynamicFpsRef.current !== 1) {
-          currentDynamicFpsRef.current = 10;
-          setCurrentDynamicFps(10);
-          gamePlatformService.setFps(10).catch(() => {});
-        }
-        return;
-      }
+      // Consulta segundos de inatividade do sistema operacional (Windows GetLastInputInfo)
+      let systemIdleSec = 0;
+      try {
+        systemIdleSec = await gamePlatformService.getSystemIdleSeconds();
+      } catch (_) {}
 
-      // 3. Janela em primeiro plano e focada: verifica tempo de inatividade no IdleStream
-      if (thresholdSeconds > 0 && appIdleSec >= thresholdSeconds) {
-        // Sleep Mode profundo configurado pelo usuário (1 FPS + ocultar webviews)
+      // Inatividade efetiva:
+      // Se a janela estiver focada em primeiro plano, conta o tempo de inatividade no app (appIdleSec).
+      // Se a janela estiver em segundo plano (unfocused):
+      // - Se o usuário estiver ausente do PC (systemIdleSec >= thresholdSeconds), entra em 1 FPS sleep.
+      // - Se o usuário estiver mexendo em outro app no PC (systemIdleSec < thresholdSeconds), mantém 10 FPS eco.
+      const effectiveIdleSec = isWindowFocused
+        ? appIdleSec
+        : (systemIdleSec > 0 ? systemIdleSec : appIdleSec);
+
+      // 2. Tempo de inatividade configurado atingido (ex: 1 min de sleep):
+      // APLICA SLEEP MODE REAL (1 FPS + corte total de GPU/RAM) TANTO EM PRIMEIRO QUANTO EM SEGUNDO PLANO!
+      if (thresholdSeconds > 0 && effectiveIdleSec >= thresholdSeconds) {
         if (currentDynamicFpsRef.current !== 1) {
           currentDynamicFpsRef.current = 1;
           setCurrentDynamicFps(1);
           gamePlatformService.setFps(1).catch(() => {});
           gamePlatformService.trimMemory().catch(() => {});
         }
-        if (!isIdleDimmed && activeSlots.length > 0) {
+        if (!isIdleDimmed && activeSlots.length > 0 && isWindowFocused) {
           setIsIdleDimmed(true);
         }
-      } else if (appIdleSec >= 30) {
+        return;
+      }
+
+      // 3. Janela em segundo plano (usuário mexendo ativamente em outro app/jogo no PC, mas effectiveIdleSec < thresholdSeconds):
+      // Reduz para 10 FPS (alivia GPU em 85% e não disputa recursos do PC com outros jogos)
+      if (!isWindowFocused) {
+        if (currentDynamicFpsRef.current !== 10) {
+          currentDynamicFpsRef.current = 10;
+          setCurrentDynamicFps(10);
+          gamePlatformService.setFps(10).catch(() => {});
+        }
+        if (isIdleDimmed) {
+          setIsIdleDimmed(false);
+        }
+        return;
+      }
+
+      // 4. Janela em primeiro plano e focada: verifica tempo de inatividade no IdleStream
+      if (appIdleSec >= 30) {
         // Inatividade após 30s: reduz performance para poupar GPU (10 FPS)
         if (currentDynamicFpsRef.current !== 10) {
           currentDynamicFpsRef.current = 10;
@@ -893,7 +936,6 @@ export const GameWorkspace: React.FC = () => {
         {isIdleDimmed && (
           <div
             onClick={wakeUpFromIdle}
-            onMouseMove={wakeUpFromIdle}
             className="absolute inset-0 z-40 bg-neutral-950/92 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center select-none cursor-pointer animate-in fade-in duration-300"
           >
             <div

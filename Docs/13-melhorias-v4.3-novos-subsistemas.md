@@ -148,3 +148,17 @@ sequenceDiagram
 - **Restrição de IP Privado**: O servidor rejeita requisições vindas de endereços IP fora das faixas privadas RFC1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
 - **Criptografia Simétrica Militar**: Payload cifrado com `AES-256-GCM` com nonce de 12 bytes e salt de 16 bytes. A derivação da chave a partir do PIN de 8 dígitos exige 310.000 iterações de `PBKDF2-SHA256`.
 - **Efeméride Estrita**: O servidor encerra automaticamente após 5 minutos de inatividade ou após o limite máximo de 3 tentativas de entrega.
+
+---
+
+## 7. Refinamentos da Versão v4.3.3
+
+1. **Restrição Arquitetural de QR Code & Exportação no Celular**:
+   - Plataforma Android consolidada estritamente como receptor/cliente: o celular nunca gera QR codes, não renderiza imagens de QR Code em tela e não disponibiliza a opção de exportar sessão. Apenas o Desktop gera códigos de pareamento e inicia transferências de sessão.
+2. **Correção de Loop de Inicialização no PokeIdle Ultra**:
+   - Idempotência rigorosa no manipulador do checkbox de Ultra Economia em `anti_sleep.js`.
+   - Remoção de re-despacho redundante de eventos `storage` e fechamento do modal `.modal-fechar`.
+   - Startup atrasado em 3 segundos no frontend para aguardar inicialização estável da WebView.
+3. **Modo Sleep de Segundo Plano e Imunidade a Jitter de Mouse**:
+   - `GameWorkspace.tsx` agora avalia a inatividade do SO mesmo quando em segundo plano, caindo para **1 FPS** e executando `game_trim_memory` após o tempo limite de ociosidade (ex: 1 min).
+   - Filtro de jitter euclidiano ($\ge 20\text{px}$) e bloqueio total de `mousemove` durante o estado de repouso, eliminando despertares espontâneos.

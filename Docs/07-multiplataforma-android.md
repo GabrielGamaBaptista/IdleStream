@@ -200,7 +200,39 @@ flowchart TD
 
 ---
 
-## 5. Próximos Passos & Documentos Relacionados
+## 5. Princípio Arquitetural de Pareamento: PC Emissor / Mobile Receptor Estrito (v4.3.3)
+
+A versão **v4.3.3** formaliza uma diretriz arquitetural estrita para sincronização de contas, sessões e votos entre dispositivos:
+
+```mermaid
+flowchart LR
+    subgraph Desktop ["IdleStream Desktop (PC)"]
+        GenQR["Gera QR Code de Pareamento"]
+        ExpSess["Exporta Sessão Criptografada (AES-256)"]
+        ShowCode["Exibe Código de Pareamento"]
+    end
+
+    subgraph Mobile ["IdleStream Mobile (Android)"]
+        ReadCam["Lê QR Code via Câmera"]
+        PasteCode["Cola Código Manualmente"]
+        ImportSess["Importa Contas em Memória"]
+    end
+
+    Desktop -->|"Emissão P2P / Nuvem"| Mobile
+```
+
+### Regras de Imutabilidade da Plataforma Mobile
+1. **Somente o Computador Pode Gerar Códigos e QR Codes**:
+   - O Desktop é o emissor primário e orquestrador das credenciais da sessão.
+   - O aplicativo móvel no Android é **estritamente cliente/consumidor**: nunca deve gerar códigos de vinculação, nunca deve exibir imagens de QR Code em sua interface e nunca deve tentar exportar sessões para outro dispositivo móvel.
+2. **Adaptação de Interface Reativa**:
+   - `VoteSyncModal.tsx`: No Android, a aba de geração de QR Code é suprimida; a tela exibe apenas o status da conexão com o PC e o formulário para colar/confirmar o código emitido pelo computador. O botão no cabeçalho do `VoteWorkspace.tsx` exibe `Conectar ao PC` com o ícone de Monitor, enquanto no Desktop exibe `Parear Celular (QR Code)`.
+   - `DeviceSyncCard.tsx`: Oculta os botões "Gerar Novo Código de Vinculação", "Exibir QR Code" e o bloco de exportação "Levar Contas para o Celular". Exibe campo de entrada para inserir o código do PC e status contextualizado (`🖥️ Computador Ativo (Celular Pausado)` ou `📱 Este Celular Ativo`) com ação de `Tomar Farm para o Celular`.
+   - `AccountManager.tsx` e `SessionExportModal.tsx`: O botão e modal de exportação local via Wi-Fi (`SessionExportModal`) possuem guarda estrita que impede renderização ou abertura em runtime Android (`if (isAndroidPlatform()) return null;`).
+
+---
+
+## 6. Próximos Passos & Documentos Relacionados
 
 Para compreender a esteira de testes automatizados, assinatura criptográfica de releases e diagnóstico de falhas em produção:
 👉 Prossiga para: **[[08-operacao-e-scripts]] — Operação, Suíte de Testes e Guia de Release**.

@@ -204,7 +204,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.3.2',
+  appVersion: '4.3.3',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -473,7 +473,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (localStorage.getItem(ULTRA_MODE_STORAGE_KEY) === 'true') {
             setTimeout(() => {
               gamePlatformService.togglePokeIdleUltra(undefined, true).catch(() => {});
-            }, 2500);
+            }, 3000);
           }
         }
       } catch (e) {

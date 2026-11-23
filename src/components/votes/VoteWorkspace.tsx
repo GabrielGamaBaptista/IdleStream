@@ -25,6 +25,7 @@ import {
   Edit3,
   Link2,
   Lock,
+  Monitor,
   Play,
   QrCode,
   RefreshCw,
@@ -38,6 +39,7 @@ import {
 } from 'lucide-react';
 import { voteSyncService } from '../../services/voteSyncService';
 import { VoteSyncModal } from './VoteSyncModal';
+import { isAndroidPlatform } from '../../utils/platform';
 
 function formatLocalTimestamp(unixSec?: number | null): string {
   if (!unixSec) return '—';
@@ -612,14 +614,20 @@ export const VoteWorkspace: React.FC = () => {
                     : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
                 }`}
                 title={
-                  syncId
-                    ? 'Sincronizado automaticamente com o celular. Busca atualizações sempre que o app é aberto.'
-                    : 'Clique para sincronizar os timers de votos entre PC e Celular via QR Code'
+                  isAndroidPlatform()
+                    ? (syncId ? 'Sincronizado automaticamente com o computador.' : 'Clique para conectar este celular ao seu computador')
+                    : (syncId ? 'Sincronizado automaticamente com o celular. Busca atualizações sempre que o app é aberto.' : 'Clique para sincronizar os timers de votos entre PC e Celular via QR Code')
                 }
               >
-                <QrCode className="w-4 h-4 text-emerald-400" />
+                {isAndroidPlatform() ? (
+                  <Monitor className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <QrCode className="w-4 h-4 text-emerald-400" />
+                )}
                 <span>
-                  {syncId ? 'Sincronizado com Celular' : 'Parear Celular (QR Code)'}
+                  {isAndroidPlatform()
+                    ? (syncId ? 'Sincronizado com PC' : 'Conectar ao PC')
+                    : (syncId ? 'Sincronizado com Celular' : 'Parear Celular (QR Code)')}
                 </span>
                 {syncId && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />}
               </button>

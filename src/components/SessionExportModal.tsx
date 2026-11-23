@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { invoke } from '@tauri-apps/api/core';
 import { ExportStatus } from '../types';
+import { isAndroidPlatform } from '../utils/platform';
 import {
   Smartphone,
   RefreshCw,
@@ -118,7 +119,7 @@ export const SessionExportModal: React.FC<SessionExportModalProps> = ({
     } catch (_) {}
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || isAndroidPlatform()) return null;
 
   const formatTimer = (secs: number) => {
     const m = Math.floor(secs / 60);

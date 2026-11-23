@@ -14,6 +14,7 @@ import {
 import { voteSyncService } from '../../services/voteSyncService';
 import { VoteAccountConfig } from '../../types';
 import { useAppStore } from '../../stores/appStore';
+import { isAndroidPlatform } from '../../utils/platform';
 
 interface VoteSyncModalProps {
   isOpen: boolean;
@@ -38,6 +39,8 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
 
+  const isAndroid = isAndroidPlatform();
+
   useEffect(() => {
     if (!isOpen) return;
     const existingId = config.vote_sync_id || voteSyncService.getSyncId();
@@ -46,7 +49,7 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
     setSyncSuccessMsg(null);
     setCopiedSuccess(false);
 
-    if (existingId) {
+    if (existingId && !isAndroid) {
       generateQr(existingId);
     }
 
@@ -54,15 +57,18 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
       const id = e.detail?.syncId;
       if (id) {
         setCurrentSyncId(id);
-        generateQr(id);
+        if (!isAndroid) {
+          generateQr(id);
+        }
         onSyncStateChanged();
       }
     };
     window.addEventListener('idlestream-vote-sync-id', handleIncomingSync);
     return () => window.removeEventListener('idlestream-vote-sync-id', handleIncomingSync);
-  }, [isOpen, config.vote_sync_id, onSyncStateChanged]);
+  }, [isOpen, config.vote_sync_id, onSyncStateChanged, isAndroid]);
 
   const generateQr = async (id: string) => {
+    if (isAndroid) return;
     try {
       // Deep Link nativo do IdleStream (registrado no AndroidManifest.xml)
       const payload = `idlestream://vote-sync?id=${encodeURIComponent(id)}`;
@@ -209,11 +215,11 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
             <div className="flex flex-col items-center text-center space-y-4">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-semibold">
                 <CheckCircle className="w-4 h-4 text-emerald-400" />
-                <span>Pareamento Ativo e Sincronizado</span>
+                <span>{isAndroid ? 'Conectado ao Computador' : 'Pareamento Ativo e Sincronizado'}</span>
               </div>
 
-              {/* QR Code */}
-              {qrDataUrl && (
+              {/* QR Code (exibido exclusivamente no Desktop para o celular ler) */}
+              {!isAndroid && qrDataUrl && (
                 <div className="p-3 bg-white rounded-2xl shadow-lg border-4 border-neutral-800 inline-block">
                   <img
                     src={qrDataUrl}
@@ -224,7 +230,9 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
               )}
 
               <p className="text-xs text-neutral-300 max-w-sm">
-                Aponte a câmera do seu celular para este QR Code ou insira o código abaixo no outro dispositivo. Toda vez que o app for aberto, ele atualizará os votos automaticamente.
+                {isAndroid
+                  ? 'Seu celular está sincronizado com o computador. Toda vez que o app for aberto, ele atualizará os votos automaticamente.'
+                  : 'Aponte a câmera do seu celular para este QR Code ou insira o código abaixo no outro dispositivo. Toda vez que o app for aberto, ele atualizará os votos automaticamente.'}
               </p>
 
               {/* Chave de Pareamento com Copiar */}
@@ -269,7 +277,7 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
                   className="inline-flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 hover:underline cursor-pointer"
                 >
                   <Unlink className="w-3.5 h-3.5" />
-                  <span>Desconectar Pareamento</span>
+                  <span>{isAndroid ? 'Desconectar do Computador' : 'Desconectar Pareamento'}</span>
                 </button>
                 <button
                   onClick={onClose}
@@ -279,16 +287,44 @@ export const VoteSyncModal: React.FC<VoteSyncModalProps> = ({
                 </button>
               </div>
             </div>
+          ) : isAndroid ? (
+            /* Dispositivo Não Pareado no Celular (Apenas Conectar ao PC) */
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
+                  <Smartphone className="w-4 h-4" />
+                  <span>Conectar ao seu Computador</span>
+                </div>
+                <p className="text-xs text-neutral-400">
+                  Abra o IdleStream no seu computador, vá na aba Votos e clique em "Parear Celular (QR Code)". Em seguida, cole o código gerado no PC abaixo:
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inputCode}
+                    onChange={(e) => setInputCode(e.target.value)}
+                    placeholder="Cole o código do PC aqui (ou link idlestream://...)"
+                    className="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-xl text-xs text-white font-mono placeholder:text-neutral-600 focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={handleConnectExisting}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition cursor-pointer shrink-0"
+                  >
+                    Conectar ao PC
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
-            /* Dispositivo Não Pareado */
+            /* Dispositivo Não Pareado no Desktop (Opção de Gerar QR Code e Conectar) */
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-3">
                 <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs">
                   <Sparkles className="w-4 h-4" />
-                  <span>Opção 1: Gerar QR Code para Ler no Outro Aparelho</span>
+                  <span>Opção 1: Gerar QR Code para Ler no Celular</span>
                 </div>
                 <p className="text-xs text-neutral-400">
-                  Gere um QR Code exclusivo neste dispositivo para escanear com a câmera do seu celular (ou vice-versa).
+                  Gere um QR Code exclusivo no computador para escanear com a câmera do seu celular.
                 </p>
                 <button
                   onClick={handleCreateNewPairing}

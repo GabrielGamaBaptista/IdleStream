@@ -63,6 +63,7 @@ const fakeDocument: any = {
     innerHTML: '',
     appendChild: () => {},
   }),
+  querySelector: () => null,
   dispatchEvent: () => true,
   addEventListener: () => {},
 };
@@ -71,6 +72,7 @@ let webSocketSent: string[] = [];
 let reconnectedCount = 0;
 
 const fakeWindow: any = {
+  location: { hostname: 'pokeidle.io' },
   document: fakeDocument,
   localStorage: fakeLocalStorage,
   addEventListener: () => {},
@@ -101,8 +103,8 @@ const fakeWindow: any = {
 };
 
 // Executar o script no contexto mockado
-const runner = new Function('window', 'document', 'localStorage', 'HTMLMediaElement', antiSleepCode);
-runner(fakeWindow, fakeDocument, fakeLocalStorage, fakeWindow.HTMLMediaElement);
+const runner = new Function('window', 'document', 'localStorage', 'HTMLMediaElement', 'location', antiSleepCode);
+runner(fakeWindow, fakeDocument, fakeLocalStorage, fakeWindow.HTMLMediaElement, fakeWindow.location);
 
 // [Teste 1]: Verificar exportações globais
 console.log('Testando exportações do anti_sleep...');

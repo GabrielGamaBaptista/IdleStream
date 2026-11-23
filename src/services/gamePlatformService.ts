@@ -1,10 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { PokeIdleGameState, SlotBounds } from '../types';
+import { isAndroidPlatform } from '../utils/platform';
 
-export const isAndroidPlatform = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  return Boolean((window as unknown as { AndroidBridge?: { isAndroid?: () => boolean } }).AndroidBridge?.isAndroid?.());
-};
+export { isAndroidPlatform };
 
 interface AndroidBridgeType {
   isAndroid: () => boolean;

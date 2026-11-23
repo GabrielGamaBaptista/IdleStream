@@ -121,15 +121,17 @@ export const AccountManager: React.FC = () => {
               </span>
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setSessionExportOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-medium transition cursor-pointer"
-            title="Exportar contas com segurança para o celular via QR Code P2P"
-          >
-            <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Levar para Celular</span>
-          </button>
+          {!isAndroid && (
+            <button
+              type="button"
+              onClick={() => setSessionExportOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-medium transition cursor-pointer"
+              title="Exportar contas com segurança para o celular via QR Code P2P"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Levar para Celular</span>
+            </button>
+          )}
           <button
             onClick={() => setAddAccountOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-600/20 cursor-pointer"

@@ -964,3 +964,34 @@ npm run test:accounts
   - **Correção de Detecção de Foco**: Fim do uso de `Math.min(appIdleSec, systemIdleSec)`. Adicionado rastreamento de foco nativo via `WindowEvent::Focused` e minimização via `WindowEvent::Resized`. Perda de foco derruba imediatamente para 10 FPS; minimização derruba imediatamente para 1 FPS com corte de GPU.
   - **Corte de GPU e Áudio**: Ao minimizar ou ocultar, tags `<canvas>` e `<video>` recebem `visibility: hidden !important` (0% GPU) e `audioCtx.suspend()` estanca consumo de CPU pelo `audiodg.exe` do Windows.
   - **Purga de Memória Física de SO**: Novo comando `game_trim_memory` aciona `window.gc()` em todas as WebViews e executa Win32 `SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX)` para liberar páginas limpas ao kernel NT.
+
+---
+
+# SPRINT v4.3.3 — Restrição de QR Code Mobile, Loop PokeIdle Ultra e Sleep em Segundo Plano
+
+> **Data de Lançamento:** 2026-11-23  
+> **Status:** 🟢 100% Concluído e Validado
+
+### 1. Restrição Arquitetural de Pareamento: PC Emissor / Mobile Receptor Estrito
+- **Problema:** O celular exibia opção para gerar QR Code de pareamento e opção de exportar sessão para outro dispositivo, violando o princípio de que somente o computador pode emitir códigos e exportar credenciais.
+- **Implementação:**
+  - Utilitário unificado `src/utils/platform.ts` com `isAndroidPlatform()` e `isDesktopPlatform()`.
+  - `VoteSyncModal.tsx`: No Android, remove geração de imagem de QR Code; exibe tela de conexão com o PC para colar o código emitido pelo desktop; exibe status "Conectado ao Computador" sem imagem. No Desktop, mantém geração e exibição de QR Code para escaneamento.
+  - `VoteWorkspace.tsx`: Header no celular exibe ícone de Monitor e texto `Conectar ao PC` / `Sincronizado com PC`.
+  - `DeviceSyncCard.tsx`: No Android, oculta geração de código, exibição de QR Code e seção de exportação. Exibe status `🖥️ Computador Ativo (Celular Pausado)` ou `📱 Este Celular Ativo` com botão `Tomar Farm para o Celular`.
+  - `AccountManager.tsx` e `SessionExportModal.tsx`: Oculta e protege com guard de plataforma o botão e modal de exportação de sessão no Android.
+
+### 2. Resolução do Loop Infinito de Inicialização no PokeIdle Ultra
+- **Problema:** Ao abrir o app com o modo Ultra Economia salvo, os slots de jogo entravam em um loop travando o Chromium, piscando incessantemente entre o painel de ultra economia e o canvas do jogo.
+- **Implementação:**
+  - `anti_sleep.js`: `__togglePokeIdleUltra` agora verifica `cfgUltra.type === 'checkbox'` e só clica se `cfgUltra.checked !== forceState`. Fecha o modal nativo via `.modal-fechar` e remove re-emissão de eventos de storage redundantes.
+  - `anti_sleep.js`: `__isPokeIdleUltraActive` agora avalia classes de nó raiz, visibilidade real de `#ultra` (`aria-hidden !== 'true'` e `display !== 'none'`) e botão `#ultra-sair`.
+  - `appStore.ts`: Startup delay do ultra estendido de 2.500ms para 3.000ms para permitir estabilização completa do DOM e scripts antes da ativação.
+
+### 3. Modo Sleep de Segundo Plano e Imunidade a Jitter de Mouse
+- **Problema:** O app em segundo plano no PC ficava preso em 10 FPS e nunca entrava no modo Sleep (1 FPS) mesmo configurado para 1 minuto de inatividade. Quando entrava em sleep em primeiro plano, acordava sozinho após algum tempo sem interação.
+- **Implementação:**
+  - `GameWorkspace.tsx`: Removido retorno antecipado que impedia sleep com a janela sem foco.
+  - Cálculo de ociosidade efetiva: `effectiveIdleSec = isWindowFocused ? appIdleSec : (systemIdleSec > 0 ? systemIdleSec : appIdleSec)`. Se o usuário está afastado do PC em segundo plano, entra em Sleep (1 FPS) e aciona `trimMemory()`. Se está usando outro app no PC, permanece a 10 FPS sem onerar a GPU.
+  - Removido `onMouseMove={wakeUpFromIdle}` do overlay escurecido de sleep (que recebia eventos sintéticos de mouse gerados pelo Chromium ao montar o overlay).
+  - Filtro de jitter: exige deslocamento euclidiano $\ge 20\text{px}$ para acordar via mouse. Quando já em sleep (`isIdleDimmed === true`), ignora completamente qualquer `mousemove` e exige clique ou tecla física.
