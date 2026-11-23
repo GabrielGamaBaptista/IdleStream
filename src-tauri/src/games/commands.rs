@@ -38,6 +38,13 @@ pub async fn game_hide_all(
 }
 
 #[tauri::command]
+pub async fn game_trim_memory(
+    state: State<'_, Arc<GameLayoutManager>>,
+) -> Result<(), String> {
+    state.trim_memory().await
+}
+
+#[tauri::command]
 pub async fn game_get_active_slots(
     state: State<'_, Arc<GameLayoutManager>>,
 ) -> Result<Vec<String>, String> {

@@ -34,7 +34,7 @@ pub fn run() {
         // === BANCO DE FLAGS DE HIPER-PERFORMANCE, ESTABILIDADE & ANTI-BLACKOUT (WEBVIEW2) ===
         // 1. Anti-Sleep: Garante que timers e farm continuem 24/7 sem suspensão de background
         // 2. Resiliência de GPU: Processo out-of-process com auto-recuperação sem blackout em Device Loss
-        // 3. RAM Balanceada: Heap do V8 de 512MB prevenindo WebGL Context Lost com mínimo overhead
+        // 3. RAM e TurboFan Otimizados: Heap do V8 de 1024MB com TurboFan ativo prevenindo GC thrashing em sessões 80h-300h
         // 4. Bloat Disabler: Desativa spare renderers, media router, autofill e tradução
         std::env::set_var(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
@@ -48,7 +48,7 @@ pub fn run() {
              --disable-extensions \
              --disable-default-apps \
              --no-default-browser-check \
-             --js-flags=\"--max-old-space-size=512 --optimize-for-size --expose-gc\""
+             --js-flags=\"--max-old-space-size=1024 --expose-gc\""
         );
     }
 
@@ -74,6 +74,35 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
         builder = builder.on_window_event(|window, event| {
             match event {
+                WindowEvent::Focused(is_focused) => {
+                    if window.label() == "main" {
+                        let _ = window.emit("window-focus-changed", *is_focused);
+                        if !(*is_focused) {
+                            if window.is_minimized().unwrap_or(false) {
+                                let _ = window.emit("window-minimized", ());
+                                if let Some(gm) = window.app_handle().try_state::<Arc<games::manager::GameLayoutManager>>() {
+                                    let gm = Arc::clone(&gm);
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = gm.hide_all_game_views().await;
+                                    });
+                                }
+                            }
+                        } else if !window.is_minimized().unwrap_or(false) {
+                            let _ = window.emit("window-restored", ());
+                        }
+                    }
+                }
+                WindowEvent::Resized(_) => {
+                    if window.label() == "main" && window.is_minimized().unwrap_or(false) {
+                        let _ = window.emit("window-minimized", ());
+                        if let Some(gm) = window.app_handle().try_state::<Arc<games::manager::GameLayoutManager>>() {
+                            let gm = Arc::clone(&gm);
+                            tauri::async_runtime::spawn(async move {
+                                let _ = gm.hide_all_game_views().await;
+                            });
+                        }
+                    }
+                }
                 WindowEvent::CloseRequested { api, .. } => {
                     if window.label() == "main" {
                         let app = window.app_handle().clone();
@@ -368,6 +397,7 @@ pub fn run() {
             games::commands::game_set_fps,
             games::commands::game_toggle_pokeidle_ultra,
             games::commands::game_hide_all,
+            games::commands::game_trim_memory,
             games::commands::game_get_active_slots,
             games::commands::game_get_system_idle_seconds,
             games::commands::game_read_slot_state,

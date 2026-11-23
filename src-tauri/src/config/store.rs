@@ -57,8 +57,14 @@ impl ConfigStore {
                             config.vote_accounts = crate::config::default_vote_accounts();
                         } else {
                             for vote in &mut config.vote_accounts {
-                                if vote.base_url.trim().is_empty() {
-                                    vote.base_url = crate::config::DEFAULT_TOPIDLE_GAME_URL.to_string();
+                                if vote.base_url.trim().is_empty() || vote.base_url.contains("topidle.com") {
+                                    vote.base_url = crate::config::DEFAULT_IDLEHUB_GAME_URL.to_string();
+                                }
+                                if vote.id == "vote-1" && vote.player_identifier == "GGB2006" {
+                                    vote.player_identifier = "GGB2006_".to_string();
+                                    if vote.label == "GGB2006" {
+                                        vote.label = "GGB2006_".to_string();
+                                    }
                                 }
                             }
                         }
@@ -95,8 +101,14 @@ impl ConfigStore {
                                 vote_accounts = crate::config::default_vote_accounts();
                             } else {
                                 for vote in &mut vote_accounts {
-                                    if vote.base_url.trim().is_empty() {
-                                        vote.base_url = crate::config::DEFAULT_TOPIDLE_GAME_URL.to_string();
+                                    if vote.base_url.trim().is_empty() || vote.base_url.contains("topidle.com") {
+                                        vote.base_url = crate::config::DEFAULT_IDLEHUB_GAME_URL.to_string();
+                                    }
+                                    if vote.id == "vote-1" && vote.player_identifier == "GGB2006" {
+                                        vote.player_identifier = "GGB2006_".to_string();
+                                        if vote.label == "GGB2006" {
+                                            vote.label = "GGB2006_".to_string();
+                                        }
                                     }
                                 }
                             }

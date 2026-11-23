@@ -172,6 +172,7 @@ pub fn default_game_slots() -> Vec<GameSlotConfig> {
     ]
 }
 
+pub const DEFAULT_IDLEHUB_GAME_URL: &str = "https://idlehub.io/jogo/pokeidle-io?votar=1#votar";
 pub const DEFAULT_TOPIDLE_GAME_URL: &str = "https://topidle.com/jogo/pokeidle-io-5f9969";
 /// 24 horas e 1 minuto em segundos = 86.460s
 pub const VOTE_COOLDOWN_SECONDS: i64 = 24 * 60 * 60 + 60;
@@ -204,16 +205,16 @@ pub struct VoteAccountConfig {
 }
 
 fn default_vote_base_url() -> String {
-    DEFAULT_TOPIDLE_GAME_URL.to_string()
+    DEFAULT_IDLEHUB_GAME_URL.to_string()
 }
 
 pub fn default_vote_accounts() -> Vec<VoteAccountConfig> {
     vec![
         VoteAccountConfig {
             id: "vote-1".into(),
-            label: "GGB2006".into(),
-            player_identifier: "GGB2006".into(),
-            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            label: "GGB2006_".into(),
+            player_identifier: "GGB2006_".into(),
+            base_url: DEFAULT_IDLEHUB_GAME_URL.into(),
             linked_game_slot_id: Some("slot-1".into()),
             share_game_profile: true,
             google_hint: None,
@@ -227,7 +228,7 @@ pub fn default_vote_accounts() -> Vec<VoteAccountConfig> {
             id: "vote-2".into(),
             label: "GGB2006_2".into(),
             player_identifier: "GGB2006_2".into(),
-            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            base_url: DEFAULT_IDLEHUB_GAME_URL.into(),
             linked_game_slot_id: Some("slot-2".into()),
             share_game_profile: true,
             google_hint: None,
@@ -241,7 +242,7 @@ pub fn default_vote_accounts() -> Vec<VoteAccountConfig> {
             id: "vote-3".into(),
             label: "GGB2006_3".into(),
             player_identifier: "GGB2006_3".into(),
-            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            base_url: DEFAULT_IDLEHUB_GAME_URL.into(),
             linked_game_slot_id: Some("slot-3".into()),
             share_game_profile: true,
             google_hint: None,
@@ -255,7 +256,7 @@ pub fn default_vote_accounts() -> Vec<VoteAccountConfig> {
             id: "vote-4".into(),
             label: "GGB2006_4".into(),
             player_identifier: "GGB2006_4".into(),
-            base_url: DEFAULT_TOPIDLE_GAME_URL.into(),
+            base_url: DEFAULT_IDLEHUB_GAME_URL.into(),
             linked_game_slot_id: Some("slot-4".into()),
             share_game_profile: true,
             google_hint: None,

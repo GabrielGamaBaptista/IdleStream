@@ -8,6 +8,28 @@ import org.junit.Test
 class VoteUrlPolicyTest {
 
     @Test
+    fun testBuildVoteTargetUrlIdleHub() {
+        val u1 = VoteUrlPolicy.buildVoteTargetUrl("https://idlehub.io/jogo/pokeidle-io", "GGB2006_")
+        assertEquals("https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar", u1)
+
+        val u2 = VoteUrlPolicy.buildVoteTargetUrl("", "GGB2006_")
+        assertEquals("https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar", u2)
+
+        val u3 = VoteUrlPolicy.buildVoteTargetUrl("idlehub.io", "GGB2006_")
+        assertEquals("https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar", u3)
+
+        val u4 = VoteUrlPolicy.buildVoteTargetUrl(
+            "https://idlehub.io/jogo/pokeidle-io?jogador=OLD_ID&extra=val",
+            "GGB2006_4"
+        )
+        assertTrue(u4.contains("votar=1"))
+        assertTrue(u4.contains("extra=val"))
+        assertTrue(u4.contains("jogador=GGB2006_4"))
+        assertFalse(u4.contains("OLD_ID"))
+        assertTrue(u4.endsWith("#votar"))
+    }
+
+    @Test
     fun testBuildVoteTargetUrlNormalizationAndPlayerIdentifier() {
         val u1 = VoteUrlPolicy.buildVoteTargetUrl("https://topidle.com/jogo/pokeidle-io-5f9969", "GGB2006_3")
         assertEquals("https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006_3", u1)
@@ -25,18 +47,20 @@ class VoteUrlPolicyTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun testBuildVoteTargetUrlRejectsNonTopIdleDomain() {
+    fun testBuildVoteTargetUrlRejectsNonWhitelistedDomain() {
         VoteUrlPolicy.buildVoteTargetUrl("https://evil.com/jogo/pokeidle-io-5f9969", "GGB2006")
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun testBuildVoteTargetUrlRejectsHttpScheme() {
-        VoteUrlPolicy.buildVoteTargetUrl("http://topidle.com/jogo/pokeidle-io-5f9969", "GGB2006")
+        VoteUrlPolicy.buildVoteTargetUrl("http://idlehub.io/jogo/pokeidle-io", "GGB2006_")
     }
 
     @Test
     fun testStrictVoteNavigationWhitelist() {
-        // Permitidos: TopIdle, Google OAuth e CAPTCHAs interativos
+        // Permitidos: IdleHub, TopIdle, Google OAuth e CAPTCHAs interativos
+        assertTrue(VoteUrlPolicy.isAllowedVoteNavigation("https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar"))
+        assertTrue(VoteUrlPolicy.isAllowedVoteNavigation("https://www.idlehub.io/votar"))
         assertTrue(VoteUrlPolicy.isAllowedVoteNavigation("https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006_4"))
         assertTrue(VoteUrlPolicy.isAllowedVoteNavigation("https://www.topidle.com/votar"))
         assertTrue(VoteUrlPolicy.isAllowedVoteNavigation("https://accounts.google.com/o/oauth2/v2/auth?client_id=1"))
@@ -47,6 +71,8 @@ class VoteUrlPolicyTest {
         assertTrue(VoteUrlPolicy.isAllowedVoteNavigation("about:blank", isPopup = true))
 
         // Bloqueados: sites externos não autorizados e Google fora do OAuth/reCAPTCHA
+        assertFalse(VoteUrlPolicy.isAllowedVoteNavigation("https://idlehub.io.evil.com/phish"))
+        assertFalse(VoteUrlPolicy.isAllowedVoteNavigation("http://idlehub.io/insecure"))
         assertFalse(VoteUrlPolicy.isAllowedVoteNavigation("https://google.com/search?q=x"))
         assertFalse(VoteUrlPolicy.isAllowedVoteNavigation("https://youtube.com/watch?v=123"))
         assertFalse(VoteUrlPolicy.isAllowedVoteNavigation("https://topidle.com.evil.org/phish"))

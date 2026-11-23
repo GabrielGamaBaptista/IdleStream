@@ -124,6 +124,13 @@ export const gamePlatformService = {
     await invoke('game_hide_all');
   },
 
+  async trimMemory(): Promise<void> {
+    if (isAndroidPlatform()) return;
+    try {
+      await invoke('game_trim_memory');
+    } catch (_) {}
+  },
+
   async getActiveSlots(): Promise<string[]> {
     const bridge = getAndroidBridge();
     if (bridge) {

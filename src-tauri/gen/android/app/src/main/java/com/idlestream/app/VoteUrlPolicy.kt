@@ -10,6 +10,7 @@ import java.net.URLEncoder
  * Espelho exato de src-tauri/src/votes/policy.rs e testável em JUnit puro na JVM.
  */
 object VoteUrlPolicy {
+    const val DEFAULT_IDLEHUB_GAME_URL = "https://idlehub.io/jogo/pokeidle-io?votar=1#votar"
     const val DEFAULT_TOPIDLE_GAME_URL = "https://topidle.com/jogo/pokeidle-io-5f9969"
     const val VOTE_COOLDOWN_SECONDS = 86_460L // 24 horas + 1 minuto
 
@@ -27,7 +28,9 @@ object VoteUrlPolicy {
         (function () {
           try {
             const host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
-            if (!host || (host !== 'topidle.com' && !host.endsWith('.topidle.com'))) return;
+            const isIdleHub = host === 'idlehub.io' || host.endsWith('.idlehub.io');
+            const isTopIdle = host === 'topidle.com' || host.endsWith('.topidle.com');
+            if (!host || (!isIdleHub && !isTopIdle)) return;
             if (window.__idlestreamVoteObserverInstalled) return;
             window.__idlestreamVoteObserverInstalled = true;
 
@@ -48,7 +51,9 @@ object VoteUrlPolicy {
               /thank\s+you\s+for\s+voting/i,
               /thanks\s+for\s+voting/i,
               /voc[e\u00ea]\s+j[a\u00e1]\s+votou/i,
-              /already\s+voted/i
+              /already\s+voted/i,
+              /each\s+account\s+votes\s+once\s+every\s+24\s*h/i,
+              /cada\s+conta\s+vota\s+uma\s+vez\s+a\s+cada\s+24/i
             ];
 
             function emitHint(reason) {
@@ -62,7 +67,7 @@ object VoteUrlPolicy {
               } catch (_) {}
 
               try {
-                const orig = document.title || 'TopIdle';
+                const orig = document.title || (isIdleHub ? 'IdleHub' : 'TopIdle');
                 document.title = '__IDLESTREAM_VOTE_HINT__|' + reason + '|' + orig;
                 setTimeout(() => {
                   if (document.title.startsWith('__IDLESTREAM_VOTE_HINT__|')) {
@@ -138,7 +143,7 @@ object VoteUrlPolicy {
     fun buildVoteTargetUrl(baseUrl: String, playerIdentifier: String): String {
         val raw = baseUrl.trim()
         val normalized = when {
-            raw.isEmpty() -> DEFAULT_TOPIDLE_GAME_URL
+            raw.isEmpty() -> DEFAULT_IDLEHUB_GAME_URL
             raw.contains("://") -> raw
             else -> "https://${raw.trimStart('/')}"
         }
@@ -151,39 +156,79 @@ object VoteUrlPolicy {
 
         val scheme = uri.scheme?.lowercase() ?: ""
         if (scheme != "https") {
-            throw IllegalArgumentException("Somente URLs HTTPS do TopIdle são permitidas nesta seção.")
+            throw IllegalArgumentException("Somente URLs HTTPS são permitidas nesta seção.")
         }
 
         val host = uri.host?.lowercase()
             ?: throw IllegalArgumentException("Domínio inválido na URL de voto.")
 
-        if (host != "topidle.com" && !host.endsWith(".topidle.com")) {
-            throw IllegalArgumentException("Domínio não permitido '$host': o navegador de votos aceita apenas topidle.com.")
-        }
+        val isIdleHub = host == "idlehub.io" || host.endsWith(".idlehub.io")
+        val isTopIdle = host == "topidle.com" || host.endsWith(".topidle.com")
 
-        val path = if (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
-            "/jogo/pokeidle-io-5f9969"
-        } else {
-            uri.rawPath
-        }
-
-        val pairs = mutableListOf<Pair<String, String>>()
-        val rawQuery = uri.rawQuery
-        if (!rawQuery.isNullOrEmpty()) {
-            for (part in rawQuery.split("&")) {
-                if (part.isEmpty()) continue
-                val eq = part.indexOf('=')
-                val k = if (eq >= 0) URLDecoder.decode(part.substring(0, eq), "UTF-8") else URLDecoder.decode(part, "UTF-8")
-                val v = if (eq >= 0) URLDecoder.decode(part.substring(eq + 1), "UTF-8") else ""
-                if (!k.equals("playerIdentifier", ignoreCase = true)) {
-                    pairs.add(k to v)
-                }
-            }
+        if (!isIdleHub && !isTopIdle) {
+            throw IllegalArgumentException("Domínio não permitido '$host': o navegador de votos aceita idlehub.io (ou topidle.com).")
         }
 
         val cleanPlayer = playerIdentifier.trim()
-        if (cleanPlayer.isNotEmpty()) {
-            pairs.add("playerIdentifier" to cleanPlayer)
+        val path: String
+        val pairs = mutableListOf<Pair<String, String>>()
+        var fragment = uri.rawFragment
+
+        if (isIdleHub) {
+            path = if (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
+                "/jogo/pokeidle-io"
+            } else {
+                uri.rawPath
+            }
+
+            pairs.add("votar" to "1")
+
+            val rawQuery = uri.rawQuery
+            if (!rawQuery.isNullOrEmpty()) {
+                for (part in rawQuery.split("&")) {
+                    if (part.isEmpty()) continue
+                    val eq = part.indexOf('=')
+                    val k = if (eq >= 0) URLDecoder.decode(part.substring(0, eq), "UTF-8") else URLDecoder.decode(part, "UTF-8")
+                    val v = if (eq >= 0) URLDecoder.decode(part.substring(eq + 1), "UTF-8") else ""
+                    if (!k.equals("jogador", ignoreCase = true) &&
+                        !k.equals("playerIdentifier", ignoreCase = true) &&
+                        !k.equals("votar", ignoreCase = true)
+                    ) {
+                        pairs.add(k to v)
+                    }
+                }
+            }
+
+            if (cleanPlayer.isNotEmpty()) {
+                pairs.add("jogador" to cleanPlayer)
+            }
+
+            if (fragment.isNullOrEmpty()) {
+                fragment = "votar"
+            }
+        } else {
+            path = if (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
+                "/jogo/pokeidle-io-5f9969"
+            } else {
+                uri.rawPath
+            }
+
+            val rawQuery = uri.rawQuery
+            if (!rawQuery.isNullOrEmpty()) {
+                for (part in rawQuery.split("&")) {
+                    if (part.isEmpty()) continue
+                    val eq = part.indexOf('=')
+                    val k = if (eq >= 0) URLDecoder.decode(part.substring(0, eq), "UTF-8") else URLDecoder.decode(part, "UTF-8")
+                    val v = if (eq >= 0) URLDecoder.decode(part.substring(eq + 1), "UTF-8") else ""
+                    if (!k.equals("playerIdentifier", ignoreCase = true)) {
+                        pairs.add(k to v)
+                    }
+                }
+            }
+
+            if (cleanPlayer.isNotEmpty()) {
+                pairs.add("playerIdentifier" to cleanPlayer)
+            }
         }
 
         val finalQuery = if (pairs.isEmpty()) {
@@ -206,8 +251,8 @@ object VoteUrlPolicy {
             if (!finalQuery.isNullOrEmpty()) {
                 append("?").append(finalQuery)
             }
-            if (!uri.rawFragment.isNullOrEmpty()) {
-                append("#").append(uri.rawFragment)
+            if (!fragment.isNullOrEmpty()) {
+                append("#").append(fragment)
             }
         }
     }
@@ -233,7 +278,8 @@ object VoteUrlPolicy {
         val host = uri.host?.lowercase() ?: return false
         val path = uri.rawPath ?: ""
 
-        if (host == "topidle.com" || host.endsWith(".topidle.com")) {
+        if (host == "idlehub.io" || host.endsWith(".idlehub.io") ||
+            host == "topidle.com" || host.endsWith(".topidle.com")) {
             return true
         }
 

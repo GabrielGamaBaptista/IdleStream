@@ -1,12 +1,12 @@
-use crate::config::{VoteAccountConfig, DEFAULT_TOPIDLE_GAME_URL, VOTE_COOLDOWN_SECONDS};
+use crate::config::{VoteAccountConfig, DEFAULT_IDLEHUB_GAME_URL, VOTE_COOLDOWN_SECONDS};
 use url::Url;
 
-/// Constrói e valida a URL de destino do voto no TopIdle, garantindo HTTPS,
-/// domínio restrito ao TopIdle e inclusão única de `?playerIdentifier=...`.
+/// Constrói e valida a URL de destino do voto no IdleHub (ou TopIdle legado), garantindo HTTPS,
+/// domínio restrito a idlehub.io / topidle.com, inclusão única do identificador do jogador e parâmetros de voto.
 pub fn build_vote_target_url(base_url: &str, player_identifier: &str) -> Result<Url, String> {
     let raw = base_url.trim();
     let normalized = if raw.is_empty() {
-        DEFAULT_TOPIDLE_GAME_URL.to_string()
+        DEFAULT_IDLEHUB_GAME_URL.to_string()
     } else if raw.contains("://") {
         raw.to_string()
     } else {
@@ -16,7 +16,7 @@ pub fn build_vote_target_url(base_url: &str, player_identifier: &str) -> Result<
     let mut parsed = Url::parse(&normalized).map_err(|e| format!("URL de voto inválida: {}", e))?;
 
     if parsed.scheme() != "https" {
-        return Err("Somente URLs HTTPS do TopIdle são permitidas nesta seção.".to_string());
+        return Err("Somente URLs HTTPS são permitidas nesta seção.".to_string());
     }
 
     let host = parsed
@@ -24,32 +24,69 @@ pub fn build_vote_target_url(base_url: &str, player_identifier: &str) -> Result<
         .map(|h| h.to_ascii_lowercase())
         .ok_or_else(|| "Domínio inválido na URL de voto.".to_string())?;
 
-    if host != "topidle.com" && !host.ends_with(".topidle.com") {
+    let is_idlehub = host == "idlehub.io" || host.ends_with(".idlehub.io");
+    let is_topidle = host == "topidle.com" || host.ends_with(".topidle.com");
+
+    if !is_idlehub && !is_topidle {
         return Err(format!(
-            "Domínio não permitido '{}': o navegador de votos aceita apenas topidle.com.",
+            "Domínio não permitido '{}': o navegador de votos aceita idlehub.io (ou topidle.com).",
             host
         ));
     }
 
-    if parsed.path().is_empty() || parsed.path() == "/" {
-        parsed.set_path("/jogo/pokeidle-io-5f9969");
-    }
-
     let clean_player = player_identifier.trim();
-    let existing_pairs: Vec<(String, String)> = parsed
-        .query_pairs()
-        .filter(|(k, _)| !k.eq_ignore_ascii_case("playerIdentifier"))
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect();
 
-    {
-        let mut qp = parsed.query_pairs_mut();
-        qp.clear();
-        for (k, v) in &existing_pairs {
-            qp.append_pair(k, v);
+    if is_idlehub {
+        if parsed.path().is_empty() || parsed.path() == "/" {
+            parsed.set_path("/jogo/pokeidle-io");
         }
-        if !clean_player.is_empty() {
-            qp.append_pair("playerIdentifier", clean_player);
+
+        let existing_pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .filter(|(k, _)| {
+                !k.eq_ignore_ascii_case("jogador")
+                    && !k.eq_ignore_ascii_case("playerIdentifier")
+                    && !k.eq_ignore_ascii_case("votar")
+            })
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+
+        {
+            let mut qp = parsed.query_pairs_mut();
+            qp.clear();
+            qp.append_pair("votar", "1");
+            for (k, v) in &existing_pairs {
+                qp.append_pair(k, v);
+            }
+            if !clean_player.is_empty() {
+                qp.append_pair("jogador", clean_player);
+            }
+        }
+
+        if parsed.fragment().is_none() || parsed.fragment() == Some("") {
+            parsed.set_fragment(Some("votar"));
+        }
+    } else {
+        // Legado TopIdle
+        if parsed.path().is_empty() || parsed.path() == "/" {
+            parsed.set_path("/jogo/pokeidle-io-5f9969");
+        }
+
+        let existing_pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .filter(|(k, _)| !k.eq_ignore_ascii_case("playerIdentifier"))
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+
+        {
+            let mut qp = parsed.query_pairs_mut();
+            qp.clear();
+            for (k, v) in &existing_pairs {
+                qp.append_pair(k, v);
+            }
+            if !clean_player.is_empty() {
+                qp.append_pair("playerIdentifier", clean_player);
+            }
         }
     }
 
@@ -61,7 +98,7 @@ pub fn build_vote_target_url(base_url: &str, player_identifier: &str) -> Result<
 }
 
 /// Whitelist rigorosa para navegação top-level da WebView de votos.
-/// Permite exclusivamente TopIdle, endpoints de autenticação Google OAuth e frames/desafios de CAPTCHA.
+/// Permite exclusivamente IdleHub, TopIdle, endpoints de autenticação Google OAuth e frames/desafios de CAPTCHA.
 pub fn is_allowed_vote_navigation(url: &Url, is_popup: bool) -> bool {
     if is_popup && url.as_str() == "about:blank" {
         return true;
@@ -77,12 +114,16 @@ pub fn is_allowed_vote_navigation(url: &Url, is_popup: bool) -> bool {
     let host = host_raw.to_ascii_lowercase();
     let path = url.path();
 
-    // 1. Site oficial de votação
-    if host == "topidle.com" || host.ends_with(".topidle.com") {
+    // 1. Site oficial de votação (IdleHub e TopIdle legado)
+    if host == "idlehub.io"
+        || host.ends_with(".idlehub.io")
+        || host == "topidle.com"
+        || host.ends_with(".topidle.com")
+    {
         return true;
     }
 
-    // 2. Autenticação Google OAuth (para usar as 4 contas Google no TopIdle)
+    // 2. Autenticação Google OAuth (para usar as 4 contas Google no IdleHub/TopIdle)
     if matches!(
         host.as_str(),
         "accounts.google.com"
@@ -96,7 +137,7 @@ pub fn is_allowed_vote_navigation(url: &Url, is_popup: bool) -> bool {
         return true;
     }
 
-    // 3. Infraestrutura de CAPTCHA interativo (Turnstile, hCaptcha, reCAPTCHA)
+    // 3. Infraestrutura de CAPTCHA interativo (Cloudflare Turnstile, hCaptcha, reCAPTCHA)
     if host == "challenges.cloudflare.com"
         || host == "hcaptcha.com"
         || host.ends_with(".hcaptcha.com")

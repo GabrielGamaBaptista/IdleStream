@@ -476,6 +476,9 @@ impl GameLayoutManager {
     pub async fn hide_all_game_views(&self) -> Result<(), String> {
         #[cfg(desktop)]
         {
+            *self.current_fps.lock().await = 1;
+            *self.eco_mode.lock().await = true;
+
             let slots_map = self.active_slots.lock().await;
             for slot_id in slots_map.keys() {
                 if let Some(wv) = self.app.get_webview(slot_id) {
@@ -485,9 +488,44 @@ impl GameLayoutManager {
                         size: LogicalSize::new(1.0, 1.0).into(),
                     });
                     let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                    let _ = wv.eval("if (typeof window.__setIdleStreamFps === 'function') { window.__setIdleStreamFps(1); }");
                 }
             }
         }
+
+        let _ = self.trim_memory().await;
+        Ok(())
+    }
+
+    /// Executa coleta de lixo forçada em todas as WebViews e esvazia páginas
+    /// limpas da memória de trabalho (working set) para o pool standby do Windows
+    pub async fn trim_memory(&self) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "Executando purga e otimização de memória RAM...");
+        #[cfg(desktop)]
+        {
+            let slots_map = self.active_slots.lock().await;
+            for slot_id in slots_map.keys() {
+                if let Some(wv) = self.app.get_webview(slot_id) {
+                    let _ = wv.eval("if (typeof window.gc === 'function') { try { window.gc(); } catch(_) {} }");
+                }
+            }
+            if let Some(main_wv) = self.app.get_webview("main") {
+                let _ = main_wv.eval("if (typeof window.gc === 'function') { try { window.gc(); } catch(_) {} }");
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            extern "system" {
+                fn GetCurrentProcess() -> isize;
+                fn SetProcessWorkingSetSize(h_process: isize, min: usize, max: usize) -> i32;
+            }
+            unsafe {
+                // (SIZE_T)-1 esvazia páginas de memória RAM física limpas de volta para a lista standby do Windows
+                SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+            }
+        }
+
         Ok(())
     }
 

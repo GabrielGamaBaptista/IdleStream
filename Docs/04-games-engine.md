@@ -17,9 +17,9 @@ wiki_links:
   - "[[06-frontend]]"
   - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.3.0"
-last_updated: "2026-11-19"
-summary: "Documentação do ecossistema de jogos ociosos (PokeIdle) do IdleStream: orquestração de Child Webviews nativas no Tauri v2, layouts geométricos dinâmicos com auto-fit adaptativo, performance dinâmica automatizada (60 -> 10 -> 1 FPS), motor anti-sleep JS de 6 camadas e extensão /hunt com injeção idempotente e CSS resiliente."
+version: "4.3.2"
+last_updated: "2026-11-23"
+summary: "Documentação do ecossistema de jogos ociosos (PokeIdle) do IdleStream: orquestração de Child Webviews nativas no Tauri v2, layouts geométricos dinâmicos com auto-fit adaptativo, ciclo de 4 patamares (60 FPS VSync nativo -> 10 FPS eco/fundo -> 1 FPS sleep/minimizado com corte de GPU), purga de memória Win32/V8 para sessões de 300h, motor anti-sleep JS de 6 camadas e extensão /hunt com injeção idempotente."
 ---
 
 # Game Workspace e Motor Anti-Sleep (Child Webviews, Anti-Suspension & /hunt)
@@ -280,7 +280,40 @@ O script `anti_sleep.js` intercepta o construtor `window.WebSocket` da página d
 
 ---
 
-## 9. Próximos Passos & Documentos Relacionados
+## 9. Ciclo de Vida de 4 Patamares, 60 FPS VSync e Sessões de Longo Prazo de 300h (v4.3.2)
+
+A versão **v4.3.2** resolveu em definitivo os gargalos de fluidez e degradação de performance reportados em sessões ininterruptas de 80h a 300h, além de estabilizar a leitura de níveis e cortar radicalmente o consumo de RAM/GPU em segundo plano:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ativo_60FPS_VSync: Janela em Foco + Interação Humana
+    Ativo_60FPS_VSync --> Eco_10FPS: Janela Sem Foco (Blur) OU 30s Inativo
+    Eco_10FPS --> Ativo_60FPS_VSync: Retorno de Foco / Toque / Tecla
+    Eco_10FPS --> Minimizado_1FPS_Sleep: Janela Minimizada OU >5m Inativo
+    Minimizado_1FPS_Sleep --> Ativo_60FPS_VSync: Janela Restaurada / Retorno
+```
+
+### 9.1. Fluidez Nativa de 60 FPS via VSync Direto
+- **Delegação ao VSync de Hardware**: No modo de primeiro plano ativo (`60 FPS`), o script `anti_sleep.js` delega diretamente as chamadas de animação ao `_NativeRAF(cb)` do Chromium, sincronizado com o clock vertical do monitor (16.66ms real sem jitter de `setInterval`).
+- **Restauração do TurboFan JIT na V8**: Remoção da flag Chromium `--optimize-for-size`, que forçava a V8 a permanecer no interpretador Sparkplug. O JIT TurboFan agora compila loops de alta intensidade do jogo e da extensão `/hunt`.
+- **Prevenção de Trashing de GC (`--max-old-space-size=1024`)**: Ampliado o heap limite da V8 para 1024 MB por WebView, evitando coletas de lixo síncronas agressivas sob picos transitórios de alocação de texturas.
+
+### 9.2. Estabilização da Leitura de Níveis via WebSocket Hook
+- **Causa Raiz da Oscilação**: O servidor do PokeIdle despacha pacotes de estado de monstros selvagens e instâncias secundárias rotulados como `campo` ou `campo.init`. Anteriormente, esses pacotes eram interpretados incorretamente como o nível do jogador, fazendo com que o badge no header saltasse loucamente para números aleatórios a cada poucos segundos.
+- **Filtragem e Monotonicidade**: O parser de `anti_sleep.js` agora descarta explicitamente pacotes `campo` e valida que `numLvl` seja um inteiro positivo e monotonicamente progressivo (`numLvl >= st.level`).
+- **Deduplicação de Mutações no DOM**: A sincronização via `document.title` só dispara quando há mutação real no estado, eliminando tempestades de eventos IPC no Rust.
+
+### 9.3. Economia Radical em Segundo Plano e Minimização
+- **Detecção Confiável de Foco**: O `GameWorkspace.tsx` utiliza `isWindowFocused` e `isWindowMinimized` informados nativamente por `WindowEvent::Focused` e `WindowEvent::Resized` do Tauri. A falha anterior (que usava `Math.min(appIdleSec, systemIdleSec)`) mantinha o app rodando a 60 FPS se o usuário digitasse em outro programa.
+- **Desligamento Completo de Rasterização de GPU**: Ao entrar no modo oculto/minimizado, o CSS aplica `visibility: hidden !important` em `<canvas>` e `<video>`, instruindo o compositor do Chromium a suspender a pipeline de renderização gráfica (0% GPU).
+- **Suspensão de Áudio Web (`audiodg.exe`)**: O oscilador `AudioContext` é suspenso (`audioCtx.suspend()`) nos modos Eco e Sleep, impedindo que o serviço de áudio do Windows consuma CPU indevidamente, mantendo apenas a tag `<audio>` silenciosa para assegurar a flag `IsAudible`.
+- **Purga de Memória de Nível de SO (`game_trim_memory`)**:
+  - Aciona `window.gc()` em todos os slots.
+  - No Windows, executa `SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX)`, instruindo o Memory Manager do kernel NT a liberar páginas de memória física em standby de volta para o pool do sistema, permitindo que sessões de 300h consumam a mesma RAM de uma sessão recém-aberta.
+
+---
+
+## 10. Próximos Passos & Documentos Relacionados
 
 Para compreender a estrutura interna do estado global em Rust (`AppState`), a persistência em `config.json` e consultar o dicionário exaustivo de comandos IPC:
 👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC** e **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.

@@ -1,8 +1,8 @@
 ---
 id: "DOC-09-SISTEMA-DE-VOTOS"
-title: "Sistema de Votos Diários TopIdle (WebView Sob Demanda, Perfis Google & Alertas 24h 01m)"
+title: "Sistema de Votos Diários IdleHub & TopIdle (WebView Sob Demanda, Perfis Google & Alertas 24h 01m)"
 category: "feature"
-tags: [idlestream, votes, topidle, webview, captcha, notifications, alarm-manager, google-oauth]
+tags: [idlestream, votes, idlehub, topidle, webview, captcha, notifications, alarm-manager, google-oauth]
 related_code:
   - "src-tauri/src/votes/mod.rs"
   - "src-tauri/src/votes/policy.rs"
@@ -26,14 +26,14 @@ wiki_links:
   - "[[07-multiplataforma-android]]"
   - "[[08-operacao-e-scripts]]"
 status: "completed"
-version: "4.2.0"
-last_updated: "2026-11-18"
-summary: "Especificação técnica da seção Votos do IdleStream: votação diária no TopIdle com WebView interativa sob demanda (0 MB em repouso), whitelist estrita, reuso dos 4 perfis Google de Idle Games, notificações de 24h 01m e sincronização bidirecional PC <-> Celular via QR Code."
+version: "4.3.2"
+last_updated: "2026-11-23"
+summary: "Especificação técnica da seção Votos do IdleStream: votação diária no IdleHub (e legado TopIdle) com WebView interativa sob demanda (0 MB em repouso), whitelist estrita, reuso dos 4 perfis Google de Idle Games, notificações de 24h 01m e sincronização bidirecional PC <-> Celular via QR Code."
 ---
 
-# Sistema de Votos Diários TopIdle (`v4.0.0`)
+# Sistema de Votos Diários IdleHub & TopIdle (`v4.3.2`)
 
-Este documento descreve a arquitetura, segurança e operação da seção **Votos**, introduzida na versão **4.0.0** para gerenciar votos diários no TopIdle (`https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=<ID>`) com total interatividade humana (suportando CAPTCHA) e notificação automática após **24 horas e 1 minuto** (`86.460` segundos).
+Este documento descreve a arquitetura, segurança e operação da seção **Votos**, atualizada na versão **4.3.2** para a plataforma **IdleHub** (`https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=<ID>#votar`, mantendo retrocompatibilidade com TopIdle) com total interatividade humana (suportando CAPTCHA, autenticação Google individual por slot) e notificação automática após **24 horas e 1 minuto** (`86.460` segundos).
 
 ---
 
@@ -49,7 +49,7 @@ Por padrão, na inicialização e migração v3 → v4 via [`ConfigStore::load()
 | `vote-4` | `GGB2006_4` | `slot-4` | Desktop: `game_profiles/slot-4` • Android: `slot_slot-4` |
 
 > [!TIP]
-> Compartilhar o diretório/perfil com `slot-1`..`slot-4` permite usar exatamente a **mesma conta Google** e o **mesmo jogador** já autenticados no PokeIdle, sem necessidade de refazer login sempre que abrir o TopIdle. O botão **"Limpar Sessão TopIdle"** remove apenas cookies e storage de `topidle.com`, mantendo o login Google e a sessão do PokeIdle intactos.
+> Compartilhar o diretório/perfil com `slot-1`..`slot-4` permite usar exatamente a **mesma conta Google** e o **mesmo jogador** já autenticados no PokeIdle, sem necessidade de refazer login sempre que abrir o IdleHub/TopIdle. O botão **"Limpar Sessão Plataforma"** remove apenas cookies e storage de `idlehub.io` e `topidle.com`, mantendo o login Google e a sessão do PokeIdle intactos.
 
 ---
 
@@ -60,24 +60,24 @@ A WebView da seção **Votos** segue o princípio de alocação estritamente sob
 ```mermaid
 flowchart TD
     Dashboard["Aba Votos em Repouso (0 WebView criada = 0 MB RAM)"]
-    ClickVote["Clique em 'Abrir TopIdle & Votar'"]
+    ClickVote["Clique em 'Abrir Plataforma & Votar'"]
     PolicyCheck{"URL passa em is_allowed_vote_navigation?"}
     SpawnWV["Cria WebView única 'vote-active' + Observer passivo"]
-    TopIdleFlow["Interação Humana no TopIdle + Google OAuth Popup + CAPTCHA"]
+    IdleHubFlow["Interação Humana no IdleHub/TopIdle + Google OAuth Popup + CAPTCHA"]
     ExternalClick["Tentativa de navegação externa"]
     BlockedEvt["Bloqueia e emite 'vote-navigation-blocked'"]
     CloseOrTab["Fecha WebView ou muda de aba"]
     DestroyWV["Destrói Child WebView (wv.close / destroy -> 0 MB RAM)"]
 
     Dashboard --> ClickVote --> PolicyCheck
-    PolicyCheck -- Sim --> SpawnWV --> TopIdleFlow
-    TopIdleFlow -- "Fora da whitelist" --> ExternalClick --> BlockedEvt
-    TopIdleFlow -- Concluído --> CloseOrTab --> DestroyWV --> Dashboard
+    PolicyCheck -- Sim --> SpawnWV --> IdleHubFlow
+    IdleHubFlow -- "Fora da whitelist" --> ExternalClick --> BlockedEvt
+    IdleHubFlow -- Concluído --> CloseOrTab --> DestroyWV --> Dashboard
 ```
 
 ### 2.1 Whitelist Rigorosa (`votes/policy.rs` & `VoteUrlPolicy.kt`)
 Somente URLs `https://` pertencentes aos seguintes escopos são autorizadas no navegador da seção **Votos**:
-1. **Site oficial TopIdle**: `topidle.com` e `*.topidle.com`.
+1. **Plataformas oficiais de voto**: `idlehub.io`, `*.idlehub.io`, `topidle.com` e `*.topidle.com`.
 2. **Autenticação Google OAuth**: `accounts.google.com`, `accounts.youtube.com`, `myaccount.google.com`, `gds.google.com`, `apis.google.com`, `consent.google.com`, `consent.youtube.com` (com injeção não-invasiva de `prompt=select_account`).
 3. **Infraestrutura de CAPTCHA interativo**: `challenges.cloudflare.com`, `*.hcaptcha.com`, `*.recaptcha.net`, `*.gstatic.com` e `google.com/recaptcha*`.
 
@@ -169,3 +169,24 @@ A versão **v4.2.1** eliminou o erro *"não há aplicação no seu telefone para
 3. **Despacho Automático na Inicialização (`MainActivity.kt` & `appStore.ts`)**:
    - O método `handleVoteSyncDeepLink` captura o Intent tanto no `onCreate` quanto no `onNewIntent`.
    - Ao receber o identificador de pareamento, o app chaveia para a aba de Votos, salva a credencial e executa a reconciliação bidirecional na nuvem sem requisição de toque manual.
+
+---
+
+## 9. Migração para a Plataforma IdleHub (v4.3.2)
+
+A versão **v4.3.2** realizou a migração oficial da infraestrutura de votação diária para o **IdleHub**:
+
+### 9.1. Especificação da Nova URL e Parâmetros
+- **Formato Oficial**: `https://idlehub.io/jogo/pokeidle-io?votar=1&jogador={playerIdentifier}#votar`
+- **Valores Padrão**: As 4 contas configuradas continuam mapeadas para `GGB2006_`, `GGB2006_2`, `GGB2006_3` e `GGB2006_4`.
+- **Sessão Individual por Conta Google**: Graças ao isolamento de pastas `game_profiles/slot-N` no Desktop e `slot_slot-N` no Android, cada uma das 4 contas possui sua própria sessão Google independente, permitindo votar nas 4 contas consecutivamente sem conflito de credenciais.
+
+### 9.2. Atualização das Whitelists no Backend e Mobile
+- **Rust (`votes/policy.rs`)**: Adicionados `idlehub.io` e `*.idlehub.io` como destinos primários permitidos, mantendo `topidle.com` para assegurar que URLs legadas salvas em instâncias anteriores continuem navegáveis.
+- **Android Kotlin (`VoteUrlPolicy.kt`)**: Atualizado com verificação estrita para subdomínios de `idlehub.io` e `topidle.com`.
+- **Limpeza de Sessão Neutra**: O comando `vote_clear_topidle_session` purga cookies de `idlehub.io` e `topidle.com` sem tocar nos cookies de autenticação do Google nem no LocalStorage do PokeIdle.
+
+### 9.3. Ciclo de Cooldown de 24h 01m e Sincronização
+- O intervalo estrito de **24 horas e 1 minuto** (`86.460` segundos) foi preservado integralmente.
+- O `vote_observer.js` detecta seletores de confirmação do IdleHub (mensagens de voto registrado com sucesso, estados de sucesso e timers de cooldown) e oferece o atalho para marcar o voto com 1 clique.
+- A sincronização em nuvem e pareamento por QR Code permanecem 100% retrocompatíveis.

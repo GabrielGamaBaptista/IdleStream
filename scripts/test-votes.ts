@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import {
   buildTopIdleVoteUrl,
   countReadyVoteAccounts,
+  DEFAULT_IDLEHUB_GAME_URL,
   DEFAULT_TOPIDLE_GAME_URL,
   DEFAULT_VOTE_ACCOUNTS,
   formatCountdownHms,
@@ -10,14 +11,14 @@ import {
   VOTE_COOLDOWN_SECONDS,
 } from '../src/services/votePlatformService.ts';
 
-console.log('🧪 Iniciando bateria de testes unitários do Sistema de Votos Diários (TopIdle)...\n');
+console.log('🧪 Iniciando bateria de testes unitários do Sistema de Votos Diários (IdleHub/TopIdle)...\n');
 
-// 1. Contas padrão GGB2006 .. GGB2006_4 vinculadas aos 4 perfis Google do Idle Games
+// 1. Contas padrão GGB2006_ .. GGB2006_4 vinculadas aos 4 perfis Google do Idle Games
 console.log('🔹 Teste 1: Contas padrão e vínculo com perfis Google do Idle Games...');
 assert.strictEqual(DEFAULT_VOTE_ACCOUNTS.length, 4);
 assert.deepStrictEqual(
   DEFAULT_VOTE_ACCOUNTS.map((a) => a.player_identifier),
-  ['GGB2006', 'GGB2006_2', 'GGB2006_3', 'GGB2006_4']
+  ['GGB2006_', 'GGB2006_2', 'GGB2006_3', 'GGB2006_4']
 );
 assert.deepStrictEqual(
   DEFAULT_VOTE_ACCOUNTS.map((a) => a.linked_game_slot_id),
@@ -26,10 +27,32 @@ assert.deepStrictEqual(
 assert.ok(DEFAULT_VOTE_ACCOUNTS.every((a) => a.share_game_profile === true));
 assert.strictEqual(new Set(DEFAULT_VOTE_ACCOUNTS.map((a) => a.id)).size, 4);
 assert.strictEqual(new Set(DEFAULT_VOTE_ACCOUNTS.map((a) => a.color)).size, 4);
-console.log('  ✓ 4 contas padrão configuradas com playerIdentifier e vínculo slot-1..4');
+console.log('  ✓ 4 contas padrão configuradas com jogador/playerIdentifier e vínculo slot-1..4');
 
-// 2. Construção e validação estrita de URL do TopIdle
-console.log('\n🔹 Teste 2: Construção e validação estrita de URLs do TopIdle...');
+// 2. Construção e validação estrita de URLs do IdleHub (e TopIdle legado)
+console.log('\n🔹 Teste 2: Construção e validação estrita de URLs do IdleHub (e TopIdle legado)...');
+const exactIdleHub = buildTopIdleVoteUrl(DEFAULT_IDLEHUB_GAME_URL, 'GGB2006_');
+assert.strictEqual(
+  exactIdleHub,
+  'https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar'
+);
+
+const bareIdleHub = buildTopIdleVoteUrl('idlehub.io', 'GGB2006_');
+assert.strictEqual(
+  bareIdleHub,
+  'https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar'
+);
+
+const overrideIdleHub = buildTopIdleVoteUrl(
+  'https://idlehub.io/jogo/pokeidle-io?jogador=OLD&extra=1',
+  'GGB2006_2'
+);
+assert.ok(overrideIdleHub.includes('votar=1'));
+assert.ok(overrideIdleHub.includes('jogador=GGB2006_2'));
+assert.ok(overrideIdleHub.includes('extra=1'));
+assert.ok(!overrideIdleHub.includes('OLD'));
+assert.ok(overrideIdleHub.endsWith('#votar'));
+
 const exactUrl = buildTopIdleVoteUrl(DEFAULT_TOPIDLE_GAME_URL, 'GGB2006_3');
 assert.strictEqual(
   exactUrl,
@@ -50,13 +73,18 @@ assert.ok(overrideId.includes('utm=idle'));
 assert.ok(overrideId.includes('playerIdentifier=GGB2006_4'));
 assert.ok(!overrideId.includes('ANTIGO'));
 
-assert.throws(() => buildTopIdleVoteUrl('https://evil.com/jogo/pokeidle-io-5f9969', 'GGB2006'));
-assert.throws(() => buildTopIdleVoteUrl('http://topidle.com/jogo/pokeidle-io-5f9969', 'GGB2006'));
-assert.throws(() => buildTopIdleVoteUrl('https://topidle.com.evil.org/vote', 'GGB2006'));
-console.log('  ✓ Somente https://*.topidle.com é aceito com playerIdentifier preservado');
+assert.throws(() => buildTopIdleVoteUrl('https://evil.com/jogo/pokeidle-io-5f9969', 'GGB2006_'));
+assert.throws(() => buildTopIdleVoteUrl('http://idlehub.io/jogo/pokeidle-io', 'GGB2006_'));
+assert.throws(() => buildTopIdleVoteUrl('https://idlehub.io.evil.org/vote', 'GGB2006_'));
+console.log('  ✓ Somente https://*.idlehub.io e https://*.topidle.com são aceitos');
 
-// 3. Whitelist de navegação (TopIdle + Google OAuth + CAPTCHA interativo vs off-site)
+// 3. Whitelist de navegação (IdleHub + TopIdle + Google OAuth + CAPTCHA interativo vs off-site)
 console.log('\n🔹 Teste 3: Whitelist rigorosa de domínios permitidos na WebView de Votos...');
+assert.strictEqual(
+  isAllowedVoteUrlPreview('https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar'),
+  true
+);
+assert.strictEqual(isAllowedVoteUrlPreview('https://www.idlehub.io/ranking'), true);
 assert.strictEqual(
   isAllowedVoteUrlPreview('https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006_3'),
   true
@@ -84,9 +112,10 @@ assert.strictEqual(isAllowedVoteUrlPreview('about:blank', false), false);
 assert.strictEqual(isAllowedVoteUrlPreview('https://google.com/search?q=pokeidle'), false);
 assert.strictEqual(isAllowedVoteUrlPreview('https://youtube.com/watch?v=123'), false);
 assert.strictEqual(isAllowedVoteUrlPreview('https://twitch.tv/directory'), false);
+assert.strictEqual(isAllowedVoteUrlPreview('http://idlehub.io/jogo/pokeidle-io'), false);
 assert.strictEqual(isAllowedVoteUrlPreview('http://topidle.com/jogo/pokeidle-io-5f9969'), false);
 assert.strictEqual(isAllowedVoteUrlPreview('javascript:alert(1)'), false);
-console.log('  ✓ Sites externos bloqueados; TopIdle, OAuth Google e CAPTCHAs liberados');
+console.log('  ✓ Sites externos bloqueados; IdleHub, TopIdle, OAuth Google e CAPTCHAs liberados');
 
 // 4. Regra exata de cooldown e notificação de 24h 01m (86.460 segundos)
 console.log('\n🔹 Teste 4: Cooldown exato de 24h 01m (86.460s) e formatação HH:MM:SS...');

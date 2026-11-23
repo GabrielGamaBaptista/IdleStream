@@ -10,7 +10,7 @@ import {
 import {
   buildTopIdleVoteUrl,
   countReadyVoteAccounts,
-  DEFAULT_TOPIDLE_GAME_URL,
+  DEFAULT_IDLEHUB_GAME_URL,
   DEFAULT_VOTE_ACCOUNTS,
   formatCountdownHms,
   getVoteCooldownInfo,
@@ -137,7 +137,7 @@ export const VoteWorkspace: React.FC = () => {
       const target = voteAccounts.find((v) => v.id === pendingVoteOpenAccountId);
       if (target) {
         setStatusBanner(
-          `Notificação selecionada: a conta "${target.label}" (${target.player_identifier}) está pronta para votar no TopIdle.`
+          `Notificação selecionada: a conta "${target.label}" (${target.player_identifier}) está pronta para votar no IdleHub.`
         );
       }
       clearPendingVoteOpenAccountId();
@@ -290,7 +290,7 @@ export const VoteWorkspace: React.FC = () => {
     } catch (err: unknown) {
       setActiveAccountId(null);
       setIsPageLoading(false);
-      setStatusBanner(`Não foi possível abrir o TopIdle: ${String(err)}`);
+      setStatusBanner(`Não foi possível abrir o IdleHub: ${String(err)}`);
     }
   };
 
@@ -322,10 +322,10 @@ export const VoteWorkspace: React.FC = () => {
       setVoteDetectedHint(null);
       await votePlatformService.clearTopIdleSession(activeAccount);
       setStatusBanner(
-        `Sessão e cookies apenas de topidle.com foram limpos para "${activeAccount.label}" (suas sessões do PokeIdle e Google permaneceram intactas).`
+        `Sessão e cookies de idlehub.io (e topidle.com) foram limpos para "${activeAccount.label}" (suas sessões do PokeIdle e Google permaneceram intactas).`
       );
     } catch (e) {
-      setStatusBanner(`Falha ao limpar sessão TopIdle: ${String(e)}`);
+      setStatusBanner(`Falha ao limpar sessão IdleHub: ${String(e)}`);
     }
   };
 
@@ -390,7 +390,7 @@ export const VoteWorkspace: React.FC = () => {
         ...editingAccount,
         label: cleanLabel,
         player_identifier: editingAccount.player_identifier.trim() || cleanLabel,
-        base_url: editingAccount.base_url.trim() || DEFAULT_TOPIDLE_GAME_URL,
+        base_url: editingAccount.base_url.trim() || DEFAULT_IDLEHUB_GAME_URL,
       });
       setEditError(null);
       setEditingAccount(null);
@@ -410,7 +410,7 @@ export const VoteWorkspace: React.FC = () => {
   return (
     <div className="flex flex-col h-full w-full bg-neutral-950 overflow-hidden select-none">
       {/* ===================================================================== */}
-      {/* MODO WEBVIEW ATIVA SOB DEMANDA (EXCLUSIVA PARA TOPIDLE.COM)           */}
+      {/* MODO WEBVIEW ATIVA SOB DEMANDA (EXCLUSIVA PARA IDLEHUB / TOPIDLE)     */}
       {/* ===================================================================== */}
       {activeAccount ? (
         <div className="flex flex-col flex-1 min-h-0">
@@ -435,13 +435,13 @@ export const VoteWorkspace: React.FC = () => {
                   {activeAccount.label}
                 </span>
                 <span className="hidden sm:inline text-[11px] font-mono text-indigo-300 truncate max-w-[140px]">
-                  ?playerIdentifier={activeAccount.player_identifier}
+                  ?{(activeAccount.base_url || '').includes('topidle') ? 'playerIdentifier' : 'jogador'}={activeAccount.player_identifier}
                 </span>
               </div>
 
               <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 text-[11px] font-medium shrink-0">
                 <Lock className="w-3 h-3" />
-                Somente TopIdle.com
+                Somente IdleHub.io
               </span>
             </div>
 
@@ -458,10 +458,10 @@ export const VoteWorkspace: React.FC = () => {
               <button
                 onClick={handleClearTopIdleSession}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-amber-950/80 hover:text-amber-300 text-neutral-300 text-xs font-medium border border-neutral-700/80 transition cursor-pointer shrink-0"
-                title="Limpar somente sessão/cookies do topidle.com (preserva Google e PokeIdle)"
+                title="Limpar somente sessão/cookies de idlehub.io / topidle.com (preserva Google e PokeIdle)"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">Limpar Sessão TopIdle</span>
+                <span className="hidden lg:inline">Limpar Sessão IdleHub</span>
               </button>
 
               {nextReadyAccount && (
@@ -513,7 +513,7 @@ export const VoteWorkspace: React.FC = () => {
                 <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
                 <span className="truncate">
                   Navegação bloqueada para <strong>{blockedAlert.host}</strong> — esta WebView permite apenas{' '}
-                  <code>topidle.com</code>, Google Login e CAPTCHA.
+                  <code>idlehub.io</code>, Google Login e CAPTCHA.
                 </span>
               </div>
               <button
@@ -525,14 +525,14 @@ export const VoteWorkspace: React.FC = () => {
             </div>
           )}
 
-          {/* Banner quando Observer Passivo Detecta Confirmação na Página TopIdle */}
+          {/* Banner quando Observer Passivo Detecta Confirmação na Página IdleHub */}
           {voteDetectedHint && (
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-emerald-950/80 border-b border-emerald-700/80 text-xs text-emerald-100 shrink-0">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse shrink-0" />
                 <span>
                   {voteDetectedHint.reason === 'cooldown_already_active'
-                    ? `O TopIdle indicou cooldown recente para "${activeAccount.label}". Deseja atualizar o timer para +24h 01m?`
+                    ? `O IdleHub indicou cooldown recente para "${activeAccount.label}". Deseja atualizar o timer para +24h 01m?`
                     : `Confirmação de voto detectada para "${activeAccount.label}"! Clique para iniciar o timer de 24h 01m.`}
                 </span>
               </div>
@@ -564,7 +564,7 @@ export const VoteWorkspace: React.FC = () => {
               </div>
             ) : (
               <div className="text-center p-4 text-neutral-500 text-xs">
-                Carregando TopIdle interativo ({activeAccount.player_identifier})...
+                Carregando IdleHub interativo ({activeAccount.player_identifier})...
               </div>
             )}
           </div>
@@ -580,7 +580,7 @@ export const VoteWorkspace: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg md:text-xl font-bold text-white tracking-tight flex items-center gap-2">
                   <Vote className="w-5 h-5 text-amber-400" />
-                  <span>Votos Diários (TopIdle)</span>
+                  <span>Votos Diários (IdleHub)</span>
                 </h2>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold border ${
@@ -597,7 +597,7 @@ export const VoteWorkspace: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-neutral-400 mt-1">
-                Abra a WebView restrita ao <span className="text-neutral-200 font-medium">topidle.com</span> apenas
+                Abra a WebView restrita ao <span className="text-neutral-200 font-medium">idlehub.io</span> apenas
                 na hora de votar nas 4 contas. O alerta dispara exatamente após <strong className="text-neutral-200">24h 01m</strong> do último voto.
               </p>
             </div>
@@ -696,7 +696,7 @@ export const VoteWorkspace: React.FC = () => {
               const linkedSlot = acc.linked_game_slot_id
                 ? gameSlots.find((s) => s.id === acc.linked_game_slot_id)
                 : null;
-              let fullTargetUrl = DEFAULT_TOPIDLE_GAME_URL;
+              let fullTargetUrl = DEFAULT_IDLEHUB_GAME_URL;
               try {
                 fullTargetUrl = buildTopIdleVoteUrl(acc.base_url, acc.player_identifier);
               } catch (_) {}
@@ -757,7 +757,7 @@ export const VoteWorkspace: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Preview da URL TopIdle */}
+                    {/* Preview da URL de Voto */}
                     <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-neutral-950/80 border border-neutral-800/90 text-[11px]">
                       <span className="text-neutral-400 font-mono truncate select-text">
                         {fullTargetUrl}
@@ -827,7 +827,7 @@ export const VoteWorkspace: React.FC = () => {
                       }`}
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Abrir TopIdle & Votar</span>
+                      <span>Abrir IdleHub & Votar</span>
                     </button>
 
                     <button
@@ -942,7 +942,7 @@ export const VoteWorkspace: React.FC = () => {
 
               <div>
                 <label className="text-xs font-semibold text-neutral-400 block mb-1">
-                  URL Base do Jogo no TopIdle (somente <code>https://topidle.com</code>)
+                  URL Base do Jogo no IdleHub (<code>https://idlehub.io</code> ou legado <code>topidle.com</code>)
                 </label>
                 <input
                   type="text"
@@ -950,7 +950,7 @@ export const VoteWorkspace: React.FC = () => {
                   onChange={(e) =>
                     setEditingAccount({ ...editingAccount, base_url: e.target.value })
                   }
-                  placeholder={DEFAULT_TOPIDLE_GAME_URL}
+                  placeholder={DEFAULT_IDLEHUB_GAME_URL}
                   className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs font-mono text-white focus:outline-hidden focus:border-indigo-500"
                 />
               </div>

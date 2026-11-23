@@ -105,7 +105,7 @@ pub async fn evaluate_due_vote_notifications(state: &Arc<AppState>) {
                     ready_at,
                     title: format!("🗳️ Voto Liberado: {}", acc.label),
                     body: format!(
-                        "Já se passaram 24h 01m! Você já pode votar no TopIdle com a conta '{}'.",
+                        "Já se passaram 24h 01m! Você já pode votar no IdleHub com a conta '{}'.",
                         player_display
                     ),
                     is_test: false,

@@ -2,15 +2,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { VoteAccountConfig, VoteBounds, VoteReadyNotificationPayload } from '../types';
 import { isAndroidPlatform } from './gamePlatformService';
 
+export const DEFAULT_IDLEHUB_GAME_URL = 'https://idlehub.io/jogo/pokeidle-io?votar=1#votar';
 export const DEFAULT_TOPIDLE_GAME_URL = 'https://topidle.com/jogo/pokeidle-io-5f9969';
 export const VOTE_COOLDOWN_SECONDS = 86_460; // 24 horas e 1 minuto
 
 export const DEFAULT_VOTE_ACCOUNTS: VoteAccountConfig[] = [
   {
     id: 'vote-1',
-    label: 'GGB2006',
-    player_identifier: 'GGB2006',
-    base_url: DEFAULT_TOPIDLE_GAME_URL,
+    label: 'GGB2006_',
+    player_identifier: 'GGB2006_',
+    base_url: DEFAULT_IDLEHUB_GAME_URL,
     linked_game_slot_id: 'slot-1',
     share_game_profile: true,
     google_hint: null,
@@ -24,7 +25,7 @@ export const DEFAULT_VOTE_ACCOUNTS: VoteAccountConfig[] = [
     id: 'vote-2',
     label: 'GGB2006_2',
     player_identifier: 'GGB2006_2',
-    base_url: DEFAULT_TOPIDLE_GAME_URL,
+    base_url: DEFAULT_IDLEHUB_GAME_URL,
     linked_game_slot_id: 'slot-2',
     share_game_profile: true,
     google_hint: null,
@@ -38,7 +39,7 @@ export const DEFAULT_VOTE_ACCOUNTS: VoteAccountConfig[] = [
     id: 'vote-3',
     label: 'GGB2006_3',
     player_identifier: 'GGB2006_3',
-    base_url: DEFAULT_TOPIDLE_GAME_URL,
+    base_url: DEFAULT_IDLEHUB_GAME_URL,
     linked_game_slot_id: 'slot-3',
     share_game_profile: true,
     google_hint: null,
@@ -52,7 +53,7 @@ export const DEFAULT_VOTE_ACCOUNTS: VoteAccountConfig[] = [
     id: 'vote-4',
     label: 'GGB2006_4',
     player_identifier: 'GGB2006_4',
-    base_url: DEFAULT_TOPIDLE_GAME_URL,
+    base_url: DEFAULT_IDLEHUB_GAME_URL,
     linked_game_slot_id: 'slot-4',
     share_game_profile: true,
     google_hint: null,
@@ -75,13 +76,13 @@ const GOOGLE_AUTH_HOSTS = new Set([
 ]);
 
 /**
- * Constrói e valida a URL do TopIdle com `playerIdentifier` único,
- * garantindo protocolo HTTPS e domínio restrito ao TopIdle.
+ * Constrói e valida a URL do IdleHub (ou TopIdle) com identificador do jogador,
+ * garantindo protocolo HTTPS e domínio restrito.
  */
 export function buildTopIdleVoteUrl(baseUrl: string, playerIdentifier: string): string {
   const raw = (baseUrl || '').trim();
   const normalized = !raw
-    ? DEFAULT_TOPIDLE_GAME_URL
+    ? DEFAULT_IDLEHUB_GAME_URL
     : raw.includes('://')
       ? raw
       : `https://${raw.replace(/^\/+/, '')}`;
@@ -90,30 +91,49 @@ export function buildTopIdleVoteUrl(baseUrl: string, playerIdentifier: string): 
   try {
     parsed = new URL(normalized);
   } catch {
-    throw new Error('URL do TopIdle inválida.');
+    throw new Error('URL de voto inválida.');
   }
 
   if (parsed.protocol !== 'https:') {
-    throw new Error('Somente URLs HTTPS do TopIdle são permitidas nesta seção.');
+    throw new Error('Somente URLs HTTPS são permitidas nesta seção.');
   }
 
   const host = parsed.hostname.toLowerCase();
-  if (host !== 'topidle.com' && !host.endsWith('.topidle.com')) {
-    throw new Error(`Domínio não permitido '${host}': aceita apenas topidle.com.`);
-  }
+  const isIdleHub = host === 'idlehub.io' || host.endsWith('.idlehub.io');
+  const isTopIdle = host === 'topidle.com' || host.endsWith('.topidle.com');
 
-  if (!parsed.pathname || parsed.pathname === '/') {
-    parsed.pathname = '/jogo/pokeidle-io-5f9969';
+  if (!isIdleHub && !isTopIdle) {
+    throw new Error(`Domínio não permitido '${host}': aceita apenas idlehub.io (ou topidle.com).`);
   }
 
   const cleanPlayer = (playerIdentifier || '').trim();
-  parsed.searchParams.delete('playerIdentifier');
-  if (cleanPlayer) {
-    parsed.searchParams.set('playerIdentifier', cleanPlayer);
+
+  if (isIdleHub) {
+    if (!parsed.pathname || parsed.pathname === '/') {
+      parsed.pathname = '/jogo/pokeidle-io';
+    }
+    parsed.searchParams.delete('playerIdentifier');
+    parsed.searchParams.delete('jogador');
+    parsed.searchParams.delete('votar');
+    parsed.searchParams.set('votar', '1');
+    if (cleanPlayer) {
+      parsed.searchParams.set('jogador', cleanPlayer);
+    }
+    parsed.hash = '#votar';
+  } else {
+    if (!parsed.pathname || parsed.pathname === '/') {
+      parsed.pathname = '/jogo/pokeidle-io-5f9969';
+    }
+    parsed.searchParams.delete('playerIdentifier');
+    if (cleanPlayer) {
+      parsed.searchParams.set('playerIdentifier', cleanPlayer);
+    }
   }
 
   return parsed.toString();
 }
+
+export const buildVoteTargetUrl = buildTopIdleVoteUrl;
 
 /**
  * Verifica se uma URL pertence à whitelist segura da sessão Votos.
@@ -134,7 +154,14 @@ export function isAllowedVoteUrlPreview(rawUrl: string, isPopup = false): boolea
   const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname || '';
 
-  if (host === 'topidle.com' || host.endsWith('.topidle.com')) return true;
+  if (
+    host === 'idlehub.io' ||
+    host.endsWith('.idlehub.io') ||
+    host === 'topidle.com' ||
+    host.endsWith('.topidle.com')
+  ) {
+    return true;
+  }
   if (GOOGLE_AUTH_HOSTS.has(host)) return true;
   if (
     host === 'challenges.cloudflare.com' ||

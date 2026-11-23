@@ -932,3 +932,35 @@ npm run test:accounts
 
 > [!CAUTION]
 > Feature 8 (QR Export) expõe tokens de autenticação das contas via rede local. O servidor deve: validar que requisições vêm apenas de IPs da rede privada, encerrar imediatamente após 3 usos ou 5 minutos, e nunca logar os tokens exportados.
+
+---
+
+# SPRINT v4.3.2 — Migração IdleHub, Níveis Estáveis e Economia Radical
+
+> **Data de Lançamento:** 2026-11-23  
+> **Status:** 🟢 100% Concluído e Validado
+
+### 1. Migração da Plataforma de Voto (IdleHub)
+- **Problema:** A votação do PokeIdle migrou para a nova plataforma `https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar`.
+- **Implementação:**
+  - Atualização dos modelos e defaults no Rust (`votes/policy.rs`, `config/models.rs`, `config/store.rs`) e Android (`VoteUrlPolicy.kt`).
+  - Whitelist estrita estendida para suportar `idlehub.io` e subdomínios, mantendo `topidle.com` para retrocompatibilidade.
+  - Preservação da sessão individual de conta Google por slot (`slot-1`..`slot-4`).
+  - `vote_observer.js` atualizado para capturar alertas de sucesso e confirmação na nova plataforma.
+  - Sincronização em nuvem PC $\leftrightarrow$ Mobile via QR Code preservada.
+
+### 2. Estabilização da Leitura de Níveis via WebSocket Hook
+- **Problema:** O indicador de nível das contas oscilava aleatoriamente a cada poucos segundos, exibindo números incorretos.
+- **Implementação:**
+  - Identificação de pacotes espúrios do PokeIdle (`campo`, `campo.init`) que eram interpretados como níveis do jogador.
+  - `anti_sleep.js`: Descarte explícito de pacotes `campo` e adição de validação inteira positiva e monotônica (`numLvl >= st.level`).
+  - Deduplicação de mutações em `document.title` prevenindo tempestades de IPC no backend Tauri.
+
+### 3. Fluidez 60 FPS VSync e Economia Radical em Segundo Plano (Sessões de 300h)
+- **Problema:** Sensação de perda de fluidez ao sair do modo de economia; consumo desnecessário de CPU/GPU em segundo plano mesmo sem o app estar em foco; degradação de performance em sessões contínuas longas (80h–300h).
+- **Implementação:**
+  - **VSync Nativo a 60 FPS**: Delegação direta a `_NativeRAF(cb)` do Chromium quando a janela está ativa e em primeiro plano.
+  - **Otimizações V8**: Remoção de `--optimize-for-size` para reativar o compilador JIT TurboFan e adição de `--max-old-space-size=1024` contra GC thrashing.
+  - **Correção de Detecção de Foco**: Fim do uso de `Math.min(appIdleSec, systemIdleSec)`. Adicionado rastreamento de foco nativo via `WindowEvent::Focused` e minimização via `WindowEvent::Resized`. Perda de foco derruba imediatamente para 10 FPS; minimização derruba imediatamente para 1 FPS com corte de GPU.
+  - **Corte de GPU e Áudio**: Ao minimizar ou ocultar, tags `<canvas>` e `<video>` recebem `visibility: hidden !important` (0% GPU) e `audioCtx.suspend()` estanca consumo de CPU pelo `audiodg.exe` do Windows.
+  - **Purga de Memória Física de SO**: Novo comando `game_trim_memory` aciona `window.gc()` em todas as WebViews e executa Win32 `SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX)` para liberar páginas limpas ao kernel NT.

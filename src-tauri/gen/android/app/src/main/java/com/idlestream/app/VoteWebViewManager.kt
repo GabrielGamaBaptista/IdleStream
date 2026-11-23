@@ -441,7 +441,7 @@ class VoteWebViewManager(private val activity: MainActivity) {
     }
 
     /**
-     * Limpa exclusivamente cookies e Web Storage de topidle.com preservando Google e pokeidle.io.
+     * Limpa exclusivamente cookies e Web Storage de idlehub.io e topidle.com preservando Google e pokeidle.io.
      */
     fun clearTopIdleSession(targetUrl: String) {
         if (!VoteUrlPolicy.isAllowedVoteNavigation(targetUrl, false)) return
@@ -449,24 +449,27 @@ class VoteWebViewManager(private val activity: MainActivity) {
             val wv = activeWebView ?: return@runOnUiThread
             try {
                 val cm = getCookieManagerForProfile(activeProfileName)
-                val topidleCookies = cm.getCookie("https://topidle.com") ?: ""
-                if (topidleCookies.isNotBlank()) {
-                    for (pair in topidleCookies.split(";")) {
-                        val name = pair.substringBefore("=").trim()
-                        if (name.isEmpty()) continue
-                        cm.setCookie("https://topidle.com", "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/; Domain=topidle.com; Secure")
-                        cm.setCookie("https://topidle.com", "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/; Domain=.topidle.com; Secure")
-                        cm.setCookie("https://topidle.com", "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/; Domain=topidle.com")
-                        cm.setCookie("https://topidle.com", "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/")
+                for (domainUrl in listOf("https://idlehub.io", "https://topidle.com")) {
+                    val cookies = cm.getCookie(domainUrl) ?: ""
+                    if (cookies.isNotBlank()) {
+                        val host = if (domainUrl.contains("idlehub")) "idlehub.io" else "topidle.com"
+                        for (pair in cookies.split(";")) {
+                            val name = pair.substringBefore("=").trim()
+                            if (name.isEmpty()) continue
+                            cm.setCookie(domainUrl, "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/; Domain=$host; Secure")
+                            cm.setCookie(domainUrl, "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/; Domain=.$host; Secure")
+                            cm.setCookie(domainUrl, "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/; Domain=$host")
+                            cm.setCookie(domainUrl, "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/")
+                        }
                     }
-                    cm.flush()
                 }
+                cm.flush()
             } catch (e: Throwable) {
-                Log.w(TAG, "Erro ao limpar cookies TopIdle: ${e.message}")
+                Log.w(TAG, "Erro ao limpar cookies IdleHub/TopIdle: ${e.message}")
             }
 
             wv.evaluateJavascript(
-                "try { if (location.hostname.endsWith('topidle.com')) { localStorage.clear(); sessionStorage.clear(); } } catch(_) {}"
+                "try { if (location.hostname.endsWith('idlehub.io') || location.hostname.endsWith('topidle.com')) { localStorage.clear(); sessionStorage.clear(); } } catch(_) {}"
             ) {
                 wv.loadUrl(targetUrl)
             }

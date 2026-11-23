@@ -104,7 +104,7 @@ impl VoteManager {
         crate::audit_log!(
             "VOTES",
             "INFO",
-            "Abrindo painel TopIdle para conta [{}] (Nick: {})",
+            "Abrindo painel de votação para conta [{}] (Nick: {})",
             account.label,
             account.player_identifier
         );
@@ -192,7 +192,7 @@ impl VoteManager {
                         WebviewUrl::External(blank),
                     )
                     .window_features(features)
-                    .title(format!("IdleStream - Autenticação TopIdle ({})", url.host_str().unwrap_or("OAuth")))
+                    .title(format!("IdleStream - Autenticação de Voto ({})", url.host_str().unwrap_or("OAuth")))
                     .inner_size(520.0, 680.0)
                     .center()
                     .on_navigation(move |nav_url| {
@@ -330,7 +330,7 @@ impl VoteManager {
         Ok(())
     }
 
-    /// Limpa cookies e storage exclusivamente de topidle.com, preservando logins de jogos (pokeidle.io)
+    /// Limpa cookies e storage exclusivamente de idlehub.io e topidle.com, preservando logins de jogos (pokeidle.io)
     /// e cookies do Google do slot compartilhado.
     pub async fn clear_topidle_session(&self, account: &VoteAccountConfig) -> Result<(), String> {
         let target_url = build_vote_target_url(&account.base_url, &account.player_identifier)?;
@@ -338,13 +338,16 @@ impl VoteManager {
         #[cfg(desktop)]
         if let Some(wv) = self.app.get_webview(VOTE_WEBVIEW_LABEL) {
             let wv_cookies = wv.clone();
+            let idlehub_url = url::Url::parse("https://idlehub.io/").unwrap();
             let topidle_url = url::Url::parse("https://topidle.com/").unwrap();
             let _ = tokio::task::spawn_blocking(move || {
-                if let Ok(cookies) = wv_cookies.cookies_for_url(topidle_url) {
-                    for cookie in cookies {
-                        let domain = cookie.domain().unwrap_or_default().to_ascii_lowercase();
-                        if domain.is_empty() || domain.contains("topidle.com") {
-                            let _ = wv_cookies.delete_cookie(cookie);
+                for base in [idlehub_url, topidle_url] {
+                    if let Ok(cookies) = wv_cookies.cookies_for_url(base) {
+                        for cookie in cookies {
+                            let domain = cookie.domain().unwrap_or_default().to_ascii_lowercase();
+                            if domain.is_empty() || domain.contains("idlehub.io") || domain.contains("topidle.com") {
+                                let _ = wv_cookies.delete_cookie(cookie);
+                            }
                         }
                     }
                 }
@@ -352,7 +355,7 @@ impl VoteManager {
             .await;
 
             let _ = wv.eval(
-                "try { if (location.hostname.endsWith('topidle.com')) { localStorage.clear(); sessionStorage.clear(); } } catch(_) {}",
+                "try { if (location.hostname.includes('idlehub.io') || location.hostname.includes('topidle.com')) { localStorage.clear(); sessionStorage.clear(); } } catch(_) {}",
             );
             let _ = wv.navigate(target_url);
         }

@@ -30,9 +30,9 @@ wiki_links:
   - "[[08-operacao-e-scripts]]"
   - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.3.0"
-last_updated: "2026-11-19"
-summary: "Arquitetura multicamadas de sobrevivência em segundo plano e tela bloqueada no Android (v4.1.1 a v4.1.3): desacoplamento do GameSlotManager para Application, modo econômico de 1 FPS + liberação de GPU, otimização extrema de bateria (WIFI_MODE_FULL, suspensão de áudio contínuo, congelamento de UI em background), recuperação de renderer Chromium, persistência atômica runtime_state.json e distinção rigorosa entre fechamento manual e morte por GC OEM."
+version: "4.3.2"
+last_updated: "2026-11-23"
+summary: "Arquitetura multicamadas de sobrevivência em segundo plano, tela bloqueada e minimização (Android & Desktop Windows): desacoplamento do GameSlotManager para Application, modo de 4 patamares (60 FPS VSync nativo -> 10 FPS eco/fundo -> 1 FPS sleep/minimização com 0% GPU), suspensão de áudio para estancar audiodg.exe, purga de memória física de SO com SetProcessWorkingSetSize e window.gc() para sessões contínuas de 300h."
 ---
 
 # Resiliência em Segundo Plano, Modo 1 FPS e Recuperação de Sessão (`v4.1.1` / `v4.1.2`)
@@ -203,3 +203,33 @@ A partir da versão **v4.3.0**, a camada nativa em Rust do host Tauri foi munida
    - Mantém uma lista circular dos últimos 8 backups, permitindo restauração instantânea com 1 clique.
 
 > Detalhes arquiteturais aprofundados sobre a máquina de segurança estão documentados em: **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.
+
+---
+
+## 9. Resiliência de Longo Prazo Desktop & Economia Radical em Segundo Plano (v4.3.2)
+
+A versão **v4.3.2** expandiu a disciplina de resiliência e baixo consumo de energia para o ambiente Desktop Windows, garantindo que o aplicativo execute continuamente por mais de **300 horas ininterruptas** com o mesmo consumo enxuto de uma sessão de 1 hora:
+
+### 9.1. O Falso Positivo de Atividade do Sistema Operacional
+- **Diagnóstico do Bug**: Anteriormente, o componente `GameWorkspace.tsx` determinava o nível de ociosidade através da fórmula `Math.min(appIdleSec, systemIdleSec)`.
+- **Consequência Indesejada**: Caso o usuário estivesse jogando outro jogo, assistindo a vídeos ou trabalhando em outro programa (ex: Discord, VS Code), o `systemIdleSec` era resetado a 0 a cada pressionamento de tecla global. Com isso, o IdleStream acreditava falsamente estar em primeiro plano ativo e mantinha até 4 instâncias de jogos web renderizando a 60 FPS com VSync de hardware em segundo plano, desperdiçando CPU e GPU.
+- **Correção Definitiva**: Integração dos eventos nativos `WindowEvent::Focused` e `WindowEvent::Resized` do Tauri. A perda de foco da janela (`isWindowFocused = false`) força a queda imediata para **10 FPS**, independentemente do que o usuário esteja digitando no computador.
+
+### 9.2. Economia Extrema em Janela Minimizada (0% GPU + 1 FPS)
+Quando a janela do IdleStream é minimizada na barra de tarefas ou na bandeja do sistema:
+1. **Ocultação de WebViews**: As Child WebViews são removidas da área visível via `set_bounds` e desativadas via `set_visible(false)`.
+2. **Desligamento Gráfico**: O CSS injetado oculta tags `<canvas>` e `<video>` com `visibility: hidden !important`, interrompendo as chamadas de pintura do compositor do Chromium e eliminando 100% da carga de GPU.
+3. **Desaceleração para 1 FPS**: O despachante de `requestAnimationFrame` desacelera os ciclos para 1 frame por segundo, preservando a lógica de jogo, timers e WebSockets ativos.
+
+### 9.3. Supressão do Áudio do Windows (`audiodg.exe`)
+- Instâncias contínuas de `AudioContext` da Web Audio API mantêm streams WASAPI abertas permanentemente, exigindo ciclos contínuos do processo de sistema do Windows `audiodg.exe`.
+- Ao entrar nos modos Eco ou Minimizada/Sleep, o script executa `audioCtx.suspend()`. A reprodução em loop da tag `<audio>` silenciosa continua ativa para assegurar a flag `IsAudible` do Chromium (imunidade a descarte de aba), mas com **custo zero de processamento DSP de áudio**.
+
+### 9.4. Purga de Memória Física no Windows (`game_trim_memory`)
+- Em sessões longas (80h–300h), páginas de memória do WebView2/Chromium tendem a acumular no working set físico do Windows.
+- O comando `game_trim_memory` aciona o Garbage Collector da V8 (`window.gc()`) em todos os slots e invoca a API nativa do Windows:
+  ```rust
+  SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+  ```
+- Isso força o kernel NT a descartar ou mover páginas limpas não essenciais para a lista de standby, reduzindo drasticamente o consumo de RAM física sem interromper o funcionamento dos jogos.
+- Além disso, a V8 foi configurada com `--max-old-space-size=1024` e sem `--optimize-for-size`, garantindo que o compilador JIT TurboFan execute livremente quando o jogo volta para o primeiro plano.

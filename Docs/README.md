@@ -23,8 +23,8 @@ wiki_links:
   - "[[12-sistema-de-auditoria]]"
   - "[[13-melhorias-v4.3-novos-subsistemas]]"
 status: "completed"
-version: "4.3.0"
-last_updated: "2026-11-19"
+version: "4.3.2"
+last_updated: "2026-11-23"
 summary: "Índice Mestre (Map of Content) da documentação do IdleStream. Mapeia a arquitetura de sistemas, matriz cruzada de código para documento, grafos de dependência e glossário técnico para desenvolvedores e agentes de IA."
 ---
 
@@ -41,7 +41,7 @@ Este repositório documental representa o **Map of Content (MOC)** e a base de c
 
 | Componente | Especificação de Engenharia | Detalhes de Implementação |
 | :--- | :--- | :--- |
-| **Versão Corrente** | `4.3.1` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
+| **Versão Corrente** | `4.3.2` | Produção / Estável (Windows NSIS & Android ARM64 APK) |
 | **Framework Host** | **Tauri v2** (`@tauri-apps/cli ^2.0`, `@tauri-apps/api ^2.0`) | Modelo multi-janela, Child Webviews nativas (`wry`), IPC binário e JSON |
 | **Runtime Rust Core** | **Rust 2021 Edition** | Assíncrono com `tokio 1.0` (Full), `tokio-tungstenite 0.24`, `futures-util 0.3` |
 | **Camada HTTP / Web** | **Reqwest 0.12** (`rustls-tls`), `tiny_http 0.12` | Subprocesso `curl.exe` (Windows) e OkHttp Bridge (Android) para bypass TLS |
@@ -63,14 +63,14 @@ A documentação divide-se em 12 documentos técnicos especializados e este índ
 | **[[01-arquitetura]]** | Arquitetura Geral & Barramento IPC | Topologia C4, fronteira IPC Tauri v2, ciclo de boot (`main.rs`, `lib.rs`), flags V8/WebView2 e canais assíncronos. | `src-tauri/src/lib.rs`<br/>`src-tauri/src/commands.rs` | **Concluído** |
 | **[[02-twitch-engine]]** | Subsistema Twitch & Telemetria | IRC WebSocket, GQL Queries, Spade telemetria (`minute-watched`), claim de baús e Coordenador de Prioridade (máx 2 slots). | `src-tauri/src/twitch/` | **Concluído** |
 | **[[03-kick-engine]]** | Subsistema Kick & TLS Bypass | Pusher WS multiplexado (16 canais/conn), Viewer WebSocket token, bridge TLS via `curl.exe` e OkHttp JNI. | `src-tauri/src/kick/` | **Concluído** |
-| **[[04-games-engine]]** | Game Workspace & Motor Anti-Sleep | Child Webviews Wry, layouts dinâmicos (Grid/Focus/Sidebar), motor anti-sleep JS, rAF override e extensão `/hunt`. | `src-tauri/src/games/`<br/>`src/components/games/` | **Concluído** |
+| **[[04-games-engine]]** | Game Workspace & Motor Anti-Sleep | Child Webviews Wry, layouts dinâmicos (Grid/Focus/Sidebar), ciclo 60/10/1 FPS, VSync direto, purga de RAM, estabilização de níveis e extensão `/hunt`. | `src-tauri/src/games/`<br/>`src/components/games/` | **Concluído** |
 | **[[05-backend-core]]** | Backend Core, Estado & Dicionário IPC | `AppState` thread-safe, persistência `config.json`, Modo Vigília (300s loop), migrações e catálogo exaustivo de comandos IPC. | `src-tauri/src/state.rs`<br/>`src-tauri/src/config/` | **Concluído** |
 | **[[06-frontend]]** | Camada Frontend React 19 & Zustand | Store Zustand, catálogo de telas/componentes, ciclo reativo de eventos de live/voto e serviços de adaptação mobile/desktop. | `src/`<br/>`src/stores/appStore.ts` | **Concluído** |
 | **[[07-multiplataforma-android]]** | Multiplataforma, JNI & Android Build | Foreground Service, Wakelock, VoteWebViewManager, AlarmManager, bridges Kotlin e pipeline `build-android.ps1`. | `src-tauri/gen/android/`<br/>`scripts/build-android.ps1` | **Concluído** |
 | **[[08-operacao-e-scripts]]** | Operação, Suíte de Testes & Release | Esteira de testes automatizados (`scripts/*.ts`), assinatura Minisign, atualização via GitHub Releases e diagnóstico de falhas. | `scripts/`<br/>`RELEASE_GUIDE.md` | **Concluído** |
-| **[[09-sistema-de-votos]]** | Sistema de Votos Diários TopIdle | WebView interativa sob demanda (0 MB em repouso), whitelist TopIdle/OAuth/CAPTCHA, reuso Google e alertas de 24h 01m. | `src-tauri/src/votes/`<br/>`src/components/votes/` | **Concluído** |
+| **[[09-sistema-de-votos]]** | Sistema de Votos Diários IdleHub & TopIdle | WebView sob demanda (0 MB repouso), suporte a IdleHub/TopIdle, whitelist estrita, reuso Google individual e alertas de 24h 01m. | `src-tauri/src/votes/`<br/>`src/components/votes/` | **Concluído** |
 | **[[10-sessoes-resgates-e-verificador]]** | Sessões Persistentes & Verificador de Contas | Estratégia Profile-First (cookies nativos `Max-Age=90d` + `HttpOnly`), sync-back de rotação e verificador contínuo das 8 contas Twitch/Kick. | `src-tauri/src/accounts/`<br/>`src/utils/accountHealth.ts` | **Concluído** |
-| **[[11-resiliencia-segundo-plano]]** | Resiliência em Segundo Plano & Modo 1 FPS | `IdleStreamApplication`, modo 1 FPS (tela desligada / 10s fundo), `runtime_state.json`, `onRenderProcessGone` e saída manual vs kill OEM (`ApplicationExitInfo`). | `IdleStreamForegroundService.kt`<br/>`LifecycleLogger.kt`, `config/store.rs` | **Concluído** |
+| **[[11-resiliencia-segundo-plano]]** | Resiliência em Segundo Plano & Modo 1 FPS | `IdleStreamApplication`, 4 patamares de energia (Android & Windows), suspensão de áudio, `SetProcessWorkingSetSize`, `runtime_state.json` e saída manual vs kill OEM. | `IdleStreamForegroundService.kt`<br/>`LifecycleLogger.kt`, `config/store.rs` | **Concluído** |
 | **[[12-sistema-de-auditoria]]** | Sistema de Auditoria e Logs em Disco | Persistência estrita em disco (0 MB em RAM), 6 arquivos rotativos de 1h com limite circular de sobrescrita e visualizador integrado. | `src-tauri/src/logger/`<br/>`src/components/AuditLogViewer.tsx` | **Concluído** |
 | **[[13-melhorias-v4.3-novos-subsistemas]]** | Novos Subsistemas v4.3.0 | Segurança com Crash-loop Guard e Backups (8 slots), Elo PC-Mobile em nuvem, Freeze 0% GPU, Hook WS e Exportação P2P AES-256-GCM. | `src-tauri/src/safety/`<br/>`src-tauri/src/session_export/` | **Concluído** |
 

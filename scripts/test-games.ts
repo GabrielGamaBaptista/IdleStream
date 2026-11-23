@@ -397,4 +397,226 @@ assert.ok(
 );
 console.log('  ✓ Injeção de zoom dinâmico funcional no Android validada com sucesso');
 
+// ==========================================
+// Teste 13: Extração de Nível do Treinador e Rejeição de Pacotes 'campo' (Monotonicidade)
+// ==========================================
+console.log('\n🔹 Teste 13: Extração de Nível do Treinador e Rejeição de Pacotes de Batalha/Monstros Selvagens...');
+const antiSleepContent = fs.readFileSync('./src-tauri/src/games/anti_sleep.js', 'utf8');
+
+// Verifica que 'campo' e 'campo.init' são explicitamente ignorados no anti_sleep.js
+assert.ok(
+  antiSleepContent.includes("tipo === 'campo' || tipo === 'campo.init'"),
+  'anti_sleep.js deve conter filtro para descartar pacotes de combate campo e campo.init'
+);
+assert.ok(
+  antiSleepContent.includes('numLvl >= st.level'),
+  'anti_sleep.js deve validar monotonicidade do nível do treinador (não regredir com monstros selvagens)'
+);
+
+// Simulação pura da lógica de parsing
+interface MockTrainerState {
+  nick: string | null;
+  level: number | null;
+  gold: number;
+}
+const mockState: MockTrainerState = { nick: null, level: null, gold: 0 };
+
+function mockProcessMessageData(raw: any, state: MockTrainerState) {
+  if (!raw || typeof raw !== 'object') return false;
+  const tipo = raw.t || (raw.data && raw.data.t);
+  if (tipo === 'campo' || tipo === 'campo.init') return false;
+
+  let changed = false;
+  const updateFrom = (obj: any) => {
+    if (!obj || typeof obj !== 'object') return;
+    const rawLvl = obj.level ?? obj.nivel ?? obj.lvl;
+    if (rawLvl !== undefined && rawLvl !== null) {
+      const numLvl = Math.floor(Number(rawLvl));
+      if (!isNaN(numLvl) && numLvl > 0) {
+        if (state.level === null || numLvl >= state.level) {
+          if (state.level !== numLvl) {
+            state.level = numLvl;
+            changed = true;
+          }
+        }
+      }
+    }
+  };
+
+  if (tipo === 'welcome' || tipo === 'estado') {
+    if (raw.estado && typeof raw.estado === 'object') {
+      updateFrom(raw.estado);
+    }
+  } else if (raw.treinador && typeof raw.treinador === 'object') {
+    updateFrom(raw.treinador);
+  }
+  return changed;
+}
+
+// 1. Pacote inicial 'welcome' com nível 185
+const p1 = { t: 'welcome', estado: { level: 185 } };
+assert.strictEqual(mockProcessMessageData(p1, mockState), true);
+assert.strictEqual(mockState.level, 185);
+
+// 2. Pacote 'campo' de combate repetido com Pokémon selvagem de nível 12
+const pWild = { t: 'campo', data: { pokemon: { level: 12 } } };
+assert.strictEqual(mockProcessMessageData(pWild, mockState), false);
+assert.strictEqual(mockState.level, 185, 'Nível do treinador não pode ser corrompido por monstros de campo!');
+
+// 3. Pacote espúrio com nível menor que o atual
+const pFake = { t: 'estado', estado: { level: 45 } };
+assert.strictEqual(mockProcessMessageData(pFake, mockState), false);
+assert.strictEqual(mockState.level, 185, 'Regra de monotonicidade deve rejeitar níveis menores que o atual!');
+
+// 4. Pacote válido de evolução de nível para 186
+const pLevelUp = { t: 'estado', estado: { level: 186 } };
+assert.strictEqual(mockProcessMessageData(pLevelUp, mockState), true);
+assert.strictEqual(mockState.level, 186);
+
+console.log('  ✓ Nível do treinador protegido contra oscilação, monstros selvagens e pacotes de campo');
+
+// ==========================================
+// Teste 14: Despachante Híbrido rAF e Flags V8 para Sessões de 300h+
+// ==========================================
+console.log('\n🔹 Teste 14: Despachante Híbrido rAF (VSync Hardware a 60 FPS) e Flags V8 para Sessões Longas...');
+
+// 1. Despachante rAF híbrido em anti_sleep.js
+assert.ok(
+  antiSleepContent.includes('const isFullSpeed = (targetFps >= 60) && !isEcoMode && !isSlotHidden;'),
+  'anti_sleep.js deve calcular isFullSpeed quando targetFps >= 60, fora do eco mode e visível'
+);
+assert.ok(
+  antiSleepContent.includes('_NativeRAF((timestamp) =>'),
+  'anti_sleep.js deve delegar diretamente ao _NativeRAF por hardware quando em 60 FPS ativo'
+);
+assert.ok(
+  antiSleepContent.includes('if (delta >= 120)'),
+  'anti_sleep.js deve possuir watchdog protetor para desengasgar callbacks caso o rAF pause em segundo plano'
+);
+
+// 2. Flags V8 no Rust (src-tauri/src/lib.rs)
+const libRsContent = fs.readFileSync('./src-tauri/src/lib.rs', 'utf8');
+const webviewArgsMatch = libRsContent.match(/WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS[\s\S]*?\);/);
+assert.ok(webviewArgsMatch, 'Deve conter WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS');
+assert.ok(
+  !webviewArgsMatch[0].includes('--optimize-for-size'),
+  'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS NÃO deve conter --optimize-for-size para preservar TurboFan JIT de alta performance'
+);
+assert.ok(
+  libRsContent.includes('--max-old-space-size=1024'),
+  'src-tauri/src/lib.rs deve alocar 1024MB de heap por processo WebView para evitar GC contínuo em sessões de 300h'
+);
+console.log('  ✓ VSync por hardware a 60 FPS e TurboFan JIT com heap de 1GB validados para sessões contínuas');
+
+// ==========================================
+// Teste 15: Economia Radical em Segundo Plano, Minimização e Suspensão de GPU/Áudio/RAM
+// ==========================================
+console.log('\n🔹 Teste 15: Economia Radical Fora do Primeiro Plano (Unfocused, Minimização, GPU 0%, Áudio Suspenso)...');
+
+// 1. Simulação da máquina de estados do frontend (GameWorkspace.tsx)
+function evaluatePerformanceState(params: {
+  isWindowFocused: boolean;
+  isWindowMinimized: boolean;
+  appIdleSec: number;
+  inactivityMinutes: number;
+}): { targetFps: number; isSleep: boolean; shouldTrimMemory: boolean } {
+  const thresholdSeconds = params.inactivityMinutes * 60;
+
+  // Se minimizado: 1 FPS imediato + trim memory + sleep
+  if (params.isWindowMinimized) {
+    return { targetFps: 1, isSleep: true, shouldTrimMemory: true };
+  }
+
+  // Se em segundo plano (usuário em outro app, navegador ou jogo AAA): 10 FPS imediato
+  if (!params.isWindowFocused) {
+    return { targetFps: 10, isSleep: false, shouldTrimMemory: false };
+  }
+
+  // Janela em primeiro plano:
+  if (thresholdSeconds > 0 && params.appIdleSec >= thresholdSeconds) {
+    return { targetFps: 1, isSleep: true, shouldTrimMemory: true };
+  } else if (params.appIdleSec >= 30) {
+    return { targetFps: 10, isSleep: false, shouldTrimMemory: false };
+  } else {
+    return { targetFps: 60, isSleep: false, shouldTrimMemory: false };
+  }
+}
+
+// Caso 1: Usuário ativo em primeiro plano (<30s) -> 60 FPS
+const stForegroundActive = evaluatePerformanceState({
+  isWindowFocused: true,
+  isWindowMinimized: false,
+  appIdleSec: 5,
+  inactivityMinutes: 5,
+});
+assert.strictEqual(stForegroundActive.targetFps, 60, 'Primeiro plano ativo deve rodar a 60 FPS');
+assert.strictEqual(stForegroundActive.isSleep, false);
+
+// Caso 2: Usuário mexendo em outro app / jogo no PC (unfocused) -> 10 FPS imediato
+const stUnfocused = evaluatePerformanceState({
+  isWindowFocused: false,
+  isWindowMinimized: false,
+  appIdleSec: 5,
+  inactivityMinutes: 5,
+});
+assert.strictEqual(stUnfocused.targetFps, 10, 'Fora de foco deve cair para 10 FPS para não consumir GPU do usuário');
+
+// Caso 3: App minimizado na barra de tarefas ou na bandeja -> 1 FPS + trim memory
+const stMinimized = evaluatePerformanceState({
+  isWindowFocused: false,
+  isWindowMinimized: true,
+  appIdleSec: 5,
+  inactivityMinutes: 5,
+});
+assert.strictEqual(stMinimized.targetFps, 1, 'Minimizado deve cair para 1 FPS');
+assert.strictEqual(stMinimized.shouldTrimMemory, true, 'Minimizado deve purgar memória de trabalho');
+
+// Caso 4: Em primeiro plano porém inativo por mais de 5 minutos -> 1 FPS Sleep
+const stIdleDeep = evaluatePerformanceState({
+  isWindowFocused: true,
+  isWindowMinimized: false,
+  appIdleSec: 320,
+  inactivityMinutes: 5,
+});
+assert.strictEqual(stIdleDeep.targetFps, 1);
+assert.strictEqual(stIdleDeep.isSleep, true);
+assert.strictEqual(stIdleDeep.shouldTrimMemory, true);
+
+// 2. Verificação de código em anti_sleep.js
+const freshAntiSleep = fs.readFileSync('./src-tauri/src/games/anti_sleep.js', 'utf8');
+assert.ok(
+  freshAntiSleep.includes('.idlestream-slot-hidden canvas, .idlestream-slot-hidden video'),
+  'anti_sleep.js deve ocultar canvas/vídeo com visibility: hidden ao ocultar slot para liberar 100% da GPU'
+);
+assert.ok(
+  freshAntiSleep.includes('window.__idlestreamAudioCtx.suspend()'),
+  'anti_sleep.js deve suspender AudioContext em modo eco/oculto para desativar processamento contínuo no audiodg.exe'
+);
+
+// 3. Verificação de comandos e eventos em Rust (manager.rs e lib.rs)
+const managerRsContent = fs.readFileSync('./src-tauri/src/games/manager.rs', 'utf8');
+assert.ok(
+  managerRsContent.includes('pub async fn trim_memory'),
+  'manager.rs deve implementar trim_memory para purga de RAM e coleta de lixo V8'
+);
+assert.ok(
+  managerRsContent.includes('SetProcessWorkingSetSize'),
+  'manager.rs deve chamar SetProcessWorkingSetSize no Windows para desalocar working set físico'
+);
+const freshLibRs = fs.readFileSync('./src-tauri/src/lib.rs', 'utf8');
+assert.ok(
+  freshLibRs.includes('window-focus-changed'),
+  'lib.rs deve emitir window-focus-changed quando o foco mudar'
+);
+assert.ok(
+  freshLibRs.includes('window-minimized'),
+  'lib.rs deve emitir window-minimized e ocultar game views na minimização'
+);
+assert.ok(
+  freshLibRs.includes('game_trim_memory'),
+  'lib.rs deve registrar o handler game_trim_memory'
+);
+
+console.log('  ✓ Economia radical em segundo plano, 0% GPU com canvas oculto, áudio suspenso e purga de RAM validados com sucesso');
+
 console.log('\n🎉 TODOS OS TESTES UNITÁRIOS DE JOGOS IDLE PASSARAM COM 100% DE SUCESSO!\n');

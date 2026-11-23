@@ -1,10 +1,12 @@
-// Observador passivo de confirmacao de voto (somente leitura, exclusivamente em topidle.com).
+// Observador passivo de confirmacao de voto (somente leitura, exclusivamente em idlehub.io e topidle.com).
 // Nunca interage com formularios nem contorna CAPTCHAs - apenas sinaliza na interface
 // do IdleStream quando o site exibir confirmacao de voto concluido.
 (function () {
   try {
     const host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
-    if (!host || (host !== 'topidle.com' && !host.endsWith('.topidle.com'))) return;
+    const isIdleHub = host === 'idlehub.io' || host.endsWith('.idlehub.io');
+    const isTopIdle = host === 'topidle.com' || host.endsWith('.topidle.com');
+    if (!host || (!isIdleHub && !isTopIdle)) return;
     if (window.__idlestreamVoteObserverInstalled) return;
     window.__idlestreamVoteObserverInstalled = true;
 
@@ -26,6 +28,8 @@
       /thanks\s+for\s+voting/i,
       /voc[e\u00ea]\s+j[a\u00e1]\s+votou/i,
       /already\s+voted/i,
+      /each\s+account\s+votes\s+once\s+every\s+24\s*h/i,
+      /cada\s+conta\s+vota\s+uma\s+vez\s+a\s+cada\s+24/i,
     ];
 
     function emitHint(reason) {
@@ -39,7 +43,7 @@
       } catch (_) {}
 
       try {
-        const orig = document.title || 'TopIdle';
+        const orig = document.title || (isIdleHub ? 'IdleHub' : 'TopIdle');
         document.title = '__IDLESTREAM_VOTE_HINT__|' + reason + '|' + orig;
         setTimeout(() => {
           if (document.title.startsWith('__IDLESTREAM_VOTE_HINT__|')) {

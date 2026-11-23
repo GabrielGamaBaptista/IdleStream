@@ -25,6 +25,34 @@ import {
   Battery,
 } from 'lucide-react';
 
+const IdleDurationDisplay: React.FC<{ lastActivityTimeRef: React.MutableRefObject<number> }> = React.memo(
+  ({ lastActivityTimeRef }) => {
+    const [seconds, setSeconds] = useState<number>(() => {
+      return Math.floor((Date.now() - (lastActivityTimeRef.current || Date.now())) / 1000);
+    });
+
+    useEffect(() => {
+      const update = async () => {
+        const appIdleSec = Math.floor((Date.now() - (lastActivityTimeRef.current || Date.now())) / 1000);
+        let systemIdleSec = 0;
+        try {
+          systemIdleSec = await gamePlatformService.getSystemIdleSeconds();
+        } catch (_) {}
+        setSeconds(Math.min(appIdleSec, systemIdleSec));
+      };
+      update();
+      const id = setInterval(update, 1000);
+      return () => clearInterval(id);
+    }, [lastActivityTimeRef]);
+
+    return (
+      <span className="font-mono font-bold text-amber-300">
+        {Math.floor(seconds / 60)}m {seconds % 60}s
+      </span>
+    );
+  }
+);
+
 export const GameWorkspace: React.FC = () => {
   const { config, updateGameSlot, isImmersiveMode, setImmersiveMode, gameStates, slotSnapshots } = useAppStore();
   const gameSlots = config.game_slots || [];
@@ -70,7 +98,11 @@ export const GameWorkspace: React.FC = () => {
     return 5; // Padrão: 5 minutos
   });
   const [isIdleDimmed, setIsIdleDimmed] = useState<boolean>(false);
-  const [idleDurationSec, setIdleDurationSec] = useState<number>(0);
+  const [isWindowFocused, setIsWindowFocused] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return true;
+    return document.hasFocus();
+  });
+  const [isWindowMinimized, setIsWindowMinimized] = useState<boolean>(false);
   const lastActivityTimeRef = useRef<number>(Date.now());
 
   const handleInactivityChange = (mins: number) => {
@@ -85,16 +117,74 @@ export const GameWorkspace: React.FC = () => {
 
   const wakeUpFromIdle = useCallback(() => {
     lastActivityTimeRef.current = Date.now();
+    setIsWindowFocused(true);
+    setIsWindowMinimized(false);
     if (isIdleDimmed) {
       setIsIdleDimmed(false);
     }
+    if (currentDynamicFpsRef.current !== 60) {
+      currentDynamicFpsRef.current = 60;
+      setCurrentDynamicFps(60);
+      gamePlatformService.setFps(60).catch(() => {});
+    }
+  }, [isIdleDimmed]);
+
+  // Monitora foco da janela, minimização e restauração da bandeja/tarefas
+  useEffect(() => {
+    const handleFocus = () => {
+      setIsWindowFocused(true);
+      setIsWindowMinimized(false);
+      lastActivityTimeRef.current = Date.now();
+      if (currentDynamicFpsRef.current !== 60 && !isIdleDimmed) {
+        currentDynamicFpsRef.current = 60;
+        setCurrentDynamicFps(60);
+        gamePlatformService.setFps(60).catch(() => {});
+      }
+    };
+
+    const handleBlur = () => {
+      setIsWindowFocused(false);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+
+    let unlistenFocus: (() => void) | undefined;
+    let unlistenMin: (() => void) | undefined;
+    let unlistenRestored: (() => void) | undefined;
+
+    listen<boolean>('window-focus-changed', (e) => {
+      if (e.payload) {
+        handleFocus();
+      } else {
+        handleBlur();
+      }
+    }).then((u) => { unlistenFocus = u; }).catch(() => {});
+
+    listen('window-minimized', () => {
+      setIsWindowMinimized(true);
+      setIsWindowFocused(false);
+    }).then((u) => { unlistenMin = u; }).catch(() => {});
+
+    listen('window-restored', () => {
+      handleFocus();
+    }).then((u) => { unlistenRestored = u; }).catch(() => {});
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      if (unlistenFocus) unlistenFocus();
+      if (unlistenMin) unlistenMin();
+      if (unlistenRestored) unlistenRestored();
+    };
   }, [isIdleDimmed]);
 
   // Escutar eventos de atividade do usuário na janela e nas WebViews filhas (via bridge e window.__onUserActivity)
   useEffect(() => {
     const handleUserActivity = () => {
       lastActivityTimeRef.current = Date.now();
-      if (currentDynamicFpsRef.current !== 60) {
+      setIsWindowFocused(true);
+      if (currentDynamicFpsRef.current !== 60 && !isIdleDimmed && !isWindowMinimized) {
         currentDynamicFpsRef.current = 60;
         setCurrentDynamicFps(60);
         gamePlatformService.setFps(60).catch(() => {});
@@ -120,35 +210,53 @@ export const GameWorkspace: React.FC = () => {
       window.removeEventListener('touchstart', handleUserActivity);
       window.removeEventListener('wheel', handleUserActivity);
     };
-  }, [isIdleDimmed]);
+  }, [isIdleDimmed, isWindowMinimized]);
 
-  // Loop de monitoramento de inatividade: 60 FPS ativo -> 10 FPS após 30s -> 1 FPS Sleep
+  // Loop de monitoramento inteligente de performance e economia:
+  // - 60 FPS ativo: estritamente em primeiro plano, focado e com interação recente (<30s)
+  // - 10 FPS eco: se o usuário estiver usando outro app/jogo no PC (unfocused) ou inativo por >30s no app
+  // - 1 FPS sleep: se a janela estiver minimizada, oculta, ou inativa por >inactivityMinutes
   useEffect(() => {
     const interval = setInterval(async () => {
       const thresholdSeconds = inactivityMinutes * 60;
       const appIdleSec = Math.floor((Date.now() - lastActivityTimeRef.current) / 1000);
 
-      let systemIdleSec = 0;
-      try {
-        systemIdleSec = await gamePlatformService.getSystemIdleSeconds();
-      } catch (_) {}
-
-      // Consideramos inatividade REAL apenas quando AMBOS o app e o sistema estiverem ociosos (mínimo entre ambos)
-      const currentIdleSec = Math.min(appIdleSec, systemIdleSec);
-      setIdleDurationSec(currentIdleSec);
-
-      if (thresholdSeconds > 0 && currentIdleSec >= thresholdSeconds) {
-        // Modo Sleep profundo configurado pelo usuário (1 FPS + ocultar webviews)
+      // 1. Minimizada: máxima economia imediata (1 FPS + corte total de GPU/RAM)
+      if (isWindowMinimized) {
         if (currentDynamicFpsRef.current !== 1) {
           currentDynamicFpsRef.current = 1;
           setCurrentDynamicFps(1);
           gamePlatformService.setFps(1).catch(() => {});
+          gamePlatformService.trimMemory().catch(() => {});
+        }
+        return;
+      }
+
+      // 2. Janela em segundo plano (usuário mexendo em outro app, navegador ou jogando outro jogo):
+      // Reduz imediatamente para 10 FPS (alivia GPU em 85% e não disputa recursos do PC)
+      if (!isWindowFocused) {
+        if (currentDynamicFpsRef.current !== 10 && currentDynamicFpsRef.current !== 1) {
+          currentDynamicFpsRef.current = 10;
+          setCurrentDynamicFps(10);
+          gamePlatformService.setFps(10).catch(() => {});
+        }
+        return;
+      }
+
+      // 3. Janela em primeiro plano e focada: verifica tempo de inatividade no IdleStream
+      if (thresholdSeconds > 0 && appIdleSec >= thresholdSeconds) {
+        // Sleep Mode profundo configurado pelo usuário (1 FPS + ocultar webviews)
+        if (currentDynamicFpsRef.current !== 1) {
+          currentDynamicFpsRef.current = 1;
+          setCurrentDynamicFps(1);
+          gamePlatformService.setFps(1).catch(() => {});
+          gamePlatformService.trimMemory().catch(() => {});
         }
         if (!isIdleDimmed && activeSlots.length > 0) {
           setIsIdleDimmed(true);
         }
-      } else if (currentIdleSec >= 30) {
-        // Inatividade após 30s: reduz performance ao mínimo para poupar GPU (10 FPS)
+      } else if (appIdleSec >= 30) {
+        // Inatividade após 30s: reduz performance para poupar GPU (10 FPS)
         if (currentDynamicFpsRef.current !== 10) {
           currentDynamicFpsRef.current = 10;
           setCurrentDynamicFps(10);
@@ -158,7 +266,7 @@ export const GameWorkspace: React.FC = () => {
           setIsIdleDimmed(false);
         }
       } else {
-        // Usuário ativo interagindo: performance aumentada ao máximo (60 FPS)
+        // Usuário em primeiro plano interagindo ativamente (<30s): máxima fluidez (60 FPS VSync)
         if (currentDynamicFpsRef.current !== 60) {
           currentDynamicFpsRef.current = 60;
           setCurrentDynamicFps(60);
@@ -171,7 +279,7 @@ export const GameWorkspace: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [inactivityMinutes, isIdleDimmed, activeSlots.length]);
+  }, [inactivityMinutes, isIdleDimmed, activeSlots.length, isWindowFocused, isWindowMinimized]);
 
   // Referências para os containers DOM onde cada WebView deve se posicionar
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -264,10 +372,10 @@ export const GameWorkspace: React.FC = () => {
 
   // Função para calcular e sincronizar as coordenadas de cada slot com a plataforma nativa
   const syncBounds = useCallback(() => {
-    // Se o modal de configurações estiver aberto ou o modo de economia por inatividade estiver ativo,
+    // Se o modal de configurações estiver aberto, o modo sleep estiver ativo ou a janela estiver minimizada,
     // ocultamos temporariamente as WebViews nativas (caindo para 1 FPS e liberando a GPU).
     const isModalOpen = editingSlot !== null;
-    const shouldHideWebviews = isModalOpen || isIdleDimmed;
+    const shouldHideWebviews = isModalOpen || isIdleDimmed || isWindowMinimized;
 
     const bounds: SlotBounds[] = [];
     const wsEl = workspaceRef.current;
@@ -338,7 +446,7 @@ export const GameWorkspace: React.FC = () => {
         console.warn('Falha ao atualizar bounds de jogos:', e);
       });
     }
-  }, [gameSlots, activeSlots, layoutMode, focusedSlotId, editingSlot, isIdleDimmed]);
+  }, [gameSlots, activeSlots, layoutMode, focusedSlotId, editingSlot, isIdleDimmed, isWindowMinimized]);
 
   // Fechar modal ao pressionar a tecla Escape ou sair do modo imersivo
   useEffect(() => {
@@ -356,12 +464,12 @@ export const GameWorkspace: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [editingSlot, isImmersiveMode, isToolbarVisible, setImmersiveMode]);
 
-  // Recalcular limites quando o modo de inatividade, modo imersivo ou visibilidade da barra mudar
+  // Recalcular limites quando o modo de inatividade, minimização, modo imersivo ou visibilidade da barra mudar
   useEffect(() => {
     syncBounds();
     const t = setTimeout(syncBounds, 80);
     return () => clearTimeout(t);
-  }, [isIdleDimmed, isImmersiveMode, isToolbarVisible, syncBounds]);
+  }, [isIdleDimmed, isWindowMinimized, isImmersiveMode, isToolbarVisible, syncBounds]);
 
   // Monitorar redimensionamento, foco na janela e restauração da bandeja do sistema
   useEffect(() => {
@@ -824,9 +932,7 @@ export const GameWorkspace: React.FC = () => {
                 <div className="w-px h-6 bg-neutral-800" />
                 <div className="text-center">
                   <span className="text-[10px] text-neutral-500 uppercase font-semibold block">Tempo Inativo</span>
-                  <span className="font-mono font-bold text-amber-300">
-                    {Math.floor(idleDurationSec / 60)}m {idleDurationSec % 60}s
-                  </span>
+                  <IdleDurationDisplay lastActivityTimeRef={lastActivityTimeRef} />
                 </div>
               </div>
 

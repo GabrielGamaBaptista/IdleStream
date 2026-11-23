@@ -1,6 +1,6 @@
 use crate::config::{
-    default_vote_accounts, ConfigStore, VoteAccountConfig, DEFAULT_TOPIDLE_GAME_URL,
-    VOTE_COOLDOWN_SECONDS,
+    default_vote_accounts, ConfigStore, VoteAccountConfig, DEFAULT_IDLEHUB_GAME_URL,
+    DEFAULT_TOPIDLE_GAME_URL, VOTE_COOLDOWN_SECONDS,
 };
 use crate::votes::policy::{
     build_vote_target_url, ensure_google_select_account, is_allowed_vote_navigation,
@@ -13,14 +13,14 @@ fn test_default_vote_accounts_initialization() {
     let accounts = default_vote_accounts();
     assert_eq!(accounts.len(), 4, "Devem existir exatamente 4 contas de voto padrão");
 
-    let expected_names = ["GGB2006", "GGB2006_2", "GGB2006_3", "GGB2006_4"];
+    let expected_names = ["GGB2006_", "GGB2006_2", "GGB2006_3", "GGB2006_4"];
     let expected_slots = ["slot-1", "slot-2", "slot-3", "slot-4"];
 
     for (idx, acc) in accounts.iter().enumerate() {
         assert_eq!(acc.id, format!("vote-{}", idx + 1));
         assert_eq!(acc.label, expected_names[idx]);
         assert_eq!(acc.player_identifier, expected_names[idx]);
-        assert_eq!(acc.base_url, DEFAULT_TOPIDLE_GAME_URL);
+        assert_eq!(acc.base_url, DEFAULT_IDLEHUB_GAME_URL);
         assert_eq!(acc.linked_game_slot_id.as_deref(), Some(expected_slots[idx]));
         assert!(acc.share_game_profile);
         assert!(acc.notifications_enabled);
@@ -31,42 +31,52 @@ fn test_default_vote_accounts_initialization() {
 
 #[test]
 fn test_build_vote_target_url_normalization() {
-    let url1 = build_vote_target_url(DEFAULT_TOPIDLE_GAME_URL, "GGB2006_3").unwrap();
+    // 1. IdleHub (Nova plataforma padrão)
+    let url_hub = build_vote_target_url(DEFAULT_IDLEHUB_GAME_URL, "GGB2006_").unwrap();
     assert_eq!(
-        url1.as_str(),
-        "https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006_3"
+        url_hub.as_str(),
+        "https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar"
     );
 
-    // Mesmo que a URL base já contenha playerIdentifier antigo, deve substituir sem duplicar
-    let url2 = build_vote_target_url(
-        "https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=OLD&ref=idle",
-        "GGB2006_4",
+    // Substitui jogador/playerIdentifier e adiciona votar=1 e hash #votar
+    let url_hub_clean = build_vote_target_url(
+        "https://idlehub.io/jogo/pokeidle-io?votar=0&jogador=OLD&playerIdentifier=OLD2&ref=idle",
+        "GGB2006_2",
     )
     .unwrap();
     assert_eq!(
-        url2.as_str(),
-        "https://topidle.com/jogo/pokeidle-io-5f9969?ref=idle&playerIdentifier=GGB2006_4"
+        url_hub_clean.as_str(),
+        "https://idlehub.io/jogo/pokeidle-io?votar=1&ref=idle&jogador=GGB2006_2#votar"
     );
 
-    // Aceita domínio sem esquema e completa com https://
-    let url3 = build_vote_target_url("topidle.com/jogo/pokeidle-io-5f9969", "GGB2006").unwrap();
+    // Aceita domínio idlehub.io puro sem esquema
+    let url_hub_raw = build_vote_target_url("idlehub.io/jogo/pokeidle-io", "GGB2006_3").unwrap();
     assert_eq!(
-        url3.as_str(),
-        "https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006"
+        url_hub_raw.as_str(),
+        "https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_3#votar"
+    );
+
+    // 2. TopIdle (Legado preservado)
+    let url_top = build_vote_target_url(DEFAULT_TOPIDLE_GAME_URL, "GGB2006_3").unwrap();
+    assert_eq!(
+        url_top.as_str(),
+        "https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006_3"
     );
 
     // Rejeita domínios externos e esquemas inseguros
     assert!(build_vote_target_url("https://pokeidle.io/app", "GGB2006").is_err());
-    assert!(build_vote_target_url("http://topidle.com/jogo/pokeidle-io-5f9969", "GGB2006").is_err());
-    assert!(build_vote_target_url("https://evil-topidle.com/", "GGB2006").is_err());
+    assert!(build_vote_target_url("http://idlehub.io/jogo/pokeidle-io", "GGB2006").is_err());
+    assert!(build_vote_target_url("https://evil-idlehub.io/", "GGB2006").is_err());
 }
 
 #[test]
 fn test_strict_vote_navigation_whitelist() {
     let allow = [
+        "https://idlehub.io/jogo/pokeidle-io?votar=1&jogador=GGB2006_#votar",
+        "https://www.idlehub.io/api/auth/entrar?volta=%2Fjogo%2Fpokeidle-io",
         "https://topidle.com/jogo/pokeidle-io-5f9969?playerIdentifier=GGB2006_3",
         "https://www.topidle.com/api/auth/callback/google",
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id=123&redirect_uri=https://topidle.com",
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id=123&redirect_uri=https://idlehub.io",
         "https://accounts.youtube.com/accounts/SetSID",
         "https://myaccount.google.com/",
         "https://challenges.cloudflare.com/cdn-cgi/challenge-platform",
@@ -83,13 +93,14 @@ fn test_strict_vote_navigation_whitelist() {
     assert!(!is_allowed_vote_navigation(&Url::parse("about:blank").unwrap(), false));
 
     let block = [
+        "http://idlehub.io/jogo/pokeidle-io",
         "http://topidle.com/jogo/pokeidle-io-5f9969",
         "https://pokeidle.io/app",
         "https://www.google.com/search?q=pokeidle",
         "https://www.youtube.com/watch?v=123",
         "https://discord.com/invite/pokeidle",
-        "https://evil-topidle.com/login",
-        "https://topidle.com.attacker.net/phish",
+        "https://evil-idlehub.io/login",
+        "https://idlehub.io.attacker.net/phish",
         "javascript:alert(1)",
     ];
     for raw in block {
@@ -194,7 +205,8 @@ fn test_config_store_vote_accounts_migration_and_persistence() {
     let store = ConfigStore::new_with_path(config_file.clone());
     let mut cfg = store.load();
     assert_eq!(cfg.vote_accounts.len(), 4);
-    assert_eq!(cfg.vote_accounts[0].player_identifier, "GGB2006");
+    assert_eq!(cfg.vote_accounts[0].player_identifier, "GGB2006_");
+    assert_eq!(cfg.vote_accounts[0].base_url, DEFAULT_IDLEHUB_GAME_URL);
     assert_eq!(cfg.vote_accounts[1].player_identifier, "GGB2006_2");
     assert_eq!(cfg.vote_accounts[2].player_identifier, "GGB2006_3");
     assert_eq!(cfg.vote_accounts[3].player_identifier, "GGB2006_4");

@@ -42,20 +42,18 @@
     window.addEventListener('focusout', stopPropagation, true);
 
     // ============================================================
-    // 3. LOOP DE TICK ININTERRUPTO DE REQUESTANIMATIONFRAME (30 FPS em Eco, 60 FPS normal)
+    // 3. DESPACHANTE HÍBRIDO DE REQUESTANIMATIONFRAME (VSync Nativo em 60 FPS, Throttle Preciso em Eco/Sleep)
     // ============================================================
+    const _NativeRAF = (typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (cb) => setTimeout(() => cb(performance.now()), 16));
+    const _NativeCAF = (typeof window.cancelAnimationFrame === 'function'
+      ? window.cancelAnimationFrame.bind(window)
+      : (id) => clearTimeout(id));
+
     const pendingCallbacks = new Map();
     let nextId = 1;
-
-    window.requestAnimationFrame = (callback) => {
-      const id = nextId++;
-      pendingCallbacks.set(id, callback);
-      return id;
-    };
-
-    window.cancelAnimationFrame = (id) => {
-      pendingCallbacks.delete(id);
-    };
+    let lastNativeRafTime = performance.now();
 
     const flushCallbacks = () => {
       const now = performance.now();
@@ -73,11 +71,48 @@
     };
     window.__flushIdleStreamCallbacks = flushCallbacks;
 
-    // Loop dinâmico adaptativo imune a throttling com suporte a 60 FPS, 30 FPS e Super Economia (10 FPS)
-    // Quando o slot está oculto ou na bandeja, o timer passa a dormir 1000ms (1 FPS), permitindo
-    // que a CPU entre em C-states profundos e os coolers parem completamente.
+    window.requestAnimationFrame = (callback) => {
+      const isFullSpeed = (targetFps >= 60) && !isEcoMode && !isSlotHidden;
+      if (isFullSpeed) {
+        // Modo 60 FPS Ativo: VSync nativo de hardware do monitor (60Hz, 120Hz, 144Hz) com zero jitter
+        return _NativeRAF((timestamp) => {
+          lastNativeRafTime = performance.now();
+          try {
+            callback(timestamp);
+          } catch (err) {
+            console.error('[IdleStream Anti-Sleep] Native rAF callback error:', err);
+          }
+        });
+      }
+
+      // Modo Eco (30 FPS), Super Eco (10 FPS), Sleep (1 FPS) ou Oculto: enfileira para throttle adaptativo
+      const id = nextId++;
+      pendingCallbacks.set(id, callback);
+      return id;
+    };
+
+    window.cancelAnimationFrame = (id) => {
+      pendingCallbacks.delete(id);
+      _NativeCAF(id);
+    };
+
+    // Loop dinâmico adaptativo com suporte a 60 FPS (watchdog de contingência), 30 FPS e Super Economia (10 FPS / 1 FPS).
     let flushTimer = null;
     const scheduleNextFlush = () => {
+      const isFullSpeed = (targetFps >= 60) && !isEcoMode && !isSlotHidden;
+      if (isFullSpeed) {
+        // Em 60 FPS ativo, agendamos um watchdog protetor a cada 100ms: se o navegador pausar rAF em segundo plano,
+        // o watchdog despacha os callbacks para garantir continuidade do farm sem travar o jogo.
+        flushTimer = setTimeout(() => {
+          const delta = performance.now() - lastNativeRafTime;
+          if (delta >= 120) {
+            flushCallbacks();
+          }
+          scheduleNextFlush();
+        }, 100);
+        return;
+      }
+
       const effectiveFps = isSlotHidden ? 1 : (targetFps || 30);
       const delay = Math.max(8, Math.round(1000 / effectiveFps));
       flushTimer = setTimeout(() => {
@@ -316,6 +351,12 @@
               }
             }
           } catch (_) {}
+          // Suspende o AudioContext Web Audio para zerar consumo de CPU no audiodg.exe
+          try {
+            if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'running') {
+              window.__idlestreamAudioCtx.suspend().catch(() => {});
+            }
+          } catch (_) {}
           // Força coleta de lixo JS para liberar memória quando ocultado
           if (typeof window.gc === 'function') {
             try {
@@ -326,6 +367,13 @@
           htmlEl.classList.remove('idlestream-slot-hidden');
           // Limpa callbacks acumulados obsoletos para não sobrecarregar a GPU na restauração (Anti-TDR/Crash)
           pendingCallbacks.clear();
+          if (!isEcoMode && targetFps >= 60) {
+            try {
+              if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'suspended') {
+                window.__idlestreamAudioCtx.resume().catch(() => {});
+              }
+            } catch (_) {}
+          }
         }
       }
       // Warm-up suave: quando reaparece, aguarda 100ms para DirectX/DWM estabilizarem antes dos ticks
@@ -355,6 +403,9 @@
       hiddenCss.textContent = `
         .idlestream-slot-hidden * {
           animation-play-state: paused !important;
+        }
+        .idlestream-slot-hidden canvas, .idlestream-slot-hidden video {
+          visibility: hidden !important;
         }
       `;
       (document.head || document.documentElement).appendChild(hiddenCss);
@@ -393,6 +444,13 @@
         document.querySelectorAll('audio, video').forEach((m) => {
           m.muted = false;
         });
+        if (!isSlotHidden && targetFps >= 60) {
+          try {
+            if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'suspended') {
+              window.__idlestreamAudioCtx.resume().catch(() => {});
+            }
+          } catch (_) {}
+        }
       } else {
         document.querySelectorAll('audio, video').forEach((m) => {
           // NUNCA mutar o áudio silencioso de anti-throttling para manter o IsAudible do Chromium ativo
@@ -400,6 +458,11 @@
             m.muted = true;
           }
         });
+        try {
+          if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'running') {
+            window.__idlestreamAudioCtx.suspend().catch(() => {});
+          }
+        } catch (_) {}
         if (typeof window.gc === 'function') {
           try {
             window.gc();
@@ -549,7 +612,7 @@
     });
 
     // ============================================================
-    // 11. POKEIDLE WEBSOCKET & STATE INTERCEPTOR (FEATURE 7)
+    // 11. POKEIDLE WEBSOCKET & STATE INTERCEPTOR (FEATURE 7 - AUDITADO)
     // ============================================================
     try {
       const isPokeIdle = /(^|\.)pokeidle\.io$/.test(location.hostname) || /localhost/.test(location.hostname);
@@ -569,26 +632,100 @@
 
         let xpHistory = []; // { xp, time }
         let lastTitleEmit = 0;
+        let lastEmittedPayload = '';
         let emitTimer = null;
+
+        const updateTrainerStateFrom = (obj) => {
+          if (!obj || typeof obj !== 'object') return false;
+          const st = window.__idlestream_game_state;
+          const now = Date.now();
+          let changed = false;
+
+          // Nick do treinador
+          const rawNick = obj.nick !== undefined ? obj.nick : obj.nome;
+          if (rawNick && st.nick !== String(rawNick)) {
+            st.nick = String(rawNick);
+            changed = true;
+          }
+
+          // Nível estrito do treinador (ignora Pokémons selvagens ou valores decrescentes anômalos)
+          const rawLvl = obj.level !== undefined ? obj.level : obj.nivel;
+          if (rawLvl !== undefined && rawLvl !== null) {
+            const numLvl = Math.floor(Number(rawLvl));
+            if (!isNaN(numLvl) && numLvl > 0) {
+              if (st.level === null || numLvl >= st.level) {
+                if (st.level !== numLvl) {
+                  st.level = numLvl;
+                  changed = true;
+                }
+              }
+            }
+          }
+
+          // Moedas e Recursos do treinador
+          if (obj.gold !== undefined && obj.gold !== st.gold) { st.gold = Number(obj.gold); changed = true; }
+          if (obj.ouro !== undefined && obj.ouro !== st.gold) { st.gold = Number(obj.ouro); changed = true; }
+          if (obj.diamonds !== undefined && obj.diamonds !== st.diamonds) { st.diamonds = Number(obj.diamonds); changed = true; }
+          if (obj.diamantes !== undefined && obj.diamantes !== st.diamonds) { st.diamonds = Number(obj.diamantes); changed = true; }
+
+          // Hunt atual
+          if (obj.huntSlug !== undefined && obj.huntSlug !== st.huntSlug) { st.huntSlug = String(obj.huntSlug); changed = true; }
+          if (obj.hunt !== undefined && typeof obj.hunt === 'string' && obj.hunt !== st.huntSlug) { st.huntSlug = obj.hunt; changed = true; }
+
+          // Bônus Twitch / Kick
+          if (obj.bonusXp && typeof obj.bonusXp === 'object') {
+            const bx = obj.bonusXp;
+            if (bx.twitchSecs !== undefined && bx.twitchSecs !== st.bonusTwitchSecs) { st.bonusTwitchSecs = Number(bx.twitchSecs); changed = true; }
+            else if (bx.twitch !== undefined && bx.twitch !== st.bonusTwitchSecs) { st.bonusTwitchSecs = Number(bx.twitch); changed = true; }
+            if (bx.kickSecs !== undefined && bx.kickSecs !== st.bonusKickSecs) { st.bonusKickSecs = Number(bx.kickSecs); changed = true; }
+            else if (bx.kick !== undefined && bx.kick !== st.bonusKickSecs) { st.bonusKickSecs = Number(bx.kick); changed = true; }
+          }
+          if (obj.twitch !== undefined && typeof obj.twitch === 'number' && obj.twitch !== st.bonusTwitchSecs) {
+            st.bonusTwitchSecs = obj.twitch;
+            changed = true;
+          }
+          if (obj.kick !== undefined && typeof obj.kick === 'number' && obj.kick !== st.bonusKickSecs) {
+            st.bonusKickSecs = obj.kick;
+            changed = true;
+          }
+
+          // XP e taxa horária
+          if (typeof obj.xp === 'number') {
+            if (st.xp !== obj.xp) {
+              st.xp = obj.xp;
+              changed = true;
+              xpHistory.push({ xp: obj.xp, time: now });
+              const cutoff = now - 5 * 60 * 1000;
+              xpHistory = xpHistory.filter(h => h.time >= cutoff);
+              if (xpHistory.length >= 2) {
+                const oldest = xpHistory[0];
+                const newest = xpHistory[xpHistory.length - 1];
+                const deltaXp = newest.xp - oldest.xp;
+                const deltaHours = (newest.time - oldest.time) / 3600000;
+                if (deltaHours > 0.0005 && deltaXp >= 0) {
+                  st.xpRatePerHour = Math.round(deltaXp / deltaHours);
+                }
+              }
+            }
+          }
+
+          if (changed) {
+            st.updatedAt = now;
+            scheduleEmit(false);
+          }
+          return changed;
+        };
 
         const emitGameStateToHost = () => {
           try {
             const st = window.__idlestream_game_state;
-            // Fallback para window.estado do PokeIdle se campos estiverem vazios
+            // Fallback passivo para window.estado do PokeIdle se campos estiverem vazios
             const est = window.estado;
             if (est && typeof est === 'object') {
               const tr = est.treinador || est.jogador || est;
-              if (!st.nick && tr.nick) st.nick = String(tr.nick);
-              if (!st.nick && tr.nome) st.nick = String(tr.nome);
-              if (st.level === null && tr.level !== undefined) st.level = Number(tr.level);
-              if (st.level === null && tr.nivel !== undefined) st.level = Number(tr.nivel);
-              if (st.xp === null && tr.xp !== undefined) st.xp = Number(tr.xp);
-              if (st.gold === null && tr.gold !== undefined) st.gold = Number(tr.gold);
-              if (st.gold === null && tr.ouro !== undefined) st.gold = Number(tr.ouro);
-              if (st.diamonds === null && tr.diamantes !== undefined) st.diamonds = Number(tr.diamantes);
-              if (st.diamonds === null && tr.diamonds !== undefined) st.diamonds = Number(tr.diamonds);
-              if (!st.huntSlug && est.huntSlug) st.huntSlug = String(est.huntSlug);
-              if (!st.huntSlug && est.hunt) st.huntSlug = String(est.hunt);
+              if (st.level === null || !st.nick) {
+                updateTrainerStateFrom(tr);
+              }
             }
 
             const payload = {
@@ -605,8 +742,17 @@
             };
 
             const serialized = JSON.stringify(payload);
-            document.title = '__IDLESTREAM_GAME_STATE__|' + serialized;
-            lastTitleEmit = Date.now();
+            if (serialized !== lastEmittedPayload) {
+              lastEmittedPayload = serialized;
+              const origTitle = document.title && !document.title.startsWith('__IDLESTREAM_') ? document.title : 'PokeIdle';
+              document.title = '__IDLESTREAM_GAME_STATE__|' + serialized;
+              lastTitleEmit = Date.now();
+              setTimeout(() => {
+                if (document.title.startsWith('__IDLESTREAM_GAME_STATE__|')) {
+                  document.title = origTitle;
+                }
+              }, 80);
+            }
           } catch (_) {}
         };
 
@@ -627,60 +773,36 @@
 
         const processMessageData = (raw) => {
           if (!raw || typeof raw !== 'object') return;
-          const st = window.__idlestream_game_state;
-          const now = Date.now();
-          let changed = false;
+          // IGNORAR expressamente pacotes de batalha / campo para não capturar nível de Pokémon selvagem
+          const tipo = raw.t || (raw.data && raw.data.t);
+          if (tipo === 'campo' || tipo === 'campo.init') return;
 
-          const extractFrom = (obj) => {
-            if (!obj || typeof obj !== 'object') return;
-            if (obj.nick !== undefined && obj.nick !== st.nick) { st.nick = String(obj.nick); changed = true; }
-            if (obj.nome !== undefined && obj.nome !== st.nick) { st.nick = String(obj.nome); changed = true; }
-            if (obj.level !== undefined && obj.level !== st.level) { st.level = Number(obj.level); changed = true; }
-            if (obj.nivel !== undefined && obj.nivel !== st.level) { st.level = Number(obj.nivel); changed = true; }
-            if (obj.gold !== undefined && obj.gold !== st.gold) { st.gold = Number(obj.gold); changed = true; }
-            if (obj.ouro !== undefined && obj.ouro !== st.gold) { st.gold = Number(obj.ouro); changed = true; }
-            if (obj.diamantes !== undefined && obj.diamantes !== st.diamonds) { st.diamonds = Number(obj.diamantes); changed = true; }
-            if (obj.diamonds !== undefined && obj.diamonds !== st.diamonds) { st.diamonds = Number(obj.diamonds); changed = true; }
-            if (obj.huntSlug !== undefined && obj.huntSlug !== st.huntSlug) { st.huntSlug = String(obj.huntSlug); changed = true; }
-            if (obj.hunt !== undefined && typeof obj.hunt === 'string' && obj.hunt !== st.huntSlug) { st.huntSlug = obj.hunt; changed = true; }
-
-            // Bônus Twitch / Kick
-            if (obj.bonusXp && typeof obj.bonusXp === 'object') {
-              const bx = obj.bonusXp;
-              if (bx.twitchSecs !== undefined) { st.bonusTwitchSecs = Number(bx.twitchSecs); changed = true; }
-              else if (bx.twitch !== undefined) { st.bonusTwitchSecs = Number(bx.twitch); changed = true; }
-              if (bx.kickSecs !== undefined) { st.bonusKickSecs = Number(bx.kickSecs); changed = true; }
-              else if (bx.kick !== undefined) { st.bonusKickSecs = Number(bx.kick); changed = true; }
+          // Só processamos pacotes oficiais de treinador: welcome, estado ou deltas
+          if (tipo === 'welcome' || tipo === 'estado') {
+            if (raw.estado && typeof raw.estado === 'object') {
+              updateTrainerStateFrom(raw.estado);
             }
-
-            if (typeof obj.xp === 'number') {
-              st.xp = obj.xp;
-              changed = true;
-              xpHistory.push({ xp: obj.xp, time: now });
-              const cutoff = now - 5 * 60 * 1000;
-              xpHistory = xpHistory.filter(h => h.time >= cutoff);
-              if (xpHistory.length >= 2) {
-                const oldest = xpHistory[0];
-                const newest = xpHistory[xpHistory.length - 1];
-                const deltaXp = newest.xp - oldest.xp;
-                const deltaHours = (newest.time - oldest.time) / 3600000;
-                if (deltaHours > 0.0005 && deltaXp >= 0) {
-                  st.xpRatePerHour = Math.round(deltaXp / deltaHours);
-                }
-              }
-            }
-          };
-
-          extractFrom(raw);
-          if (raw.data) extractFrom(raw.data);
-          if (raw.treinador) extractFrom(raw.treinador);
-          if (raw.jogador) extractFrom(raw.jogador);
-
-          if (changed) {
-            st.updatedAt = now;
-            scheduleEmit(false);
+          } else if (raw.treinador && typeof raw.treinador === 'object') {
+            updateTrainerStateFrom(raw.treinador);
+          } else if (raw.jogador && typeof raw.jogador === 'object') {
+            updateTrainerStateFrom(raw.jogador);
           }
         };
+
+        // Integrar com barramento da extensão Pokeidle Hunt se já carregada
+        const connectWithHuntBus = () => {
+          try {
+            if (window.__pokeidleHunt && typeof window.__pokeidleHunt.on === 'function') {
+              window.__pokeidleHunt.on('estado', (eu) => {
+                if (eu && typeof eu === 'object') {
+                  updateTrainerStateFrom(eu);
+                }
+              });
+            }
+          } catch (_) {}
+        };
+        connectWithHuntBus();
+        window.addEventListener('DOMContentLoaded', connectWithHuntBus, { once: true });
 
         // Interceptar WebSocket nativo
         const _NativeWS = window.WebSocket;
@@ -691,6 +813,11 @@
             sock.addEventListener('message', (ev) => {
               try {
                 if (typeof ev.data === 'string') {
+                  // Filtro rápido por cabeçalho antes de deserializar JSON desnecessário
+                  const head = ev.data.slice(0, 40);
+                  if (head.includes('"t":"campo"') || head.includes('"t":"campo.init"')) {
+                    return; // Passa direto sem parsing pesado de batalha
+                  }
                   const parsed = JSON.parse(ev.data);
                   processMessageData(parsed);
                 }
@@ -706,7 +833,7 @@
           window.WebSocket.CLOSED = _NativeWS.CLOSED;
         }
 
-        // Heartbeat de emissão do estado: a cada 15 segundos força um emit
+        // Heartbeat de emissão do estado: a cada 15 segundos verifica se houve alteração
         setInterval(() => {
           scheduleEmit(true);
         }, 15000);
