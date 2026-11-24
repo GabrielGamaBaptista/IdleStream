@@ -607,8 +607,9 @@
     // ============================================================
     // 10. REPORTE DE ATIVIDADE DO USUÁRIO PARA ANTI-SLEEP / INATIVIDADE
     // ============================================================
-    const reportUserActivity = () => {
+    const reportUserActivity = (e) => {
       try {
+        if (e && 'isTrusted' in e && !e.isTrusted) return;
         if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.reportActivity === 'function') {
           window.IdleStreamSlotBridge.reportActivity();
         }
@@ -618,7 +619,7 @@
       } catch (_) {}
     };
 
-    ['mousedown', 'touchstart', 'keydown', 'wheel', 'pointerdown'].forEach((evtName) => {
+    ['mousedown', 'touchstart', 'keydown'].forEach((evtName) => {
       window.addEventListener(evtName, reportUserActivity, { passive: true, capture: true });
     });
 
