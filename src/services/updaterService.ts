@@ -44,6 +44,31 @@ export async function checkForAppUpdates(currentAppVersion: string): Promise<Uni
       };
     } catch (desktopErr) {
       console.warn('Falha ao verificar update via plugin desktop:', desktopErr);
+      // Fallback gracioso: consulta a API pública do GitHub para verificar se já estamos na versão mais recente
+      try {
+        const response = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+          {
+            headers: {
+              Accept: 'application/vnd.github.v3+json',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const releaseData = await response.json();
+          const parsed = parseGitHubRelease(releaseData, currentAppVersion);
+          if (!parsed.hasUpdate) {
+            return {
+              hasUpdate: false,
+              version: currentAppVersion,
+              platform: 'desktop',
+            };
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn('Fallback GitHub API desktop também falhou:', fallbackErr);
+      }
       throw desktopErr;
     }
   }

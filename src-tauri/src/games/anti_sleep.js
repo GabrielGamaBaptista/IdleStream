@@ -255,11 +255,8 @@
         const style = document.createElement('style');
         style.id = '__idlestream_eco_style__';
         style.textContent = `
-          /* Modo Econômico Ativo: desativa animações e alivia a GPU */
-          .idlestream-eco-mode *, .idlestream-eco-mode *::before, .idlestream-eco-mode *::after {
-            animation-duration: 0.001s !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: 0.001s !important;
+          /* Modo Econômico Ativo: otimização de rendering aliviando a GPU */
+          .idlestream-eco-mode {
             text-shadow: none !important;
             box-shadow: none !important;
           }
@@ -335,23 +332,17 @@
     };
 
     window.__setIdleStreamSlotHidden = function (hidden) {
-      isSlotHidden = !!hidden;
+      const nextHidden = !!hidden;
+      if (isSlotHidden === nextHidden) {
+        return; // Idempotente: se o estado de visibilidade não mudou, nada a fazer
+      }
+      isSlotHidden = nextHidden;
       clearTimeout(flushTimer);
       const htmlEl = document.documentElement;
       if (htmlEl) {
         if (isSlotHidden) {
           htmlEl.classList.add('idlestream-slot-hidden');
-          // Feature 6: Captura snapshot do canvas do jogo antes de suspender
-          try {
-            const canvas = document.querySelector('canvas');
-            if (canvas && typeof canvas.toDataURL === 'function') {
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.55);
-              if (dataUrl && dataUrl.length > 50) {
-                document.title = '__IDLESTREAM_SLOT_SNAPSHOT__|' + dataUrl;
-              }
-            }
-          } catch (_) {}
-          // Suspende o AudioContext Web Audio para zerar consumo de CPU no audiodg.exe
+          // Suspende o AudioContext Web Audio para zerar consumo de CPU no audiodg.exe em suspensão profunda
           try {
             if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'running') {
               window.__idlestreamAudioCtx.suspend().catch(() => {});
@@ -365,15 +356,13 @@
           }
         } else {
           htmlEl.classList.remove('idlestream-slot-hidden');
-          // Limpa callbacks acumulados obsoletos para não sobrecarregar a GPU na restauração (Anti-TDR/Crash)
-          pendingCallbacks.clear();
-          if (!isEcoMode && targetFps >= 60) {
-            try {
-              if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'suspended') {
-                window.__idlestreamAudioCtx.resume().catch(() => {});
-              }
-            } catch (_) {}
-          }
+          // NUNCA descartar callbacks do jogo! Despacha os callbacks acumulados para manter a cadeia viva
+          flushCallbacks();
+          try {
+            if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'suspended') {
+              window.__idlestreamAudioCtx.resume().catch(() => {});
+            }
+          } catch (_) {}
         }
       }
       // Warm-up suave: quando reaparece, aguarda 100ms para DirectX/DWM estabilizarem antes dos ticks
@@ -458,9 +447,10 @@
             m.muted = true;
           }
         });
+        // Mantém Web Audio ativo para garantir a isenção de throttling do Chromium mesmo em modo econômico
         try {
-          if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'running') {
-            window.__idlestreamAudioCtx.suspend().catch(() => {});
+          if (!isAndroid && window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'suspended') {
+            window.__idlestreamAudioCtx.resume().catch(() => {});
           }
         } catch (_) {}
         if (typeof window.gc === 'function') {
@@ -833,6 +823,9 @@
             const sock = protocols ? new _NativeWS(url, protocols) : new _NativeWS(url);
             sock.addEventListener('message', (ev) => {
               try {
+                if (window.estado) {
+                  window.estado.ultimaMsgEm = Date.now();
+                }
                 if (typeof ev.data === 'string') {
                   // Filtro rápido por cabeçalho antes de deserializar JSON desnecessário
                   const head = ev.data.slice(0, 40);

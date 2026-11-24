@@ -75,6 +75,7 @@ pub struct GameLayoutManager {
     pub active_slots: Mutex<HashMap<String, String>>, // slot_id -> url
     pub game_states: Arc<Mutex<HashMap<String, PokeIdleGameState>>>, // slot_id -> game_state
     pub slot_snapshots: Arc<Mutex<HashMap<String, String>>>, // slot_id -> base64 dataUrl
+    pub last_bounds: Mutex<HashMap<String, SlotBounds>>, // slot_id -> last applied bounds
     pub current_layout: Mutex<ViewLayoutMode>,
     pub current_rect: Mutex<Option<ViewportRect>>,
     pub eco_mode: Mutex<bool>,
@@ -88,6 +89,7 @@ impl GameLayoutManager {
             active_slots: Mutex::new(HashMap::new()),
             game_states: Arc::new(Mutex::new(HashMap::new())),
             slot_snapshots: Arc::new(Mutex::new(HashMap::new())),
+            last_bounds: Mutex::new(HashMap::new()),
             current_layout: Mutex::new(ViewLayoutMode::Grid2x2),
             current_rect: Mutex::new(None),
             eco_mode: Mutex::new(true),
@@ -130,10 +132,25 @@ impl GameLayoutManager {
                 .get_window("main")
                 .ok_or_else(|| "Janela principal não encontrada".to_string())?;
 
-            // Se já existe uma webview com este ID, fechamos antes
+            // Se já existe uma webview com este ID e está viva, reaproveitamos sem recriar
             if let Some(existing) = self.app.get_webview(slot_id) {
-                let _ = existing.close();
-                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                let _ = existing.eval(&format!(
+                    "if (window.location.href !== '{}') {{ window.location.href = '{}'; }}",
+                    url, url
+                ));
+                if let Some(z) = zoom {
+                    let _ = self.set_slot_zoom(slot_id, z).await;
+                }
+                let mut slots = self.active_slots.lock().await;
+                slots.insert(slot_id.to_string(), url.to_string());
+                drop(slots);
+
+                let rect_opt = self.current_rect.lock().await.clone();
+                let layout_opt = self.current_layout.lock().await.clone();
+                if let Some(rect) = rect_opt {
+                    let _ = self.apply_layout(rect, layout_opt).await;
+                }
+                return Ok(());
             }
 
             let app_title = self.app.clone();
@@ -226,6 +243,7 @@ impl GameLayoutManager {
         let mut slots = self.active_slots.lock().await;
         slots.remove(slot_id);
         drop(slots);
+        self.last_bounds.lock().await.remove(slot_id);
 
         #[cfg(desktop)]
         {
@@ -351,22 +369,38 @@ impl GameLayoutManager {
     /// Atualiza os limites de exibição de cada slot individualmente calculados pelo React
     pub async fn update_slots_bounds(&self, bounds_list: Vec<SlotBounds>) -> Result<(), String> {
         #[cfg(desktop)]
-        for b in bounds_list {
-            if let Some(wv) = self.app.get_webview(&b.slot_id) {
-                if b.visible && b.width > 10.0 && b.height > 10.0 {
-                    let _ = wv.set_bounds(Rect {
-                        position: LogicalPosition::new(b.x, b.y).into(),
-                        size: LogicalSize::new(b.width, b.height).into(),
-                    });
-                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
-                } else {
-                    // Oculta movendo para fora da tela (offscreen) sem chamar wv.hide() (put_IsVisible(false))
-                    // Isso preserva a árvore DirectComposition do Windows DWM e previne tela preta / travamento
-                    let _ = wv.set_bounds(Rect {
-                        position: LogicalPosition::new(-99999.0, -99999.0).into(),
-                        size: LogicalSize::new(1.0, 1.0).into(),
-                    });
-                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+        {
+            let mut last_bounds = self.last_bounds.lock().await;
+            for b in bounds_list {
+                // Checa se as coordenadas e visibilidade realmente mudaram antes de acionar DirectComposition
+                if let Some(prev) = last_bounds.get(&b.slot_id) {
+                    if prev.visible == b.visible
+                        && (prev.x - b.x).abs() < 1.0
+                        && (prev.y - b.y).abs() < 1.0
+                        && (prev.width - b.width).abs() < 1.0
+                        && (prev.height - b.height).abs() < 1.0
+                    {
+                        continue; // Sem alteração de layout, evita refazer o swapchain do WebView2
+                    }
+                }
+                last_bounds.insert(b.slot_id.clone(), b.clone());
+
+                if let Some(wv) = self.app.get_webview(&b.slot_id) {
+                    if b.visible && b.width > 10.0 && b.height > 10.0 {
+                        let _ = wv.set_bounds(Rect {
+                            position: LogicalPosition::new(b.x, b.y).into(),
+                            size: LogicalSize::new(b.width, b.height).into(),
+                        });
+                        let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
+                    } else {
+                        // Oculta movendo para fora da tela (offscreen) sem chamar wv.hide() (put_IsVisible(false))
+                        // Isso preserva a árvore DirectComposition do Windows DWM e previne tela preta / travamento
+                        let _ = wv.set_bounds(Rect {
+                            position: LogicalPosition::new(-99999.0, -99999.0).into(),
+                            size: LogicalSize::new(1.0, 1.0).into(),
+                        });
+                        let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                    }
                 }
             }
         }
@@ -479,8 +513,20 @@ impl GameLayoutManager {
             *self.current_fps.lock().await = 1;
             *self.eco_mode.lock().await = true;
 
+            let mut last_bounds = self.last_bounds.lock().await;
             let slots_map = self.active_slots.lock().await;
             for slot_id in slots_map.keys() {
+                last_bounds.insert(
+                    slot_id.clone(),
+                    SlotBounds {
+                        slot_id: slot_id.clone(),
+                        x: -99999.0,
+                        y: -99999.0,
+                        width: 1.0,
+                        height: 1.0,
+                        visible: false,
+                    },
+                );
                 if let Some(wv) = self.app.get_webview(slot_id) {
                     // Oculta movendo para offscreen para não destruir DirectComposition no DWM
                     let _ = wv.set_bounds(Rect {
@@ -516,13 +562,24 @@ impl GameLayoutManager {
 
         #[cfg(target_os = "windows")]
         {
-            extern "system" {
-                fn GetCurrentProcess() -> isize;
-                fn SetProcessWorkingSetSize(h_process: isize, min: usize, max: usize) -> i32;
-            }
-            unsafe {
-                // (SIZE_T)-1 esvazia páginas de memória RAM física limpas de volta para a lista standby do Windows
-                SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+            // Cooldown de 60 segundos na purga física de working set para evitar tempestades
+            // de hard page faults e congelamentos repetidos na interface do usuário
+            static LAST_TRIM_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let prev = LAST_TRIM_SECS.load(std::sync::atomic::Ordering::Relaxed);
+            if now.saturating_sub(prev) >= 60 {
+                LAST_TRIM_SECS.store(now, std::sync::atomic::Ordering::Relaxed);
+                extern "system" {
+                    fn GetCurrentProcess() -> isize;
+                    fn SetProcessWorkingSetSize(h_process: isize, min: usize, max: usize) -> i32;
+                }
+                unsafe {
+                    // (SIZE_T)-1 esvazia páginas de memória RAM física limpas de volta para a lista standby do Windows
+                    SetProcessWorkingSetSize(GetCurrentProcess(), usize::MAX, usize::MAX);
+                }
             }
         }
 

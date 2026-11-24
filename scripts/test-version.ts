@@ -85,6 +85,23 @@ assert.strictEqual(updateResultCurrent.hasUpdate, false);
 
 const updateResultOlder = parseGitHubRelease(releaseData, '2.1.3');
 assert.strictEqual(updateResultOlder.hasUpdate, false);
+
+// 6. Teste de resiliência: Fallback quando latest release não possui executável Windows ou latest.json (ex: release 4.3.4 apenas APK)
+const releaseAndroidOnly = {
+  tag_name: 'v4.3.4',
+  name: 'IdleStream v4.3.4',
+  body: 'Notas da release v4.3.4',
+  assets: [
+    { name: 'IdleStream_4.3.4_arm64.apk', browser_download_url: 'https://github.com/.../IdleStream_4.3.4_arm64.apk' },
+  ],
+};
+// App já está na 4.3.4 -> hasUpdate deve ser false (sem throw de erro "não foi possível buscar atualizações")
+const resSameVer = parseGitHubRelease(releaseAndroidOnly, '4.3.4');
+assert.strictEqual(resSameVer.hasUpdate, false, 'App na versão da release mais recente não deve acusar update');
+// App em versão superior de desenvolvimento (ex: 4.3.5)
+const resDevVer = parseGitHubRelease(releaseAndroidOnly, '4.3.5');
+assert.strictEqual(resDevVer.hasUpdate, false, 'Versão superior local não deve acusar update');
+console.log('  ✓ Fallback de release resiliente test passed');
 console.log('  ✓ parseGitHubRelease test passed');
 
 console.log('\n🎉 TODOS OS TESTES UNITÁRIOS DE VERSIONAMENTO PASSARAM COM SUCESSO!\n');

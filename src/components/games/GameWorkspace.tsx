@@ -361,7 +361,15 @@ export const GameWorkspace: React.FC = () => {
   const refreshActiveSlots = useCallback(async () => {
     try {
       const active = await gamePlatformService.getActiveSlots();
-      setActiveSlots(active);
+      setActiveSlots((prev) => {
+        if (
+          prev.length === active.length &&
+          prev.every((val, index) => val === active[index])
+        ) {
+          return prev;
+        }
+        return active;
+      });
       return active;
     } catch (e) {
       console.warn('Erro ao buscar slots ativos:', e);
@@ -610,8 +618,7 @@ export const GameWorkspace: React.FC = () => {
       );
       const refreshed = await refreshActiveSlots();
       persistActiveGameSlots(refreshed ?? nextSlots);
-      setTimeout(syncBounds, 150);
-      setTimeout(syncBounds, 400);
+      setTimeout(syncBounds, 100);
     } catch (e) {
       const fallback = activeSlots.filter((id) => id !== slotId);
       setActiveSlots(fallback);
@@ -642,11 +649,26 @@ export const GameWorkspace: React.FC = () => {
   };
 
   const handleStartAll = async () => {
-    for (const slot of gameSlots) {
-      if (!activeSlots.includes(slot.id)) {
-        await handleStartSlot(slot.id, slot.url);
+    const slotsToStart = gameSlots.filter((slot) => !activeSlots.includes(slot.id));
+    if (slotsToStart.length === 0) return;
+
+    for (const slot of slotsToStart) {
+      try {
+        const zoom = slotZooms[slot.id] ?? slot?.zoom ?? 1.0;
+        await gamePlatformService.startSlot(
+          slot.id,
+          slot.url.trim() || 'https://pokeidle.io/app',
+          zoom
+        );
+      } catch (e) {
+        console.error(`Erro ao iniciar slot ${slot.id}:`, e);
       }
     }
+    const refreshed = await refreshActiveSlots();
+    if (refreshed) {
+      persistActiveGameSlots(refreshed);
+    }
+    setTimeout(syncBounds, 100);
   };
 
   const handleStopAll = async () => {

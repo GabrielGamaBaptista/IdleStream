@@ -1,11 +1,11 @@
 {
-  "version": "4.3.4",
-  "notes": "IdleStream v4.3.4 — Correção definitiva da leitura de QR Code do Elo PC ↔ Celular (Exclusão Mútua) pela câmera padrão de smartphones (Universal Links HTTPS e Deep Links nativos idlestream://device-sync); suporte a fallback web e pareamento automático bidirecional; sanitização resiliente de IDs de pareamento.",
-  "pub_date": "2026-11-24T06:12:00Z",
+  "version": "4.3.5",
+  "notes": "IdleStream v4.3.5 — Correção crítica de travamentos e do erro Gyarados no Eco Mode em jogos PokeIdle; otimização drástica de DirectComposition com cache de coordenadas (0% overhead de resize); eliminação de descarte indevido do loop rAF de jogos; fallback resiliente no sistema de atualização desktop via GitHub API.",
+  "pub_date": "2026-11-24T11:55:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.4/IdleStream_4.3.4_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjV0ZkRRektFVmxJSHJFVVBoTlRtbHo4dVJPSENRbjZEVm85cFptclVVcVVrVlA2N2VRaHJRcy8wNjRiT2Nla1JqS0NadjFHMU1XZmFkWkN5d1dYTFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTIxNzgyCWZpbGU6SWRsZVN0cmVhbV80LjMuNV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjUKSTd4SWoxYnMxOGkrV1VaWEZ5OE90VlZGajhiSHo5R3JyT1lBdThWRUFCanRXZi9QajMyRUZrRXUvbkIwZFRpbUJrcUZPOHFlMXkvNXlJT2tpTW1FQ3c9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.5/IdleStream_4.3.5_x64-setup.exe"
     }
   }
 }
