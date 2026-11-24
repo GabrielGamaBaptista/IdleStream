@@ -1,11 +1,11 @@
 {
-  "version": "4.3.6",
-  "notes": "IdleStream v4.3.6 — Padronização nativa do QR Code do Elo PC ↔ Celular com o sistema de Votos (idlestream://device-sync); eliminação definitiva do erro 404 ao escanear com a câmera do smartphone; abertura instantânea no app.",
-  "pub_date": "2026-11-24T13:00:00Z",
+  "version": "4.3.7",
+  "notes": "IdleStream v4.3.7 — Correção definitiva do Elo PC ↔ Celular: resolução inequívoca de dispositivo por UUID, detecção resiliente de plataforma, estado Standby/Pronto para Farmar, e heartbeat em tempo real.",
+  "pub_date": "2026-11-24T13:46:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VnhWeTk2MEhJMUpBdlFmYnY0cVhod1pzRHVwNU9Ob3NnNmVTa2dzcGFVVWVuMjE1QUh3RGRGQnhDTHhJcUw3ek5yUlJwU01aY3BGZWdrR1FIeE1CdWdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTI1Mjg1CWZpbGU6SWRsZVN0cmVhbV80LjMuNl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjYKSllDR1JMT1hMOHYxL3V6dkE0aTBDdkduRnFra1I0UDV3eU0xM1Q4dFBwZ2YvMExwbUN0dWhORUdOSFRTYVRoSUVBbU9CNGREM3FoTllXclN4NGQ4RGc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.6/IdleStream_4.3.6_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VitYV2pzRGlDaWdpdlRzRENwTjdNSHpkMExnVHdLaDJwTk5BSEVxeCtrMmtOOEJRRVRnMFRCVzdHMlBMVXhSL0VwM0s1aEtwSzJMWElaTis2MXMzTmdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTI4MDAwCWZpbGU6SWRsZVN0cmVhbV80LjMuN194NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjcKNTBNRjYveTZIZUFIMTVvTDkwa1RhRklEYnIzMW03OUJoTnB0dlprTkExejhrTktOUnlRUGxhQUhyTVdteTJPOEk3MmtRWTJhVldvaEN2bzc1bkcvQXc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.7/IdleStream_4.3.7_x64-setup.exe"
     }
   }
 }

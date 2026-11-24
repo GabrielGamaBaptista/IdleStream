@@ -18,6 +18,7 @@ import {
 export const DeviceSyncCard: React.FC = () => {
   const {
     config,
+    statuses,
     deviceSyncRemoteState,
     pausedByOtherDevice,
     setDeviceSyncId,
@@ -37,6 +38,9 @@ export const DeviceSyncCard: React.FC = () => {
 
   const activeSyncId = config.device_sync_id || deviceSyncService.getSyncId();
   const isAndroid = isAndroidPlatform();
+  const isLocalFarming = Object.values(statuses || {}).some(
+    (st) => st.status === 'connected' || Boolean(st.is_farming)
+  );
 
   useEffect(() => {
     if (activeSyncId && showQr && !isAndroid) {
@@ -56,7 +60,7 @@ export const DeviceSyncCard: React.FC = () => {
     try {
       setIsGenerating(true);
       setErrorMessage(null);
-      const newId = await deviceSyncService.createNewPairing();
+      const newId = await deviceSyncService.createNewPairing(isLocalFarming);
       await setDeviceSyncId(newId);
       await checkDeviceSync();
       setShowQr(true);
@@ -127,24 +131,38 @@ export const DeviceSyncCard: React.FC = () => {
 
         <span
           className={`flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full font-medium ${
-            activeSyncId
-              ? pausedByOtherDevice
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-              : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+            !activeSyncId
+              ? 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+              : pausedByOtherDevice
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+              : 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/50'
           }`}
         >
-          <Radio className={`w-3 h-3 ${activeSyncId ? 'animate-pulse text-emerald-400' : ''}`} />
+          <Radio
+            className={`w-3 h-3 ${
+              activeSyncId
+                ? pausedByOtherDevice
+                  ? 'animate-pulse text-amber-400'
+                  : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
+                  ? 'animate-pulse text-emerald-400'
+                  : 'text-emerald-400'
+                : 'text-neutral-500'
+            }`}
+          />
           <span>
             {!activeSyncId
               ? 'Não Vinculado'
-              : isAndroid
-              ? pausedByOtherDevice
-                ? '🖥️ Computador Ativo (Celular Pausado)'
-                : '📱 Este Celular Ativo'
               : pausedByOtherDevice
-              ? '📱 Celular Ativo (PC Pausado)'
-              : '🖥️ PC Ativo'}
+              ? isAndroid
+                ? '🖥️ PC Farmando (Celular Pausado)'
+                : '📱 Celular Farmando (PC Pausado)'
+              : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
+              ? isAndroid
+                ? '📱 Este Celular Farmando'
+                : '🖥️ Este PC Farmando'
+              : '🟢 Vinculado (Pronto para Farmar)'}
           </span>
         </span>
       </div>
@@ -231,7 +249,7 @@ export const DeviceSyncCard: React.FC = () => {
               <div className="flex items-center gap-2">
                 {isAndroid ? <Smartphone className="w-4 h-4 text-emerald-400" /> : <Monitor className="w-4 h-4 text-emerald-400" />}
                 <span>
-                  {deviceSyncRemoteState?.isCurrentDeviceActive
+                  {deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
                     ? isAndroid
                       ? 'Este celular está farmando ativamente (exclusão mútua garantida).'
                       : 'Este computador está farmando ativamente (exclusão mútua garantida).'

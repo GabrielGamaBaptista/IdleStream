@@ -205,7 +205,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.3.6',
+  appVersion: '4.3.7',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -745,13 +745,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       // Inicializar Elo PC↔Mobile via Cloud Sync
+      deviceSyncService.setIsFarmingCheck(() => {
+        const { statuses } = get();
+        return Object.values(statuses || {}).some(
+          (st) => st.status === 'connected' || Boolean(st.is_farming)
+        );
+      });
+
       const activeDeviceSyncId =
         (await invoke<string | null>('device_get_sync_id').catch(() => null)) ||
         deviceSyncService.getSyncId();
 
       if (activeDeviceSyncId) {
         deviceSyncService.setSyncId(activeDeviceSyncId);
-        deviceSyncService.startPolling(60, (remoteState) => {
+        deviceSyncService.startPolling(45, (remoteState) => {
           set({ deviceSyncRemoteState: remoteState });
 
           // Se o outro dispositivo assumiu o farm:
@@ -1179,36 +1186,41 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDeviceSyncId: async (syncId: string | null) => {
     const sanitized = syncId?.trim() || null;
     deviceSyncService.setSyncId(sanitized);
+
+    deviceSyncService.setIsFarmingCheck(() => {
+      const { statuses } = get();
+      return Object.values(statuses || {}).some(
+        (st) => st.status === 'connected' || Boolean(st.is_farming)
+      );
+    });
+
     try {
       const updated = await invoke<AppConfig>('device_set_sync_id', { syncId: sanitized });
-      set((state) => ({
-        config: updated,
-        deviceSyncRemoteState: sanitized ? state.deviceSyncRemoteState : null,
-        pausedByOtherDevice: false,
-      }));
-
-      if (sanitized) {
-        deviceSyncService.startPolling(60, (remoteState) => {
-          set({ deviceSyncRemoteState: remoteState });
-          if (remoteState.isOtherDeviceActive) {
-            if (!get().pausedByOtherDevice) {
-              set({ pausedByOtherDevice: true });
-              get().stopAll().catch(() => {});
-            }
-          } else {
-            if (get().pausedByOtherDevice) {
-              set({ pausedByOtherDevice: false });
-            }
-          }
-        });
-      } else {
-        deviceSyncService.stopPolling();
-      }
+      set({ config: updated });
     } catch (e) {
       console.warn('[DeviceSync] Falha ao persistir device_sync_id no backend:', e);
       set((state) => ({
         config: { ...state.config, device_sync_id: sanitized },
       }));
+    }
+
+    if (sanitized) {
+      deviceSyncService.startPolling(45, (remoteState) => {
+        set({ deviceSyncRemoteState: remoteState });
+        if (remoteState.isOtherDeviceActive) {
+          if (!get().pausedByOtherDevice) {
+            set({ pausedByOtherDevice: true });
+            get().stopAll().catch(() => {});
+          }
+        } else {
+          if (get().pausedByOtherDevice) {
+            set({ pausedByOtherDevice: false });
+          }
+        }
+      });
+    } else {
+      deviceSyncService.stopPolling();
+      set({ deviceSyncRemoteState: null, pausedByOtherDevice: false });
     }
   },
 

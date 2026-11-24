@@ -1,4 +1,5 @@
 import { DeviceSyncRemoteState } from '../types';
+import { isAndroidPlatform } from '../utils/platform';
 
 const API_BASE_URL = 'https://api.restful-api.dev/objects';
 const STORAGE_KEY_SYNC_ID = '__idlestream_device_sync_id__';
@@ -13,9 +14,9 @@ export interface DeviceSyncRawData {
 
 class DeviceSyncService {
   private deviceId: string;
-  private deviceType: 'desktop' | 'mobile';
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private currentSyncId: string | null = null;
+  private isFarmingCheck: (() => boolean) | null = null;
 
   constructor() {
     let devId = '';
@@ -29,19 +30,23 @@ class DeviceSyncService {
       devId = 'dev_fallback_' + Date.now();
     }
     this.deviceId = devId;
-
-    const isAndroid =
-      typeof window !== 'undefined' && Boolean(window.AndroidBridge?.isAndroid?.());
-    this.deviceType = isAndroid ? 'mobile' : 'desktop';
     this.currentSyncId = this.getSyncId();
   }
 
+  public setIsFarmingCheck(check: (() => boolean) | null): void {
+    this.isFarmingCheck = check;
+  }
+
+  public getDeviceId(): string {
+    return this.deviceId;
+  }
+
   public getDeviceType(): 'desktop' | 'mobile' {
-    return this.deviceType;
+    return isAndroidPlatform() ? 'mobile' : 'desktop';
   }
 
   public getOtherDeviceType(): 'desktop' | 'mobile' {
-    return this.deviceType === 'desktop' ? 'mobile' : 'desktop';
+    return isAndroidPlatform() ? 'desktop' : 'mobile';
   }
 
   public getSyncId(): string | null {
@@ -68,12 +73,13 @@ class DeviceSyncService {
   /**
    * Cria um novo objeto na nuvem para pareamento entre Desktop e Mobile
    */
-  public async createNewPairing(): Promise<string> {
+  public async createNewPairing(isInitiallyFarming = false): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
+    const myType = this.getDeviceType();
     const initialData: DeviceSyncRawData = {
-      active_device: this.deviceType,
+      active_device: isInitiallyFarming ? myType : null,
       device_id: this.deviceId,
-      device_type: this.deviceType,
+      device_type: myType,
       updated_at: now,
     };
 
@@ -108,10 +114,11 @@ class DeviceSyncService {
     if (!targetId) return false;
 
     const now = Math.floor(Date.now() / 1000);
+    const myType = this.getDeviceType();
     const payload: DeviceSyncRawData = {
-      active_device: this.deviceType,
+      active_device: myType,
       device_id: this.deviceId,
-      device_type: this.deviceType,
+      device_type: myType,
       updated_at: now,
     };
 
@@ -144,10 +151,11 @@ class DeviceSyncService {
     if (!targetId) return false;
 
     const now = Math.floor(Date.now() / 1000);
+    const myType = this.getDeviceType();
     const payload: DeviceSyncRawData = {
       active_device: null,
       device_id: this.deviceId,
-      device_type: this.deviceType,
+      device_type: myType,
       updated_at: now,
     };
 
@@ -169,7 +177,7 @@ class DeviceSyncService {
   }
 
   /**
-   * Consulta o estado remoto na nuvem
+   * Consulta o estado remoto na nuvem com resolução inequívoca de dispositivo
    */
   public async fetchRemoteState(syncId?: string): Promise<DeviceSyncRemoteState | null> {
     const targetId = syncId || this.currentSyncId;
@@ -196,13 +204,27 @@ class DeviceSyncService {
       const now = Math.floor(Date.now() / 1000);
       const isRecent = now - (data.updated_at || 0) < TIMEOUT_SECONDS;
 
+      const myType = this.getDeviceType();
       const otherType = this.getOtherDeviceType();
-      const isOtherActive = isRecent && data.active_device === otherType;
-      const isCurrentActive = isRecent && data.active_device === this.deviceType;
+
+      // Exclusão Mútua Inequívoca:
+      // Se active_device for nulo ou o timestamp estiver expirado (> 3min), ninguém está ativo (Standby)
+      const hasActive = Boolean(data.active_device) && isRecent;
+
+      // É o dispositivo atual se:
+      // 1. O device_id for exatamente o deste dispositivo, OU
+      // 2. O active_device coincidir com o tipo deste dispositivo E o device_id for o dele
+      const isCurrentActive =
+        hasActive &&
+        (data.device_id === this.deviceId ||
+          (data.active_device === myType && (!data.device_id || data.device_id === this.deviceId)));
+
+      // É o outro dispositivo se houver farm ativo que NÃO seja o dispositivo atual
+      const isOtherActive = hasActive && !isCurrentActive;
 
       return {
         syncId: targetId,
-        activeDevice: data.active_device,
+        activeDevice: hasActive ? data.active_device : null,
         lastUpdated: data.updated_at || 0,
         isOtherDeviceActive: isOtherActive,
         isCurrentDeviceActive: isCurrentActive,
@@ -215,7 +237,7 @@ class DeviceSyncService {
   }
 
   /**
-   * Inicia o polling contínuo (a cada intervalo de segundos)
+   * Inicia o polling contínuo (a cada intervalo de segundos) com heartbeat automático
    */
   public startPolling(
     intervalSeconds = 60,
@@ -226,6 +248,12 @@ class DeviceSyncService {
     const poll = async () => {
       const targetId = this.currentSyncId;
       if (!targetId) return;
+
+      // Heartbeat: se este dispositivo estiver ativamente farmando, renova o timestamp no cloud
+      if (this.isFarmingCheck && this.isFarmingCheck()) {
+        await this.claimActive(targetId).catch(() => {});
+      }
+
       const state = await this.fetchRemoteState(targetId);
       if (state) {
         onUpdate(state);
