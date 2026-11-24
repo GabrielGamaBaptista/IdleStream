@@ -1,11 +1,11 @@
 {
-  "version": "4.3.7",
-  "notes": "IdleStream v4.3.7 — Correção definitiva do Elo PC ↔ Celular: resolução inequívoca de dispositivo por UUID, detecção resiliente de plataforma, estado Standby/Pronto para Farmar, e heartbeat em tempo real.",
-  "pub_date": "2026-11-24T13:46:00Z",
+  "version": "4.3.8",
+  "notes": "IdleStream v4.3.8 — Migração completa do Elo PC ↔ Celular para backend KeyVal cloud de alta disponibilidade sem limites rígidos de cota diária (elimina erro HTTP 405), testado e validado ponta a ponta.",
+  "pub_date": "2026-11-24T14:25:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VitYV2pzRGlDaWdpdlRzRENwTjdNSHpkMExnVHdLaDJwTk5BSEVxeCtrMmtOOEJRRVRnMFRCVzdHMlBMVXhSL0VwM0s1aEtwSzJMWElaTis2MXMzTmdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTI4MDAwCWZpbGU6SWRsZVN0cmVhbV80LjMuN194NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjcKNTBNRjYveTZIZUFIMTVvTDkwa1RhRklEYnIzMW03OUJoTnB0dlprTkExejhrTktOUnlRUGxhQUhyTVdteTJPOEk3MmtRWTJhVldvaEN2bzc1bkcvQXc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.7/IdleStream_4.3.7_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjdiMVQ2V1RpeVU3NlNLMUIwWjhjQkJjQktKVVF5YmN5YUIvbzJoTkg3OUs0dEJmSjFENHRmbDlHdmRSTUxRcjIxMVFYeDljZVA2VSszSmROc1p3TVFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTMwMzU5CWZpbGU6SWRsZVN0cmVhbV80LjMuOF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjgKQ0lkajI0SVNtY0grd2FrUmM4b3lHNGcwQmtWb0pWdWw5NW5IbTBJNjlhRXlqa3Q3dXNiMWNIRWV4ZFpFTDZ1R0xSbHhQMVBGK2RXVE9LMmZlY1NGQ3c9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.8/IdleStream_4.3.8_x64-setup.exe"
     }
   }
 }

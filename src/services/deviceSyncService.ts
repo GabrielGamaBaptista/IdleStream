@@ -1,7 +1,7 @@
 import { DeviceSyncRemoteState } from '../types';
 import { isAndroidPlatform } from '../utils/platform';
 
-const API_BASE_URL = 'https://api.restful-api.dev/objects';
+const KEYVAL_API_URL = 'https://api.keyval.org';
 const STORAGE_KEY_SYNC_ID = '__idlestream_device_sync_id__';
 const TIMEOUT_SECONDS = 180; // 3 minutos sem atualização = outro dispositivo offline
 
@@ -10,6 +10,46 @@ export interface DeviceSyncRawData {
   device_id: string;
   device_type: 'desktop' | 'mobile';
   updated_at: number; // Unix timestamp em segundos
+}
+
+function getCloudKey(syncId: string): string {
+  const clean = syncId.trim();
+  return clean.startsWith('idlestream_') ? clean : `idlestream_${clean}`;
+}
+
+function encodeDeviceSyncState(data: DeviceSyncRawData): string {
+  const active = data.active_device || 'none';
+  const id = data.device_id || '';
+  const type = data.device_type || 'desktop';
+  const updated = data.updated_at || Math.floor(Date.now() / 1000);
+  return `${active}|${id}|${type}|${updated}`;
+}
+
+function decodeDeviceSyncState(raw: string): DeviceSyncRawData | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return {
+        active_device: parsed.active_device || parsed.a || null,
+        device_id: parsed.device_id || parsed.id || '',
+        device_type: parsed.device_type || parsed.t || 'desktop',
+        updated_at: Number(parsed.updated_at || parsed.u || 0),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const parts = trimmed.split('|');
+  if (parts.length < 4) return null;
+  return {
+    active_device: parts[0] === 'none' || !parts[0] ? null : (parts[0] as 'desktop' | 'mobile'),
+    device_id: parts[1] || '',
+    device_type: (parts[2] as 'desktop' | 'mobile') || 'desktop',
+    updated_at: Number(parts[3] || 0),
+  };
 }
 
 class DeviceSyncService {
@@ -76,6 +116,8 @@ class DeviceSyncService {
   public async createNewPairing(isInitiallyFarming = false): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     const myType = this.getDeviceType();
+    const syncId = 'dsync_' + Math.random().toString(36).substring(2, 10);
+    const cloudKey = getCloudKey(syncId);
     const initialData: DeviceSyncRawData = {
       active_device: isInitiallyFarming ? myType : null,
       device_id: this.deviceId,
@@ -83,12 +125,12 @@ class DeviceSyncService {
       updated_at: now,
     };
 
-    const response = await fetch(API_BASE_URL, {
+    const response = await fetch(`${KEYVAL_API_URL}/set`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'idlestream-device-sync',
-        data: initialData,
+        key: cloudKey,
+        val: encodeDeviceSyncState(initialData),
       }),
     });
 
@@ -96,10 +138,9 @@ class DeviceSyncService {
       throw new Error(`Falha ao registrar pareamento cloud (HTTP ${response.status})`);
     }
 
-    const resJson = await response.json();
-    const syncId = String(resJson.id || '');
-    if (!syncId) {
-      throw new Error('ID de pareamento não retornado pela API');
+    const resJson = await response.json().catch(() => null);
+    if (!resJson || resJson.status !== 'SUCCESS') {
+      throw new Error(`Falha no registro do pareamento: ${resJson?.status || 'erro desconhecido'}`);
     }
 
     this.setSyncId(syncId);
@@ -115,6 +156,7 @@ class DeviceSyncService {
 
     const now = Math.floor(Date.now() / 1000);
     const myType = this.getDeviceType();
+    const cloudKey = getCloudKey(targetId);
     const payload: DeviceSyncRawData = {
       active_device: myType,
       device_id: this.deviceId,
@@ -123,12 +165,12 @@ class DeviceSyncService {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/${encodeURIComponent(targetId)}`, {
-        method: 'PUT',
+      const response = await fetch(`${KEYVAL_API_URL}/set`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: 'idlestream-device-sync',
-          data: payload,
+          key: cloudKey,
+          val: encodeDeviceSyncState(payload),
         }),
       });
 
@@ -136,7 +178,8 @@ class DeviceSyncService {
         console.warn(`[DeviceSync] Falha ao reivindicar farm ativo (HTTP ${response.status})`);
         return false;
       }
-      return true;
+      const json = await response.json().catch(() => null);
+      return json?.status === 'SUCCESS';
     } catch (e) {
       console.warn('[DeviceSync] Erro de rede ao reivindicar farm:', e);
       return false;
@@ -152,6 +195,7 @@ class DeviceSyncService {
 
     const now = Math.floor(Date.now() / 1000);
     const myType = this.getDeviceType();
+    const cloudKey = getCloudKey(targetId);
     const payload: DeviceSyncRawData = {
       active_device: null,
       device_id: this.deviceId,
@@ -160,16 +204,18 @@ class DeviceSyncService {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/${encodeURIComponent(targetId)}`, {
-        method: 'PUT',
+      const response = await fetch(`${KEYVAL_API_URL}/set`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: 'idlestream-device-sync',
-          data: payload,
+          key: cloudKey,
+          val: encodeDeviceSyncState(payload),
         }),
       });
 
-      return response.ok;
+      if (!response.ok) return false;
+      const json = await response.json().catch(() => null);
+      return json?.status === 'SUCCESS';
     } catch (e) {
       console.warn('[DeviceSync] Erro ao liberar farm:', e);
       return false;
@@ -182,25 +228,27 @@ class DeviceSyncService {
   public async fetchRemoteState(syncId?: string): Promise<DeviceSyncRemoteState | null> {
     const targetId = syncId || this.currentSyncId;
     if (!targetId) return null;
+    const cloudKey = getCloudKey(targetId);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/${encodeURIComponent(targetId)}`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
+      const response = await fetch(`${KEYVAL_API_URL}/get`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: cloudKey }),
       });
 
       if (!response.ok) {
-        if (response.status === 404) {
-          // Objeto expirou ou foi excluído da API de teste
-          return null;
-        }
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const resJson = await response.json();
-      if (!resJson || !resJson.data) return null;
+      const resJson = await response.json().catch(() => null);
+      if (!resJson || resJson.status !== 'SUCCESS' || !resJson.val) {
+        // Objeto não existe ou chave não encontrada
+        return null;
+      }
 
-      const data = resJson.data as DeviceSyncRawData;
+      const data = decodeDeviceSyncState(resJson.val);
+      if (!data) return null;
       const now = Math.floor(Date.now() / 1000);
       const isRecent = now - (data.updated_at || 0) < TIMEOUT_SECONDS;
 
