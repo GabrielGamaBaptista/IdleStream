@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { useAppStore } from '../stores/appStore';
 import { deviceSyncService } from '../services/deviceSyncService';
 import { isAndroidPlatform } from '../utils/platform';
-import { buildDeviceSyncUniversalUrl, extractDeviceSyncId } from '../utils/deviceSyncUrl';
+import { buildDeviceSyncNativeSchemeUrl, extractDeviceSyncId } from '../utils/deviceSyncUrl';
 import {
   Smartphone,
   Monitor,
@@ -31,7 +31,7 @@ export const DeviceSyncCard: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [showQr, setShowQr] = useState(false);
+  const [showQr, setShowQr] = useState(!isAndroidPlatform());
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -40,10 +40,11 @@ export const DeviceSyncCard: React.FC = () => {
 
   useEffect(() => {
     if (activeSyncId && showQr && !isAndroid) {
-      const universalUrl = buildDeviceSyncUniversalUrl(activeSyncId);
-      QRCode.toDataURL(universalUrl, {
-        width: 200,
-        margin: 1.5,
+      // Deep link nativo idlestream://device-sync?id=... (idêntico ao sistema de sincronização de votos)
+      const payload = buildDeviceSyncNativeSchemeUrl(activeSyncId);
+      QRCode.toDataURL(payload, {
+        width: 260,
+        margin: 2,
         color: { dark: '#000000', light: '#ffffff' },
       })
         .then((url) => setQrDataUrl(url))
@@ -58,6 +59,7 @@ export const DeviceSyncCard: React.FC = () => {
       const newId = await deviceSyncService.createNewPairing();
       await setDeviceSyncId(newId);
       await checkDeviceSync();
+      setShowQr(true);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -74,6 +76,7 @@ export const DeviceSyncCard: React.FC = () => {
       await setDeviceSyncId(clean);
       setInputSyncId('');
       await checkDeviceSync();
+      setShowQr(true);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
     }
@@ -184,7 +187,7 @@ export const DeviceSyncCard: React.FC = () => {
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Ex: 1234567"
+                placeholder="Ex: cole o código ou link (idlestream://...)"
                 value={inputSyncId}
                 onChange={(e) => setInputSyncId(e.target.value)}
                 className="flex-1 px-3 py-1.5 rounded-lg bg-neutral-950 border border-neutral-700 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500 font-mono"
@@ -280,11 +283,15 @@ export const DeviceSyncCard: React.FC = () => {
             </div>
 
             {!isAndroid && showQr && qrDataUrl && (
-              <div className="pt-2 text-center flex flex-col items-center justify-center space-y-1.5 animate-in fade-in">
-                <div className="p-2 bg-white rounded-xl shadow-lg inline-block">
-                  <img src={qrDataUrl} alt="QR Code de Vinculação" className="w-44 h-44" />
+              <div className="pt-2 text-center flex flex-col items-center justify-center space-y-2 animate-in fade-in">
+                <div className="p-3 bg-white rounded-2xl shadow-lg border-4 border-neutral-800 inline-block">
+                  <img
+                    src={qrDataUrl}
+                    alt="QR Code de Vinculação"
+                    className="w-52 h-52 object-contain block mx-auto rounded-lg"
+                  />
                 </div>
-                <p className="text-[11px] text-neutral-300 max-w-xs leading-relaxed">
+                <p className="text-xs text-neutral-300 max-w-sm leading-relaxed">
                   Aponte a câmera do celular para este QR Code para abrir o IdleStream e parear instantaneamente.
                 </p>
                 <p className="text-[10px] text-neutral-500">
