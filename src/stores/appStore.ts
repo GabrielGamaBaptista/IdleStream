@@ -27,6 +27,7 @@ import { gamePlatformService } from '../services/gamePlatformService';
 import { votePlatformService } from '../services/votePlatformService';
 import { voteSyncService } from '../services/voteSyncService';
 import { deviceSyncService } from '../services/deviceSyncService';
+import { extractDeviceSyncId } from '../utils/deviceSyncUrl';
 
 const VALID_TABS = ['streams', 'games', 'votes', 'accounts', 'settings'] as const;
 const ACTIVE_TAB_STORAGE_KEY = '__idlestream_active_tab__';
@@ -604,10 +605,30 @@ export const useAppStore = create<AppState>((set, get) => ({
           } catch (_) {}
         };
 
+        const applyIncomingDeviceSyncId = async (id: string) => {
+          try {
+            const cleanId = extractDeviceSyncId(id);
+            if (!cleanId) return;
+            console.log('[DeviceSync] Recebido pareamento automático via Deep Link:', cleanId);
+            await get().setDeviceSyncId(cleanId);
+            await get().checkDeviceSync();
+            get().setActiveTab('settings');
+          } catch (err) {
+            console.warn('[DeviceSync] Falha ao aplicar device sync id recebido:', err);
+          }
+        };
+
         window.addEventListener('idlestream-vote-sync-id', (e: any) => {
           const syncId = e.detail?.syncId;
           if (syncId) {
             applyIncomingVoteSyncId(syncId);
+          }
+        });
+
+        window.addEventListener('idlestream-device-sync-id', (e: any) => {
+          const syncId = e.detail?.syncId;
+          if (syncId) {
+            applyIncomingDeviceSyncId(syncId);
           }
         });
 
@@ -616,6 +637,15 @@ export const useAppStore = create<AppState>((set, get) => ({
             const pendingSyncId = window.AndroidBridge.consumePendingVoteSyncId();
             if (pendingSyncId) {
               applyIncomingVoteSyncId(pendingSyncId);
+            }
+          } catch (_) {}
+        }
+
+        if (typeof window.AndroidBridge?.consumePendingDeviceSyncId === 'function') {
+          try {
+            const pendingDeviceSyncId = window.AndroidBridge.consumePendingDeviceSyncId();
+            if (pendingDeviceSyncId) {
+              applyIncomingDeviceSyncId(pendingDeviceSyncId);
             }
           } catch (_) {}
         }

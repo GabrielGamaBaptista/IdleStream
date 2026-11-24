@@ -54,6 +54,8 @@ class MainActivity : TauriActivity() {
     var pendingVoteAccountId: String? = null
     @Volatile
     var pendingVoteSyncId: String? = null
+    @Volatile
+    var pendingDeviceSyncId: String? = null
 
     @Volatile
     var lastUserInteractionTime = System.currentTimeMillis()
@@ -410,6 +412,13 @@ class MainActivity : TauriActivity() {
         fun consumePendingVoteSyncId(): String {
             val id = activity.pendingVoteSyncId ?: ""
             activity.pendingVoteSyncId = null
+            return id
+        }
+
+        @JavascriptInterface
+        fun consumePendingDeviceSyncId(): String {
+            val id = activity.pendingDeviceSyncId ?: ""
+            activity.pendingDeviceSyncId = null
             return id
         }
     }
@@ -835,12 +844,41 @@ class MainActivity : TauriActivity() {
     }
 
     private fun handleVoteSyncDeepLink(intent: Intent?) {
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
         val data = intent?.data ?: return
-        android.util.Log.d("IdleStream", "handleVoteSyncDeepLink uri=$data")
+        android.util.Log.d("IdleStream", "handleDeepLink uri=$data")
         val syncId = data.getQueryParameter("id")
-        if (!syncId.isNullOrBlank()) {
+        if (syncId.isNullOrBlank()) return
+
+        val host = (data.host ?: "").lowercase()
+        val type = (data.getQueryParameter("type") ?: "").lowercase()
+        val isDeviceSync = host == "device-sync" || type == "device" || data.getQueryParameter("device_sync") != null
+
+        if (isDeviceSync) {
+            pendingDeviceSyncId = syncId
+            notifyDeviceSyncId(syncId)
+        } else {
             pendingVoteSyncId = syncId
             notifyVoteSyncId(syncId)
+        }
+    }
+
+    fun notifyDeviceSyncId(syncId: String) {
+        runOnUiThread {
+            val safeId = org.json.JSONObject.quote(syncId)
+            android.util.Log.d("IdleStream", "notifyDeviceSyncId syncId=$syncId")
+            val script = """
+                (function() {
+                    if (typeof window.__onDeviceSyncIdReceived === 'function') {
+                        try { window.__onDeviceSyncIdReceived($safeId); } catch(e) { console.error(e); }
+                    }
+                    window.dispatchEvent(new CustomEvent('idlestream-device-sync-id', { detail: { syncId: $safeId } }));
+                })();
+            """.trimIndent()
+            mainWebView?.evaluateJavascript(script, null)
         }
     }
 

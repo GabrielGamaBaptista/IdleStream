@@ -48,10 +48,12 @@ interface AndroidBridge {
   sendVoteTestNotification?(accountId: string, title: string, text: string): void;
   consumePendingOpenTab?(): string;
   consumePendingVoteSyncId?(): string;
+  consumePendingDeviceSyncId?(): string;
 }
 
 interface Window {
   AndroidBridge?: AndroidBridge;
+  __onDeviceSyncIdReceived?: (syncId: string) => void;
   __onAndroidTwitchAuth?: (accountId: string, token: string) => void;
   __onAndroidKickAuth?: (
     accountId: string,

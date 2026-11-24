@@ -36,12 +36,18 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep Link Custom Scheme: idlestream://vote-sync?id=... -->
+            <!-- Deep Link Custom Scheme: idlestream://vote-sync?id=... e idlestream://device-sync?id=... -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="idlestream" android:host="vote-sync" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="idlestream" android:host="device-sync" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

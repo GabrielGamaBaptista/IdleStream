@@ -1,7 +1,7 @@
 {
   "name": "idlestream",
   "private": true,
-  "version": "4.3.3",
+  "version": "4.3.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,7 @@
     "test:ultra": "jiti ./scripts/test-ultra-and-heartbeat.ts",
     "test:sleep": "jiti ./scripts/test-sleep-background-and-jitter.ts",
     "test:platform": "jiti ./scripts/test-device-pairing-platform.ts",
+    "test:devicesync": "jiti ./scripts/test-device-sync-deeplink.ts",
     "test:votes": "jiti ./scripts/test-votes.ts",
     "test:votes:sync": "jiti ./scripts/test-votes-sync.ts",
     "test:audit": "jiti ./scripts/test-audit-logger.ts",

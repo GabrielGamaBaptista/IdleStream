@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { useAppStore } from '../stores/appStore';
 import { deviceSyncService } from '../services/deviceSyncService';
 import { isAndroidPlatform } from '../utils/platform';
+import { buildDeviceSyncUniversalUrl, extractDeviceSyncId } from '../utils/deviceSyncUrl';
 import {
   Smartphone,
   Monitor,
@@ -39,7 +40,8 @@ export const DeviceSyncCard: React.FC = () => {
 
   useEffect(() => {
     if (activeSyncId && showQr && !isAndroid) {
-      QRCode.toDataURL(`idlestream-devicesync:${activeSyncId}`, {
+      const universalUrl = buildDeviceSyncUniversalUrl(activeSyncId);
+      QRCode.toDataURL(universalUrl, {
         width: 200,
         margin: 1.5,
         color: { dark: '#000000', light: '#ffffff' },
@@ -65,7 +67,7 @@ export const DeviceSyncCard: React.FC = () => {
 
   const handleLinkExisting = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = inputSyncId.trim();
+    const clean = extractDeviceSyncId(inputSyncId);
     if (!clean) return;
     try {
       setErrorMessage(null);
@@ -282,8 +284,11 @@ export const DeviceSyncCard: React.FC = () => {
                 <div className="p-2 bg-white rounded-xl shadow-lg inline-block">
                   <img src={qrDataUrl} alt="QR Code de Vinculação" className="w-44 h-44" />
                 </div>
-                <p className="text-[11px] text-neutral-400">
-                  Abra o IdleStream no celular e aponte a câmera para parear instantaneamente.
+                <p className="text-[11px] text-neutral-300 max-w-xs leading-relaxed">
+                  Aponte a câmera do celular para este QR Code para abrir o IdleStream e parear instantaneamente.
+                </p>
+                <p className="text-[10px] text-neutral-500">
+                  Ou abra o app no celular, vá em <strong>Configurações &gt; Elo PC ↔ Celular</strong> e cole o código acima.
                 </p>
               </div>
             )}

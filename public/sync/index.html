@@ -91,9 +91,9 @@
 </head>
 <body>
   <div class="card">
-    <div class="badge">Sincronização Automática</div>
-    <h1>IdleStream Pareamento</h1>
-    <p>Conecte seus votos entre Computador e Celular para manter o contador de 24h 01m sempre alinhado.</p>
+    <div class="badge" id="badgeDisplay">Sincronização Automática</div>
+    <h1 id="titleDisplay">IdleStream Pareamento</h1>
+    <p id="descDisplay">Conecte seus votos entre Computador e Celular para manter o contador de 24h 01m sempre alinhado.</p>
     
     <a id="openAppBtn" class="btn" href="#">Abrir no IdleStream</a>
 
@@ -105,12 +105,25 @@
     (function() {
       var params = new URLSearchParams(window.location.search);
       var syncId = params.get('id') || '';
+      var syncType = (params.get('type') || '').toLowerCase();
+      var isDeviceSync = syncType === 'device' || params.has('device_sync');
+      
+      var badgeDisplay = document.getElementById('badgeDisplay');
+      var titleDisplay = document.getElementById('titleDisplay');
+      var descDisplay = document.getElementById('descDisplay');
       var codeDisplay = document.getElementById('codeDisplay');
       var openBtn = document.getElementById('openAppBtn');
       
+      if (isDeviceSync) {
+        badgeDisplay.innerText = 'Exclusão Mútua Cloud';
+        titleDisplay.innerText = 'Elo PC ↔ Celular';
+        descDisplay.innerText = 'Coordenação em tempo real para não farmar no Computador e no Celular ao mesmo tempo pelo mesmo IP.';
+      }
+
       if (syncId) {
         codeDisplay.innerText = syncId;
-        var deepLink = 'idlestream://vote-sync?id=' + encodeURIComponent(syncId);
+        var schemeHost = isDeviceSync ? 'device-sync' : 'vote-sync';
+        var deepLink = 'idlestream://' + schemeHost + '?id=' + encodeURIComponent(syncId);
         openBtn.href = deepLink;
         
         // Tenta redirecionar automaticamente para abrir o app

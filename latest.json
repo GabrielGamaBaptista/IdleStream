@@ -1,11 +1,11 @@
 {
-  "version": "4.3.3",
-  "notes": "IdleStream v4.3.3 — Restrição arquitetural de QR Code e exportação no mobile (Android estritamente receptor/cliente); resolução definitiva de loop infinito de inicialização no PokeIdle Ultra (idempotência no checkbox e fechamento de modal); modo Sleep total (1 FPS) em segundo plano com verificação de ociosidade do SO; filtro anti-jitter de mouse (deslocamento euclidiano >= 20px) para evitar despertares espontâneos.",
-  "pub_date": "2026-11-23T19:40:00Z",
+  "version": "4.3.4",
+  "notes": "IdleStream v4.3.4 — Correção definitiva da leitura de QR Code do Elo PC ↔ Celular (Exclusão Mútua) pela câmera padrão de smartphones (Universal Links HTTPS e Deep Links nativos idlestream://device-sync); suporte a fallback web e pareamento automático bidirecional; sanitização resiliente de IDs de pareamento.",
+  "pub_date": "2026-11-24T06:12:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjQ2RkpUMGsvWkZPb3YzQTR1SlpxVXBvbkRmcWtMdXpyT1pHa3lRcUNDS1JhTTJTUE5PMnMxWjBpYXBVS1k0Ri83V2J3cklocG5vY1JlUUdjdG9WV1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NDYyODQ4CWZpbGU6SWRsZVN0cmVhbV80LjMuM194NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjMKdUN4dHd4UXV6SERiUmdaNWJ5OWlha0JEN1lhVkhlbzZFUVZhL05JdmdxNzFRRVd4bG9hWDVTSGc1SE5NNDRMMCtIRDVYeEJJUnVXdTg1TmNjUUIzQUE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.3/IdleStream_4.3.3_x64-setup.exe"
+      "signature": "",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.4/IdleStream_4.3.4_x64-setup.exe"
     }
   }
 }
