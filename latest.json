@@ -1,11 +1,11 @@
 {
-  "version": "4.3.5",
-  "notes": "IdleStream v4.3.5 — Correção crítica de travamentos e do erro Gyarados no Eco Mode em jogos PokeIdle; otimização drástica de DirectComposition com cache de coordenadas (0% overhead de resize); eliminação de descarte indevido do loop rAF de jogos; fallback resiliente no sistema de atualização desktop via GitHub API; padronização nativa do QR Code do Elo PC ↔ Celular com o sistema de Votos (idlestream://device-sync).",
-  "pub_date": "2026-11-24T12:45:00Z",
+  "version": "4.3.6",
+  "notes": "IdleStream v4.3.6 — Padronização nativa do QR Code do Elo PC ↔ Celular com o sistema de Votos (idlestream://device-sync); eliminação definitiva do erro 404 ao escanear com a câmera do smartphone; abertura instantânea no app.",
+  "pub_date": "2026-11-24T13:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VnpLWHpkV0l5R0lldmw1WUNEZjFNQitlck82RGlIN0EzSXRBTUhwMks3Q0tYaXlGazk3ZlNsM05rWE1FR2s0QzRsYmc0VWVkeEp5L1ozMkp3WFVKcndrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTI0MjYzCWZpbGU6SWRsZVN0cmVhbV80LjMuNV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjUKK09HR2Rla0JCdVZxRHo1OTh0S2hsbVFzNktNWTg0amlrWUlYNGV3K1RCZUFhbFB6cmo2eWJXcko0S2FzVXFDc0M3Rmo5NHRnZmJ3b0NkNEZMVVAvREE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.5/IdleStream_4.3.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VnhWeTk2MEhJMUpBdlFmYnY0cVhod1pzRHVwNU9Ob3NnNmVTa2dzcGFVVWVuMjE1QUh3RGRGQnhDTHhJcUw3ek5yUlJwU01aY3BGZWdrR1FIeE1CdWdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTI1Mjg1CWZpbGU6SWRsZVN0cmVhbV80LjMuNl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjYKSllDR1JMT1hMOHYxL3V6dkE0aTBDdkduRnFra1I0UDV3eU0xM1Q4dFBwZ2YvMExwbUN0dWhORUdOSFRTYVRoSUVBbU9CNGREM3FoTllXclN4NGQ4RGc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.6/IdleStream_4.3.6_x64-setup.exe"
     }
   }
 }
