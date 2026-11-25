@@ -56,7 +56,7 @@ const IdleDurationDisplay: React.FC<{ lastActivityTimeRef: React.MutableRefObjec
 );
 
 export const GameWorkspace: React.FC = () => {
-  const { config, updateGameSlot, isImmersiveMode, setImmersiveMode, gameStates, slotSnapshots } = useAppStore();
+  const { config, updateGameSlot, markBattlePassClaimed, isImmersiveMode, setImmersiveMode, gameStates, slotSnapshots } = useAppStore();
   const gameSlots = config.game_slots || [];
 
   const [activeSlots, setActiveSlots] = useState<string[]>([]);
@@ -172,6 +172,25 @@ export const GameWorkspace: React.FC = () => {
     let unlistenFocus: (() => void) | undefined;
     let unlistenMin: (() => void) | undefined;
     let unlistenRestored: (() => void) | undefined;
+    let unlistenBattlePass: (() => void) | undefined;
+
+    listen<{
+      slotId: string;
+      status: 'claimed' | 'already_claimed';
+      claimedAt?: number;
+      nextAvailableAt?: number;
+      dayKey?: string;
+    }>('game-battle-pass-update', (e) => {
+      const p = e.payload;
+      if (!p || !p.slotId) return;
+      markBattlePassClaimed(
+        p.slotId,
+        p.claimedAt,
+        p.nextAvailableAt ?? null,
+        p.dayKey ?? null,
+        p.status === 'claimed'
+      );
+    }).then((u) => { unlistenBattlePass = u; }).catch(() => {});
 
     listen<boolean>('window-focus-changed', (e) => {
       if (e.payload) {
@@ -199,8 +218,9 @@ export const GameWorkspace: React.FC = () => {
       if (unlistenFocus) unlistenFocus();
       if (unlistenMin) unlistenMin();
       if (unlistenRestored) unlistenRestored();
+      if (unlistenBattlePass) unlistenBattlePass();
     };
-  }, []);
+  }, [markBattlePassClaimed]);
 
   // Escutar eventos de atividade do usuário na janela e nas WebViews filhas (via bridge, evento nativo e window.__onUserActivity)
   useEffect(() => {
@@ -292,6 +312,24 @@ export const GameWorkspace: React.FC = () => {
       window.removeEventListener('wheel', handleWheel);
     };
   }, [wakeUpFromIdle, isWindowMinimized]);
+
+  // Scheduler leve (60s) para resgate automático do Passe de Batalha nos slots ativos quando vencer o timer
+  useEffect(() => {
+    if (activeSlots.length === 0) return;
+    const checkDue = () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      for (const sid of activeSlots) {
+        const slot = gameSlots.find((s) => s.id === sid);
+        if (!slot || slot.battle_pass_auto_claim === false) continue;
+        const nextAt = slot.next_pass_available_at ?? 0;
+        if (!slot.last_pass_claimed_at || nowSec >= nextAt) {
+          gamePlatformService.triggerBattlePassClaim(sid).catch(() => {});
+        }
+      }
+    };
+    const t = setInterval(checkDue, 60000);
+    return () => clearInterval(t);
+  }, [activeSlots, gameSlots]);
 
   // Loop de monitoramento inteligente de performance e economia:
   // - 60 FPS ativo: primeiro plano, focado e com interação recente (<30s na janela ou Child WebViews)

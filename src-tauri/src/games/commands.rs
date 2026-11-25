@@ -116,6 +116,77 @@ pub async fn game_toggle_pokeidle_ultra(
 }
 
 #[tauri::command]
+pub async fn game_trigger_battle_pass_claim(
+    state: State<'_, Arc<GameLayoutManager>>,
+    slot_id: String,
+) -> Result<(), String> {
+    state.trigger_battle_pass_claim(&slot_id).await
+}
+
+#[tauri::command]
+pub async fn game_mark_battle_pass_claimed(
+    app_state: State<'_, Arc<crate::state::AppState>>,
+    slot_id: String,
+    claimed_at: Option<i64>,
+    next_available_at: Option<i64>,
+    day_key: Option<String>,
+    increment_total: Option<bool>,
+) -> Result<crate::config::AppConfig, String> {
+    let now = claimed_at.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    let mut cfg = app_state.config.lock().await;
+    let slot = cfg
+        .game_slots
+        .iter_mut()
+        .find(|s| s.id == slot_id)
+        .ok_or_else(|| format!("Slot de jogo '{}' não encontrado.", slot_id))?;
+
+    slot.last_pass_claimed_at = Some(now);
+    // Padrão confirmado: 24h 05m (86.700s) se não houver timestamp exato do servidor
+    slot.next_pass_available_at = Some(next_available_at.unwrap_or(now + 86_700));
+    if let Some(dk) = day_key {
+        if !dk.trim().is_empty() {
+            slot.last_pass_day_key = Some(dk);
+        }
+    }
+    if increment_total.unwrap_or(true) {
+        slot.total_pass_claims = slot.total_pass_claims.saturating_add(1);
+    }
+
+    crate::audit_log!(
+        "GAMES",
+        "INFO",
+        "Passe de Batalha sincronizado/resgatado para [{}] (Total: {}, Dia: {:?})",
+        slot.label,
+        slot.total_pass_claims,
+        slot.last_pass_day_key
+    );
+
+    app_state.config_store.save(&cfg)?;
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub async fn game_reset_battle_pass_timer(
+    app_state: State<'_, Arc<crate::state::AppState>>,
+    slot_id: String,
+) -> Result<crate::config::AppConfig, String> {
+    let mut cfg = app_state.config.lock().await;
+    let slot = cfg
+        .game_slots
+        .iter_mut()
+        .find(|s| s.id == slot_id)
+        .ok_or_else(|| format!("Slot de jogo '{}' não encontrado.", slot_id))?;
+
+    slot.last_pass_claimed_at = None;
+    slot.next_pass_available_at = None;
+    slot.last_pass_day_key = None;
+
+    crate::audit_log!("GAMES", "INFO", "Timer do Passe de Batalha resetado para [{}]", slot.label);
+    app_state.config_store.save(&cfg)?;
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
 pub async fn game_read_slot_state(
     state: State<'_, Arc<GameLayoutManager>>,
     slot_id: String,

@@ -42,6 +42,11 @@ export interface GameSlotConfig {
   auto_start: boolean;
   enable_hunt_extension?: boolean;
   zoom?: number;
+  battle_pass_auto_claim?: boolean;
+  last_pass_claimed_at?: number | null;
+  next_pass_available_at?: number | null;
+  total_pass_claims?: number;
+  last_pass_day_key?: string | null;
 }
 
 export interface PokeIdleGameState {

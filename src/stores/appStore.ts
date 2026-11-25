@@ -158,6 +158,14 @@ interface AppState {
 
   updateSettings: (settings: AppSettings) => Promise<void>;
   updateGameSlot: (slot: GameSlotConfig) => Promise<void>;
+  markBattlePassClaimed: (
+    slotId: string,
+    claimedAt?: number,
+    nextAvailableAt?: number | null,
+    dayKey?: string | null,
+    incrementTotal?: boolean
+  ) => Promise<void>;
+  resetBattlePassTimer: (slotId: string) => Promise<void>;
   updateVoteAccount: (account: VoteAccountConfig) => Promise<void>;
   markVoteCompleted: (accountId: string, votedAt?: number) => Promise<void>;
   resetVoteTimer: (accountId: string) => Promise<void>;
@@ -204,7 +212,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.4.2',
+  appVersion: '5.0.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -1007,6 +1015,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ config: updated });
     } catch (e) {
       console.error('Falha ao atualizar slot de jogo:', e);
+    }
+  },
+
+  markBattlePassClaimed: async (slotId, claimedAt, nextAvailableAt, dayKey, incrementTotal = true) => {
+    try {
+      const updated = await invoke<AppConfig>('game_mark_battle_pass_claimed', {
+        slotId,
+        claimedAt: claimedAt ?? null,
+        nextAvailableAt: nextAvailableAt ?? null,
+        dayKey: dayKey ?? null,
+        incrementTotal,
+      });
+      set({ config: updated });
+      const activeSyncId = updated.vote_sync_id || get().config.vote_sync_id || voteSyncService.getSyncId();
+      if (activeSyncId && updated.vote_accounts) {
+        voteSyncService.pushLocalVotes(activeSyncId, updated.vote_accounts, updated.game_slots).catch(() => {});
+      }
+    } catch (e) {
+      console.error('Falha ao registrar resgate do Passe de Batalha:', e);
+    }
+  },
+
+  resetBattlePassTimer: async (slotId) => {
+    try {
+      const updated = await invoke<AppConfig>('game_reset_battle_pass_timer', { slotId });
+      set({ config: updated });
+      const activeSyncId = updated.vote_sync_id || get().config.vote_sync_id || voteSyncService.getSyncId();
+      if (activeSyncId && updated.vote_accounts) {
+        voteSyncService.pushLocalVotes(activeSyncId, updated.vote_accounts, updated.game_slots).catch(() => {});
+      }
+    } catch (e) {
+      console.error('Falha ao resetar timer do Passe de Batalha:', e);
     }
   },
 

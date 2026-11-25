@@ -968,6 +968,126 @@
         connectWithHuntBus();
         window.addEventListener('DOMContentLoaded', connectWithHuntBus, { once: true });
 
+        // ============================================================
+        // 12. PASSE DE BATALHA POKEIDLE (AUTO-RESGATE & SYNC VIA WS)
+        // ============================================================
+        const bpState = (window.__idlestream_battle_pass = window.__idlestream_battle_pass || {
+          ultimo: null,
+          degrau: null,
+          total: null,
+          servidorAgora: null,
+          lastAttemptMs: 0,
+          lastReportedDay: null,
+          inFlight: false,
+        });
+
+        const emitBattlePassEvent = (payload) => {
+          try {
+            const serialized = JSON.stringify(payload);
+            if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.reportBattlePassEvent === 'function') {
+              window.IdleStreamSlotBridge.reportBattlePassEvent(serialized);
+            }
+            if (!isAndroid) {
+              const sendTitle = () => {
+                if (document.title && document.title.startsWith('__IDLESTREAM_')) {
+                  setTimeout(sendTitle, 60);
+                  return;
+                }
+                const origTitle = document.title && !document.title.startsWith('__IDLESTREAM_')
+                  ? document.title
+                  : 'PokeIdle';
+                document.title = '__IDLESTREAM_BATTLE_PASS__|' + serialized;
+                setTimeout(() => {
+                  if (document.title && document.title.startsWith('__IDLESTREAM_BATTLE_PASS__|')) {
+                    document.title = origTitle;
+                  }
+                }, 60);
+              };
+              sendTitle();
+            }
+          } catch (_) {}
+        };
+
+        window.__claimPokeIdleBattlePass = function (forceManual = false) {
+          try {
+            const ws = window.estado && window.estado.ws;
+            if (!ws || ws.readyState !== 1) return false;
+            const nowMs = Date.now();
+            if (bpState.inFlight && nowMs - bpState.lastAttemptMs < 15000) return false;
+            if (!forceManual && nowMs - bpState.lastAttemptMs < 60000) return false;
+
+            const refMs = bpState.servidorAgora || nowMs;
+            const serverDay = Math.floor(refMs / 86400000);
+            if (!forceManual && bpState.ultimo !== null && bpState.ultimo >= serverDay) {
+              return false; // Já resgatado no dia atual do servidor
+            }
+
+            bpState.inFlight = true;
+            bpState.lastAttemptMs = nowMs;
+            ws.send(JSON.stringify({ t: 'passe.resgatar' }));
+            console.log('[IdleStream] Passe de Batalha: enviado {"t":"passe.resgatar"}');
+            return true;
+          } catch (err) {
+            bpState.inFlight = false;
+            console.warn('[IdleStream] Erro ao enviar resgate do Passe:', err);
+            return false;
+          }
+        };
+
+        const handleBattlePassPacket = (raw) => {
+          if (!raw || typeof raw !== 'object') return;
+          const tipo = raw.t || (raw.data && raw.data.t);
+
+          if (tipo === 'passe' && raw.resgate) {
+            bpState.inFlight = false;
+            const nowSec = Math.floor(Date.now() / 1000);
+            const serverDay = Math.floor((bpState.servidorAgora || Date.now()) / 86400000);
+            bpState.ultimo = serverDay;
+            bpState.lastReportedDay = serverDay;
+            emitBattlePassEvent({
+              status: 'claimed',
+              claimedAt: nowSec,
+              nextAvailableAt: nowSec + 86700, // 24h 05m
+              dayKey: String(serverDay),
+              degrau: raw.resgate.degrau ?? bpState.degrau,
+            });
+            return;
+          }
+
+          const est = raw.estado && typeof raw.estado === 'object' ? raw.estado : null;
+          if (!est) return;
+          if (typeof est.servidorAgora === 'number') {
+            bpState.servidorAgora = est.servidorAgora;
+          }
+          if (est.passe && typeof est.passe === 'object') {
+            if (typeof est.passe.ultimo === 'number') bpState.ultimo = est.passe.ultimo;
+            if (typeof est.passe.degrau === 'number') bpState.degrau = est.passe.degrau;
+            if (typeof est.passe.total === 'number') bpState.total = est.passe.total;
+
+            const serverDay = Math.floor((bpState.servidorAgora || Date.now()) / 86400000);
+            if (bpState.ultimo !== null) {
+              if (bpState.ultimo >= serverDay) {
+                if (bpState.lastReportedDay !== bpState.ultimo) {
+                  bpState.lastReportedDay = bpState.ultimo;
+                  const nowSec = Math.floor(Date.now() / 1000);
+                  emitBattlePassEvent({
+                    status: 'already_claimed',
+                    claimedAt: nowSec,
+                    nextAvailableAt: (bpState.ultimo + 1) * 86400 + 300,
+                    dayKey: String(bpState.ultimo),
+                    degrau: bpState.degrau,
+                  });
+                }
+              } else {
+                // Passe disponível hoje! Agenda resgate automático após estabilização da sessão
+                setTimeout(() => {
+                  window.__claimPokeIdleBattlePass(false);
+                }, 1500);
+              }
+            }
+          }
+        };
+
         // Interceptar WebSocket nativo
         const _NativeWS = window.WebSocket;
         if (_NativeWS && !window.__idlestream_ws_hooked) {
@@ -981,11 +1101,12 @@
                 }
                 if (typeof ev.data === 'string') {
                   // Filtro rápido por cabeçalho antes de deserializar JSON desnecessário
-                  const head = ev.data.slice(0, 40);
-                  if (head.includes('"t":"campo"') || head.includes('"t":"campo.init"')) {
+                  const head = ev.data.slice(0, 60);
+                  if (head.includes('"t":"campo"') || head.includes('"t":"campo.init"') || head.includes('"t":"pong"') || head.includes('"t":"ping"')) {
                     return; // Passa direto sem parsing pesado de batalha
                   }
                   const parsed = JSON.parse(ev.data);
+                  handleBattlePassPacket(parsed);
                   processMessageData(parsed);
                 }
               } catch (_) {}

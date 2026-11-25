@@ -1,11 +1,11 @@
 ﻿{
-    "platforms":  {
-                      "windows-x86_64":  {
-                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjlPSjl0NEFHNXZSSHo2eERaTEJhZ0QzV1ZmdGNtbXZiaGs2MVBRZGcyZEJSL05WR0NqdWhGK0FyVnJRV2tmajdURkVsZEhabDFFQkJ3QzZjanc1K1FNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjMzMzgxCWZpbGU6SWRsZVN0cmVhbV80LjQuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC40LjIKdURMZnZpakFLcGs5aUtlKzZuQkt0cTJHZEd2bGZRYUhRZ3lZZXRlMUMvSjVZMURHa3IybjdueTVSQzMzVCs1Ny9SK3hsejBXbU5hWnVXbEF2bGhLQ3c9PQo=",
-                                             "url":  "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.4.2/IdleStream_4.4.2_x64-setup.exe"
-                                         }
-                  },
-    "pub_date":  "2026-11-25T19:03:13Z",
-    "version":  "4.4.2",
-    "notes":  "IdleStream v4.4.2 — Correção definitiva do Modo Ultra Economia do PokeIdle: leitura correta do switch role=\"switch\" (#cfg-ultra), guarda de prontidão (#app.hidden / #portal) com ativação adiada sem inversão de estado, e fechamento automático do modal via #modal-fechar."
+  "version": "5.0.1",
+  "notes": "IdleStream v5.0.1 — Resgate Automático do Passe de Batalha do PokeIdle via WebSocket ({\"t\":\"passe.resgatar\"}), verificação passiva ao conectar (estado.passe.ultimo vs servidorAgora), persistência por slot (24h 05m fallback) e sincronização bidirecional PC ↔ Celular via vote_sync_id.",
+  "pub_date": "2026-11-25T20:01:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9mLzFEc2V0RVZQZnlkTGpBN2ZtVXdFc0VUT0RYdTM1eUVQMW5adkl0RklMZEk0Q1dpY2tjZXJQWlQ1Zmozd2JRd09CM3hoeG5LbjNZZ28rUmVoZGcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjM2ODc3CWZpbGU6SWRsZVN0cmVhbV81LjAuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4wLjEKUzBlSzlrWURWRUF2emIrNytETzU1cUo0MlF1bHhnRStKQ1A3a0FYT2hrSHNBVlR2Mnd0OERzSzdSZXY5dGJPY0sveGpkQkJvNG43S294Zmw5eEhiQnc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.0.1/IdleStream_5.0.1_x64-setup.exe"
+    }
+  }
 }

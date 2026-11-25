@@ -127,6 +127,13 @@ class GameSlotBridge(private val slotId: String, private val app: Application, p
     fun reportActivity() {
         manager.reportUserActivity()
     }
+
+    @JavascriptInterface
+    fun reportBattlePassEvent(jsonPayload: String) {
+        try {
+            Log.d("GameSlotBridge", "BattlePass event [$slotId]: $jsonPayload")
+        } catch (_: Throwable) {}
+    }
 }
 
 /**

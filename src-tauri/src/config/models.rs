@@ -117,6 +117,16 @@ pub struct GameSlotConfig {
     pub enable_hunt_extension: bool,
     #[serde(default = "default_zoom")]
     pub zoom: f64,
+    #[serde(default = "default_true")]
+    pub battle_pass_auto_claim: bool,
+    #[serde(default)]
+    pub last_pass_claimed_at: Option<i64>,
+    #[serde(default)]
+    pub next_pass_available_at: Option<i64>,
+    #[serde(default)]
+    pub total_pass_claims: u32,
+    #[serde(default)]
+    pub last_pass_day_key: Option<String>,
 }
 
 fn default_zoom() -> f64 {
@@ -141,6 +151,11 @@ pub fn default_game_slots() -> Vec<GameSlotConfig> {
             auto_start: false,
             enable_hunt_extension: true,
             zoom: 1.0,
+            battle_pass_auto_claim: true,
+            last_pass_claimed_at: None,
+            next_pass_available_at: None,
+            total_pass_claims: 0,
+            last_pass_day_key: None,
         },
         GameSlotConfig {
             id: "slot-2".into(),
@@ -150,6 +165,11 @@ pub fn default_game_slots() -> Vec<GameSlotConfig> {
             auto_start: false,
             enable_hunt_extension: true,
             zoom: 1.0,
+            battle_pass_auto_claim: true,
+            last_pass_claimed_at: None,
+            next_pass_available_at: None,
+            total_pass_claims: 0,
+            last_pass_day_key: None,
         },
         GameSlotConfig {
             id: "slot-3".into(),
@@ -159,6 +179,11 @@ pub fn default_game_slots() -> Vec<GameSlotConfig> {
             auto_start: false,
             enable_hunt_extension: true,
             zoom: 1.0,
+            battle_pass_auto_claim: true,
+            last_pass_claimed_at: None,
+            next_pass_available_at: None,
+            total_pass_claims: 0,
+            last_pass_day_key: None,
         },
         GameSlotConfig {
             id: "slot-4".into(),
@@ -168,6 +193,11 @@ pub fn default_game_slots() -> Vec<GameSlotConfig> {
             auto_start: false,
             enable_hunt_extension: true,
             zoom: 1.0,
+            battle_pass_auto_claim: true,
+            last_pass_claimed_at: None,
+            next_pass_available_at: None,
+            total_pass_claims: 0,
+            last_pass_day_key: None,
         },
     ]
 }

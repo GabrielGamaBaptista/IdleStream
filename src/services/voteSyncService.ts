@@ -1,8 +1,15 @@
-import { VoteAccountConfig } from '../types';
+import { GameSlotConfig, VoteAccountConfig } from '../types';
 
 export interface VoteSyncSlotData {
   last_voted_at: number;
   total_votes: number;
+}
+
+export interface BattlePassSyncSlotData {
+  last_pass_claimed_at: number;
+  next_pass_available_at?: number | null;
+  total_pass_claims: number;
+  last_pass_day_key?: string | null;
 }
 
 export interface VoteSyncPayload {
@@ -10,6 +17,7 @@ export interface VoteSyncPayload {
   updated_at: number;
   device_id: string;
   slots: Record<string, VoteSyncSlotData>;
+  battle_pass_slots?: Record<string, BattlePassSyncSlotData>;
 }
 
 export interface VoteSyncStatus {
@@ -124,6 +132,19 @@ class VoteSyncService {
     return slots;
   }
 
+  public buildBattlePassPayload(gameSlots: GameSlotConfig[]): Record<string, BattlePassSyncSlotData> {
+    const bpSlots: Record<string, BattlePassSyncSlotData> = {};
+    for (const slot of gameSlots) {
+      bpSlots[slot.id] = {
+        last_pass_claimed_at: slot.last_pass_claimed_at || 0,
+        next_pass_available_at: slot.next_pass_available_at ?? null,
+        total_pass_claims: slot.total_pass_claims || 0,
+        last_pass_day_key: slot.last_pass_day_key ?? null,
+      };
+    }
+    return bpSlots;
+  }
+
   /**
    * Busca o estado remoto do pareamento
    */
@@ -149,15 +170,30 @@ class VoteSyncService {
   }
 
   /**
-   * Envia os votos locais atualizados para a nuvem
+   * Envia os votos locais (e opcionalmente o estado do Passe de Batalha) para a nuvem
    */
-  public async pushLocalVotes(syncId: string, accounts: VoteAccountConfig[]): Promise<boolean> {
+  public async pushLocalVotes(
+    syncId: string,
+    accounts: VoteAccountConfig[],
+    gameSlots?: GameSlotConfig[]
+  ): Promise<boolean> {
     try {
+      let bpSlots: Record<string, BattlePassSyncSlotData> | undefined;
+      if (gameSlots && gameSlots.length > 0) {
+        bpSlots = this.buildBattlePassPayload(gameSlots);
+      } else {
+        const remote = await this.fetchRemoteVotes(syncId);
+        if (remote?.battle_pass_slots) {
+          bpSlots = remote.battle_pass_slots;
+        }
+      }
+
       const payload: VoteSyncPayload = {
-        version: 1,
+        version: bpSlots ? 2 : 1,
         updated_at: Math.floor(Date.now() / 1000),
         device_id: this.deviceId,
         slots: this.buildSlotsPayload(accounts),
+        ...(bpSlots ? { battle_pass_slots: bpSlots } : {}),
       };
 
       const response = await fetch(`${API_BASE_URL}/${encodeURIComponent(syncId)}`, {

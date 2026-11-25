@@ -233,6 +233,14 @@ impl GameLayoutManager {
                                 "snapshot": snap_str,
                             }));
                         });
+                    } else if let Some(bp_json) = title.strip_prefix("__IDLESTREAM_BATTLE_PASS__|") {
+                        let sid = slot_id_title.clone();
+                        if let Ok(mut payload) = serde_json::from_str::<serde_json::Value>(bp_json) {
+                            if let Some(obj) = payload.as_object_mut() {
+                                obj.insert("slotId".to_string(), serde_json::Value::String(sid.clone()));
+                            }
+                            let _ = app_title.emit("game-battle-pass-update", &payload);
+                        }
                     }
                 });
 
@@ -578,6 +586,17 @@ impl GameLayoutManager {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Dispara a tentativa de resgate do Passe de Batalha do PokeIdle em um slot ativo
+    pub async fn trigger_battle_pass_claim(&self, slot_id: &str) -> Result<(), String> {
+        #[cfg(desktop)]
+        if let Some(wv) = self.app.get_webview(slot_id) {
+            let _ = wv.eval("if (typeof window.__claimPokeIdleBattlePass === 'function') { window.__claimPokeIdleBattlePass(true); }");
+        }
+        #[cfg(not(desktop))]
+        let _ = slot_id;
         Ok(())
     }
 

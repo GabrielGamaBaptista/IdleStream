@@ -33,6 +33,11 @@ fn test_game_slot_json_serialization() {
         auto_start: true,
         enable_hunt_extension: true,
         zoom: 0.8,
+        battle_pass_auto_claim: true,
+        last_pass_claimed_at: None,
+        next_pass_available_at: None,
+        total_pass_claims: 0,
+        last_pass_day_key: None,
     };
 
     let json = serde_json::to_string(&slot).expect("Falha ao serializar");

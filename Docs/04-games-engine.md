@@ -357,7 +357,21 @@ A versão **v4.4.0** elimina falsos disparos dos modos Eco (10 FPS) e Sleep (1 F
 
 ---
 
-## 12. Próximos Passos & Documentos Relacionados
+## 12. Resgate Automático do Passe de Batalha (`v5.0.1`)
+
+A versão **v5.0.1** adiciona o subsistema autônomo de **Resgate Diário do Passe de Batalha** do PokeIdle por slot (`slot-1` a `slot-4`), operando diretamente via WebSocket sem abrir modais na interface do jogo:
+
+1. **Verificação Passiva ao Conectar (`anti_sleep.js`)**:
+   - Ao receber `welcome` ou `estado`, o motor lê `estado.passe.ultimo` e `estado.servidorAgora`.
+   - Se `ultimo >= Math.floor(servidorAgora / 86400000)`, nenhuma requisição é enviada (zero spam) e o estado de já resgatado é sincronizado.
+   - Se `ultimo < diaServidorAtual`, dispara `{"t":"passe.resgatar"}` pelo WebSocket ativo e aguarda a confirmação `t === "passe"`.
+2. **Persistência & Cloud Sync (`models.rs`, `voteSyncService.ts`)**:
+   - `GameSlotConfig` armazena `battle_pass_auto_claim`, `last_pass_claimed_at`, `next_pass_available_at` (fallback de `24h 05m` / `86.700s`), `total_pass_claims` e `last_pass_day_key`.
+   - O estado é sincronizado bidirecionalmente entre PC e Celular reutilizando o mesmo `vote_sync_id` (`version: 2`, retrocompatível com `version: 1`).
+
+---
+
+## 13. Próximos Passos & Documentos Relacionados
 
 Para compreender a estrutura interna do estado global em Rust (`AppState`), a persistência em `config.json` e consultar o dicionário exaustivo de comandos IPC:
 👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC** e **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.

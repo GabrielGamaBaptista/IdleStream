@@ -113,6 +113,15 @@ export const gamePlatformService = {
     });
   },
 
+  async triggerBattlePassClaim(slotId: string): Promise<void> {
+    const bridge = getAndroidBridge();
+    if (bridge && typeof (bridge as any).triggerBattlePassClaim === 'function') {
+      (bridge as any).triggerBattlePassClaim(slotId);
+      return;
+    }
+    await invoke('game_trigger_battle_pass_claim', { slotId });
+  },
+
   async hideAll(): Promise<void> {
     const bridge = getAndroidBridge();
     if (bridge) {
