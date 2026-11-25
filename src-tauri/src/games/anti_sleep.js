@@ -1051,6 +1051,16 @@
               dayKey: String(serverDay),
               degrau: raw.resgate.degrau ?? bpState.degrau,
             });
+            // Fecha automaticamente o modal de recompensa/passe se o jogo abriu na tela
+            const closePassModal = () => {
+              try {
+                const btnOk = document.getElementById('ps-abrir-ok');
+                if (btnOk && typeof btnOk.click === 'function') btnOk.click();
+                closePokeIdleModalIfOpen();
+              } catch (_) {}
+            };
+            setTimeout(closePassModal, 350);
+            setTimeout(closePassModal, 1000);
             return;
           }
 
