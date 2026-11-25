@@ -135,6 +135,7 @@ export interface DeviceSyncRemoteState {
   isOtherDeviceActive: boolean;
   isCurrentDeviceActive: boolean;
   otherDeviceType: 'desktop' | 'mobile';
+  claimNonce?: string | null;
 }
 
 export interface RuntimeSessionState {

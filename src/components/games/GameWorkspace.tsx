@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
 import { GameSlotConfig, SlotBounds } from '../../types';
 import { gamePlatformService, isAndroidPlatform } from '../../services/gamePlatformService';
+import { deviceSyncService } from '../../services/deviceSyncService';
 import { computeDynamicPerformanceState } from './dynamicPerformance';
 import {
   LayoutGrid,
@@ -650,12 +651,16 @@ export const GameWorkspace: React.FC = () => {
         zoom
       );
       const refreshed = await refreshActiveSlots();
-      persistActiveGameSlots(refreshed ?? nextSlots);
+      const effectiveSlots = refreshed ?? nextSlots;
+      persistActiveGameSlots(effectiveSlots);
+      await invoke('device_notify_game_slots', { activeSlotIds: effectiveSlots }).catch(() => {});
+      deviceSyncService.claimActive().catch(() => {});
       setTimeout(syncBounds, 100);
     } catch (e) {
       const fallback = activeSlots.filter((id) => id !== slotId);
       setActiveSlots(fallback);
       persistActiveGameSlots(fallback);
+      invoke('device_notify_game_slots', { activeSlotIds: fallback }).catch(() => {});
       alert(`Erro ao iniciar jogo no slot ${slotId}: ${e}`);
     }
   };
@@ -666,7 +671,15 @@ export const GameWorkspace: React.FC = () => {
       setActiveSlots(nextSlots);
       await gamePlatformService.stopSlot(slotId);
       const refreshed = await refreshActiveSlots();
-      persistActiveGameSlots(refreshed ?? nextSlots);
+      const effectiveSlots = refreshed ?? nextSlots;
+      persistActiveGameSlots(effectiveSlots);
+      await invoke('device_notify_game_slots', { activeSlotIds: effectiveSlots }).catch(() => {});
+      const hasActiveStream = Object.values(statuses).some(
+        (s) => s.status === 'connected' || s.status === 'standby' || s.status === 'connecting'
+      );
+      if (effectiveSlots.length === 0 && !hasActiveStream) {
+        deviceSyncService.releaseActive().catch(() => {});
+      }
       setTimeout(syncBounds, 100);
     } catch (e) {
       console.error('Erro ao parar slot:', e);
@@ -700,6 +713,10 @@ export const GameWorkspace: React.FC = () => {
     const refreshed = await refreshActiveSlots();
     if (refreshed) {
       persistActiveGameSlots(refreshed);
+      await invoke('device_notify_game_slots', { activeSlotIds: refreshed }).catch(() => {});
+      if (refreshed.length > 0) {
+        deviceSyncService.claimActive().catch(() => {});
+      }
     }
     setTimeout(syncBounds, 100);
   };

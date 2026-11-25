@@ -297,6 +297,7 @@ pub struct RuntimeSessionState {
     pub night_mode_started_at: Option<i64>,
     pub pre_night_fps: Option<u32>,
     pub pre_night_eco: Option<bool>,
+    pub device_link_id: Option<String>,
 }
 
 impl Default for AppConfig {

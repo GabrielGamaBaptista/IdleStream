@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod commands;
 pub mod config;
+pub mod device_sync;
 pub mod games;
 pub mod kick;
 pub mod live_check;
@@ -47,6 +48,23 @@ fn is_window_or_child_foreground(window: &tauri::Window) -> bool {
         }
     }
     true
+}
+
+#[cfg(desktop)]
+fn release_sync_on_exit(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<Arc<AppState>>() {
+        let state = Arc::clone(&state);
+        let handle = std::thread::spawn(move || {
+            tauri::async_runtime::block_on(async move {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(1200),
+                    state.release_device_active_if_owner(false),
+                )
+                .await;
+            });
+        });
+        let _ = handle.join();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -160,6 +178,7 @@ pub fn run() {
                                 });
                             }
                         } else {
+                            release_sync_on_exit(&app);
                             if let Some(safety) = app.try_state::<Arc<safety::SafetyNet>>() {
                                 safety.mark_ok();
                             }
@@ -266,6 +285,9 @@ pub fn run() {
             // Start background daily vote scheduler (24h 01m notification alerts)
             votes::notifier::start_vote_scheduler(app_state.clone());
 
+            // Start PC <-> Mobile exclusive sync loop (polling 5s + heartbeat 30s)
+            device_sync::start_device_sync_loop(app_state.clone());
+
             #[cfg(desktop)]
             {
                 // Build Tray Menu
@@ -327,6 +349,7 @@ pub fn run() {
                                     });
                                 }
                                 "quit" => {
+                                    release_sync_on_exit(&app_handle_tray);
                                     if let Some(safety) = app_handle_tray.try_state::<Arc<safety::SafetyNet>>() {
                                         safety.mark_ok();
                                     }
@@ -464,6 +487,11 @@ pub fn run() {
             get_night_mode_status,
             device_set_sync_id,
             device_get_sync_id,
+            device_get_sync_info,
+            device_claim_active,
+            device_release_active,
+            device_check_sync,
+            device_notify_game_slots,
             start_session_export,
             stop_session_export,
             get_session_export_status,

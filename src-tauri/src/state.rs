@@ -46,13 +46,36 @@ pub struct AppState {
     pub verify_all_lock: Mutex<()>,
     pub http_client: reqwest::Client,
     pub app_handle: AppHandle,
+    pub device_sync_tracker: Mutex<crate::device_sync::DeviceSyncTracker>,
+    pub device_sync_op_lock: Mutex<()>,
+    pub android_active_game_slots: Mutex<Vec<String>>,
+    pub takeover_shutting_down: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
     pub fn new(app_handle: AppHandle) -> Self {
         let config_store = ConfigStore::new(&app_handle);
         let config = config_store.load();
-        let runtime_state = config_store.load_runtime_state();
+        let mut runtime_state = config_store.load_runtime_state();
+
+        let device_link_id = match runtime_state
+            .device_link_id
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+        {
+            Some(id) => id,
+            None => {
+                let raw_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+                let generated = format!("dev_{}", &raw_uuid[..9]);
+                runtime_state.device_link_id = Some(generated.clone());
+                let _ = config_store.save_runtime_state(&runtime_state);
+                generated
+            }
+        };
+        let device_sync_tracker = Mutex::new(crate::device_sync::DeviceSyncTracker::new(
+            device_link_id,
+            crate::device_sync::current_device_type(),
+        ));
 
         let mut statuses = HashMap::new();
         for stream in &config.streams {
@@ -93,10 +116,20 @@ impl AppState {
             verify_all_lock: Mutex::new(()),
             http_client,
             app_handle,
+            device_sync_tracker,
+            device_sync_op_lock: Mutex::new(()),
+            android_active_game_slots: Mutex::new(Vec::new()),
+            takeover_shutting_down: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     pub async fn emit_status(&self, status: &StreamRuntimeStatus) {
+        if self
+            .takeover_shutting_down
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
+        }
         let _ = self.app_handle.emit("stream-status-update", status);
 
         let map = self.statuses.lock().await;
@@ -261,6 +294,12 @@ impl AppState {
 
         // Persiste intenção ativa imediatamente para auto-retomada após recriação/reinício
         self.mark_stream_desired_active(stream_id, true).await;
+
+        // Reivindica posse exclusiva no Elo PC <-> Celular assim que qualquer live iniciar
+        let this_claim = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            this_claim.notify_farming_started().await;
+        });
 
         // 1. Check live status if auto_live_only is enabled
         let is_live = match stream.platform {
@@ -1421,6 +1460,394 @@ impl AppState {
                 this.verify_all_accounts().await;
             }
         });
+    }
+
+    pub async fn is_locally_farming(&self) -> bool {
+        let stream_active = {
+            let map = self.statuses.lock().await;
+            map.values().any(|s| {
+                matches!(
+                    s.status,
+                    StatusKind::Connected | StatusKind::Connecting | StatusKind::Standby
+                ) || s.is_farming
+            })
+        };
+        if stream_active {
+            return true;
+        }
+
+        if let Some(gm) = tauri::Manager::try_state::<Arc<crate::games::manager::GameLayoutManager>>(&self.app_handle) {
+            if !gm.active_slots.lock().await.is_empty() {
+                return true;
+            }
+        }
+
+        #[cfg(target_os = "android")]
+        {
+            if !self.android_active_game_slots.lock().await.is_empty() {
+                return true;
+            }
+            if crate::kick::http::get_android_active_game_slots_count() > 0 {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub async fn set_android_active_game_slots(self: &Arc<Self>, slots: Vec<String>) {
+        let has_slots = !slots.is_empty();
+        *self.android_active_game_slots.lock().await = slots;
+        if has_slots {
+            self.notify_farming_started().await;
+        }
+    }
+
+    pub async fn stop_all_streams_for_takeover(&self) {
+        let stream_ids: Vec<String> = {
+            let cfg = self.config.lock().await;
+            cfg.streams.iter().map(|s| s.id.clone()).collect()
+        };
+
+        {
+            let mut sessions = self.twitch_sessions.lock().await;
+            for (_, mut sess) in sessions.drain() {
+                sess.stop();
+            }
+        }
+        {
+            let mut watchers = self.twitch_watchers.lock().await;
+            for (_, mut w) in watchers.drain() {
+                w.stop();
+            }
+        }
+        {
+            let mut watchers = self.kick_watchers.lock().await;
+            for (_, mut w) in watchers.drain() {
+                w.stop();
+            }
+        }
+
+        let streams_copy = {
+            let cfg = self.config.lock().await;
+            cfg.streams.clone()
+        };
+        for stream in &streams_copy {
+            let clean_slug = stream.channel_slug.trim().trim_start_matches('/').to_lowercase();
+            for acc_id in &stream.account_ids {
+                if stream.platform == Platform::Kick {
+                    self.kick_coordinator.remove_streamer(acc_id, &clean_slug).await;
+                } else {
+                    self.twitch_coordinator.remove_streamer(acc_id, &clean_slug).await;
+                }
+            }
+        }
+
+        for sid in stream_ids {
+            let (prev_points, prev_account_points) = {
+                let map = self.statuses.lock().await;
+                if let Some(s) = map.get(&sid) {
+                    (s.channel_points.clone(), s.account_points.clone())
+                } else {
+                    (None, HashMap::new())
+                }
+            };
+            let status = StreamRuntimeStatus {
+                stream_id: sid.clone(),
+                status: StatusKind::Disconnected,
+                is_live: false,
+                is_farming: false,
+                message: Some("Encerrado pelo outro dispositivo conectado.".into()),
+                uptime_seconds: 0,
+                estimated_ram_mb: 0,
+                connected_at: None,
+                channel_points: prev_points,
+                account_points: prev_account_points,
+            };
+            self.statuses.lock().await.insert(sid, status.clone());
+            self.emit_status(&status).await;
+        }
+    }
+
+    pub async fn get_device_sync_info(&self) -> crate::device_sync::DeviceSyncInfo {
+        let sync_id = {
+            let cfg = self.config.lock().await;
+            cfg.device_sync_id
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        };
+        let (device_id, device_type) = {
+            let tracker = self.device_sync_tracker.lock().await;
+            (tracker.device_id.clone(), tracker.device_type)
+        };
+        let remote_state = if let Some(ref sid) = sync_id {
+            if let Ok(Some(raw)) = crate::device_sync::fetch_raw_remote_state(
+                &self.http_client,
+                crate::device_sync::KEYVAL_API_URL,
+                sid,
+            )
+            .await
+            {
+                Some(crate::device_sync::build_remote_state_view(
+                    sid,
+                    &raw,
+                    &device_id,
+                    device_type,
+                    crate::device_sync::now_unix_secs(),
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        crate::device_sync::DeviceSyncInfo {
+            sync_id,
+            device_id,
+            device_type,
+            remote_state,
+        }
+    }
+
+    pub async fn notify_farming_started(self: &Arc<Self>) {
+        let sync_id = {
+            let cfg = self.config.lock().await;
+            cfg.device_sync_id
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        };
+        let already_recently_claimed = {
+            let mut tracker = self.device_sync_tracker.lock().await;
+            if tracker.shutdown_triggered {
+                return;
+            }
+            let now = crate::device_sync::now_unix_secs();
+            if tracker.local_claim_nonce.is_some()
+                && tracker.last_remote_nonce.as_deref() == tracker.local_claim_nonce.as_deref()
+                && (now - tracker.last_heartbeat_at) < crate::device_sync::HEARTBEAT_INTERVAL_SECS
+            {
+                true
+            } else {
+                tracker.pending_claim = true;
+                false
+            }
+        };
+        if sync_id.is_some() && !already_recently_claimed {
+            let _ = self.claim_device_active().await;
+        }
+    }
+
+    pub async fn claim_device_active(self: &Arc<Self>) -> Result<bool, String> {
+        let sync_id = {
+            let cfg = self.config.lock().await;
+            cfg.device_sync_id
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        };
+        let Some(sync_id) = sync_id else {
+            return Ok(false);
+        };
+
+        let _op_guard = self.device_sync_op_lock.lock().await;
+        let now = crate::device_sync::now_unix_secs();
+
+        let (nonce, dev_id, dev_type) = {
+            let mut tracker = self.device_sync_tracker.lock().await;
+            if tracker.shutdown_triggered {
+                return Ok(false);
+            }
+            let nonce = tracker.prepare_local_claim(now);
+            (nonce, tracker.device_id.clone(), tracker.device_type)
+        };
+
+        let payload = crate::device_sync::DeviceSyncRawData {
+            active_device: Some(dev_type),
+            device_id: dev_id.clone(),
+            device_type: dev_type,
+            updated_at: now,
+            claim_nonce: nonce.clone(),
+        };
+
+        match crate::device_sync::post_raw_sync_state(
+            &self.http_client,
+            crate::device_sync::KEYVAL_API_URL,
+            &sync_id,
+            &payload,
+        )
+        .await
+        {
+            Ok(()) => {
+                {
+                    let mut tracker = self.device_sync_tracker.lock().await;
+                    tracker.mark_claim_succeeded(&nonce, now);
+                }
+                let view = crate::device_sync::build_remote_state_view(
+                    &sync_id,
+                    &payload,
+                    &dev_id,
+                    dev_type,
+                    now,
+                );
+                let _ = self.app_handle.emit("device-sync-state-updated", &view);
+                crate::audit_log!(
+                    "SYNC",
+                    "INFO",
+                    "Elo PC↔Celular: dispositivo ({}) assumiu o farm (nonce={})",
+                    dev_type.as_str(),
+                    nonce
+                );
+                Ok(true)
+            }
+            Err(e) => {
+                let mut tracker = self.device_sync_tracker.lock().await;
+                tracker.pending_claim = true;
+                Err(e)
+            }
+        }
+    }
+
+    pub async fn release_device_active_if_owner(&self, force_if_paired: bool) -> Result<bool, String> {
+        let sync_id = {
+            let cfg = self.config.lock().await;
+            cfg.device_sync_id
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        };
+        let Some(sync_id) = sync_id else {
+            return Ok(false);
+        };
+
+        let _op_guard = self.device_sync_op_lock.lock().await;
+        let now = crate::device_sync::now_unix_secs();
+
+        let (should_release, dev_id, dev_type) = {
+            let tracker = self.device_sync_tracker.lock().await;
+            let allowed = if force_if_paired {
+                !tracker.shutdown_triggered
+            } else {
+                tracker.should_release_on_manual_exit()
+            };
+            (allowed, tracker.device_id.clone(), tracker.device_type)
+        };
+
+        if !should_release {
+            return Ok(false);
+        }
+
+        let payload = crate::device_sync::DeviceSyncRawData {
+            active_device: None,
+            device_id: dev_id.clone(),
+            device_type: dev_type,
+            updated_at: now,
+            claim_nonce: format!("rel_{}", now),
+        };
+
+        crate::device_sync::post_raw_sync_state(
+            &self.http_client,
+            crate::device_sync::KEYVAL_API_URL,
+            &sync_id,
+            &payload,
+        )
+        .await?;
+
+        {
+            let mut tracker = self.device_sync_tracker.lock().await;
+            tracker.mark_released();
+        }
+        let view = crate::device_sync::build_remote_state_view(
+            &sync_id,
+            &payload,
+            &dev_id,
+            dev_type,
+            now,
+        );
+        let _ = self.app_handle.emit("device-sync-state-updated", &view);
+        Ok(true)
+    }
+
+    pub async fn poll_device_sync_once(
+        self: &Arc<Self>,
+        sync_id: &str,
+    ) -> Result<Option<crate::device_sync::DeviceSyncRemoteState>, String> {
+        let _op_guard = self.device_sync_op_lock.lock().await;
+        let raw_opt = crate::device_sync::fetch_raw_remote_state(
+            &self.http_client,
+            crate::device_sync::KEYVAL_API_URL,
+            sync_id,
+        )
+        .await?;
+
+        let is_farming = self.is_locally_farming().await;
+        let now = crate::device_sync::now_unix_secs();
+
+        let (action, dev_id, dev_type, view_opt) = {
+            let mut tracker = self.device_sync_tracker.lock().await;
+            let dev_id = tracker.device_id.clone();
+            let dev_type = tracker.device_type;
+            let view = raw_opt.as_ref().map(|raw| {
+                crate::device_sync::build_remote_state_view(sync_id, raw, &dev_id, dev_type, now)
+            });
+            let action = tracker.evaluate_poll(raw_opt.as_ref(), is_farming, now);
+            (action, dev_id, dev_type, view)
+        };
+
+        if let Some(ref view) = view_opt {
+            let _ = self.app_handle.emit("device-sync-state-updated", view);
+        }
+
+        match action {
+            crate::device_sync::PollAction::TriggerRemoteTakeoverShutdown => {
+                let this_shutdown = Arc::clone(self);
+                tauri::async_runtime::spawn(async move {
+                    crate::device_sync::execute_remote_takeover_shutdown(&this_shutdown).await;
+                });
+                Ok(view_opt)
+            }
+            crate::device_sync::PollAction::SendHeartbeat { nonce } => {
+                let payload = crate::device_sync::DeviceSyncRawData {
+                    active_device: Some(dev_type),
+                    device_id: dev_id.clone(),
+                    device_type: dev_type,
+                    updated_at: now,
+                    claim_nonce: nonce.clone(),
+                };
+                match crate::device_sync::post_raw_sync_state(
+                    &self.http_client,
+                    crate::device_sync::KEYVAL_API_URL,
+                    sync_id,
+                    &payload,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        {
+                            let mut tracker = self.device_sync_tracker.lock().await;
+                            tracker.mark_claim_succeeded(&nonce, now);
+                        }
+                        let view = crate::device_sync::build_remote_state_view(
+                            sync_id,
+                            &payload,
+                            &dev_id,
+                            dev_type,
+                            now,
+                        );
+                        let _ = self.app_handle.emit("device-sync-state-updated", &view);
+                        Ok(Some(view))
+                    }
+                    Err(e) => {
+                        let mut tracker = self.device_sync_tracker.lock().await;
+                        tracker.pending_claim = true;
+                        Err(e)
+                    }
+                }
+            }
+            crate::device_sync::PollAction::None => Ok(view_opt),
+        }
     }
 }
 

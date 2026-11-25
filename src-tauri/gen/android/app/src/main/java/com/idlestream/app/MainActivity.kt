@@ -484,6 +484,7 @@ class MainActivity : TauriActivity() {
         }
 
         // Inicia o Foreground Service persistente para garantir execução 24/7
+        IdleStreamForegroundService.isStoppingByRemoteTakeover = false
         try {
             IdleStreamForegroundService.start(this)
         } catch (e: Throwable) {
@@ -600,7 +601,11 @@ class MainActivity : TauriActivity() {
         } catch (_: Throwable) {}
         try {
             gameSlotManager.detachFromActivity(this)
-            if (stoppingByUser) {
+            if (IdleStreamForegroundService.shouldClearSlotPersistenceOnManualDestroy(
+                    stoppingByUser = stoppingByUser,
+                    stoppingByRemoteTakeover = IdleStreamForegroundService.isStoppingByRemoteTakeover
+                )
+            ) {
                 gameSlotManager.destroy(clearPersistence = true)
             }
         } catch (_: Throwable) {}

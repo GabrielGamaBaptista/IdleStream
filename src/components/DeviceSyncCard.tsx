@@ -20,11 +20,8 @@ export const DeviceSyncCard: React.FC = () => {
     config,
     statuses,
     deviceSyncRemoteState,
-    pausedByOtherDevice,
     setDeviceSyncId,
-    claimDeviceActive,
     checkDeviceSync,
-    startAll,
     setSessionExportOpen,
   } = useAppStore();
 
@@ -38,9 +35,11 @@ export const DeviceSyncCard: React.FC = () => {
 
   const activeSyncId = config.device_sync_id || deviceSyncService.getSyncId();
   const isAndroid = isAndroidPlatform();
-  const isLocalFarming = Object.values(statuses || {}).some(
-    (st) => st.status === 'connected' || Boolean(st.is_farming)
-  );
+  const isOtherActive = Boolean(deviceSyncRemoteState?.isOtherDeviceActive);
+  const isLocalFarming =
+    Object.values(statuses || {}).some(
+      (st) => st.status === 'connected' || st.status === 'standby' || st.status === 'connecting' || Boolean(st.is_farming)
+    ) || Boolean(deviceSyncRemoteState?.isCurrentDeviceActive);
 
   useEffect(() => {
     if (activeSyncId && showQr && !isAndroid) {
@@ -108,11 +107,6 @@ export const DeviceSyncCard: React.FC = () => {
     setTimeout(() => setIsChecking(false), 800);
   };
 
-  const handleTakeover = async () => {
-    await claimDeviceActive();
-    await startAll();
-  };
-
   return (
     <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 space-y-4">
       {/* Header */}
@@ -133,7 +127,7 @@ export const DeviceSyncCard: React.FC = () => {
           className={`flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full font-medium ${
             !activeSyncId
               ? 'bg-neutral-800 text-neutral-400 border border-neutral-700'
-              : pausedByOtherDevice
+              : isOtherActive
               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
               : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
@@ -143,7 +137,7 @@ export const DeviceSyncCard: React.FC = () => {
           <Radio
             className={`w-3 h-3 ${
               activeSyncId
-                ? pausedByOtherDevice
+                ? isOtherActive
                   ? 'animate-pulse text-amber-400'
                   : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
                   ? 'animate-pulse text-emerald-400'
@@ -154,15 +148,15 @@ export const DeviceSyncCard: React.FC = () => {
           <span>
             {!activeSyncId
               ? 'Não Vinculado'
-              : pausedByOtherDevice
+              : isOtherActive
               ? isAndroid
-                ? '🖥️ PC Farmando (Celular Pausado)'
-                : '📱 Celular Farmando (PC Pausado)'
+                ? '🖥️ PC Assumiu (Encerrando...)'
+                : '📱 Celular Assumiu (Encerrando...)'
               : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
               ? isAndroid
-                ? '📱 Este Celular Farmando'
-                : '🖥️ Este PC Farmando'
-              : '🟢 Vinculado (Pronto para Farmar)'}
+                ? '📱 Este Celular Ativo'
+                : '🖥️ Este PC Ativo'
+              : '🟢 Vinculado (Exclusão Única Ativa)'}
           </span>
         </span>
       </div>
@@ -224,49 +218,31 @@ export const DeviceSyncCard: React.FC = () => {
         /* Estado 2: Vinculado */
         <div className="space-y-4">
           {/* Banner de Status Ativo */}
-          {pausedByOtherDevice ? (
-            <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-              <div className="space-y-0.5">
-                <span className="text-xs font-bold text-amber-200 block">
-                  {isAndroid ? '🖥️ O computador está farmando agora' : '📱 O celular está farmando agora'}
-                </span>
-                <p className="text-[11px] text-amber-300/90">
-                  {isAndroid
-                    ? 'Para proteger seus pontos, as streams deste celular estão pausadas.'
-                    : 'Para proteger seus pontos, as streams deste computador estão pausadas.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleTakeover}
-                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-md shadow-amber-600/30 transition cursor-pointer shrink-0"
-              >
-                {isAndroid ? 'Tomar Farm para o Celular' : 'Tomar Farm para o PC'}
-              </button>
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs text-emerald-300">
+            <div className="flex items-center gap-2">
+              {isAndroid ? <Smartphone className="w-4 h-4 text-emerald-400" /> : <Monitor className="w-4 h-4 text-emerald-400" />}
+              <span>
+                {isOtherActive
+                  ? isAndroid
+                    ? 'Computador assumiu o farm na nuvem. Encerrando este celular automaticamente...'
+                    : 'Celular assumiu o farm na nuvem. Encerrando este computador automaticamente...'
+                  : deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
+                  ? isAndroid
+                    ? 'Este celular está farmando com exclusividade (PC será encerrado se abrir o farm lá).'
+                    : 'Este computador está farmando com exclusividade (Celular será encerrado se abrir o farm lá).'
+                  : 'Dispositivos vinculados. Apenas 1 instância permanece ativa por vez.'}
+              </span>
             </div>
-          ) : (
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs text-emerald-300">
-              <div className="flex items-center gap-2">
-                {isAndroid ? <Smartphone className="w-4 h-4 text-emerald-400" /> : <Monitor className="w-4 h-4 text-emerald-400" />}
-                <span>
-                  {deviceSyncRemoteState?.isCurrentDeviceActive || isLocalFarming
-                    ? isAndroid
-                      ? 'Este celular está farmando ativamente (exclusão mútua garantida).'
-                      : 'Este computador está farmando ativamente (exclusão mútua garantida).'
-                    : 'Dispositivos sincronizados. Pronto para farmar.'}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleCheckNow}
-                disabled={isChecking}
-                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-medium transition cursor-pointer"
-              >
-                <RefreshCw className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
-                <span>Verificar</span>
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={handleCheckNow}
+              disabled={isChecking}
+              className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-medium transition cursor-pointer shrink-0"
+            >
+              <RefreshCw className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+              <span>Verificar</span>
+            </button>
+          </div>
 
           {/* Código de Vinculação e QR Code */}
           <div className="p-3 rounded-xl bg-neutral-950/70 border border-neutral-800 space-y-2">

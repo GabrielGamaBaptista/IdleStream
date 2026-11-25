@@ -282,7 +282,13 @@ Abaixo está o catálogo exaustivo de todos os comandos registrados em `lib.rs` 
 | `start_session_export` | `pin: String` | `Result<ExportStatus, String>` | Inicia o servidor HTTP temporário P2P criptografado na porta 47811 com timeout de 5 minutos. |
 | `stop_session_export` | Nenhum | `Result<(), String>` | Interrompe o servidor de exportação de sessão P2P. |
 | `get_session_export_status` | Nenhum | `Result<ExportStatus, String>` | Consulta o status do servidor de exportação e tempo restante de vida do token. |
-| `device_set_sync_id` | `sync_id: Option<String>` | `Result<Option<String>, String>` | Persiste o `device_sync_id` no `config.json` para o Elo PC ↔ Celular. |
+| `device_set_sync_id` | `sync_id: Option<String>` | `Result<AppConfig, String>` | Persiste o `device_sync_id` no `config.json` e reinicia o coordenador do Elo PC ↔ Celular. |
+| `device_get_sync_id` | Nenhum | `Result<Option<String>, String>` | Retorna o `device_sync_id` salvo no `config.json`. |
+| `device_get_sync_info` | Nenhum | `Result<DeviceSyncInfo, String>` | Retorna `sync_id`, `device_id` persistido em `runtime_state.json` e estado remoto atual. |
+| `device_claim_active` | Nenhum | `Result<bool, String>` | Reivindica posse exclusiva imediata na nuvem (`api.keyval.org`) com `claim_nonce` de sessão. |
+| `device_release_active` | Nenhum | `Result<bool, String>` | Libera a posse na nuvem ao encerrar ou parar manualmente o farm. |
+| `device_check_sync` | Nenhum | `Result<Option<DeviceSyncRemoteState>, String>` | Executa um ciclo completo de verificação read-before-write e retorna o estado remoto. |
+| `device_notify_game_slots` | `active_slot_ids: Vec<String>` | `Result<(), String>` | Sincroniza os slots de jogo ativos do Android/Frontend com o coordenador nativo em Rust. |
 | `game_freeze_slot` | `slot_id: String` | `Result<(), String>` | Oculta o webview do slot e congela a execução gráfica para 0% GPU com snapshot em canvas. |
 | `game_unfreeze_slot` | `slot_id: String` | `Result<(), String>` | Restaura o webview do slot retornando à execução interativa. |
 | `game_get_slot_snapshot` | `slot_id: String` | `Result<Option<String>, String>` | Retorna a captura estática em base64 do slot congelado. |

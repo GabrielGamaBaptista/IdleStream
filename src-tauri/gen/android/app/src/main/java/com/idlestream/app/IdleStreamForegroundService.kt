@@ -52,6 +52,9 @@ class IdleStreamForegroundService : Service() {
         var isStoppingByUser: Boolean = false
 
         @Volatile
+        var isStoppingByRemoteTakeover: Boolean = false
+
+        @Volatile
         var isWakeLockHeld: Boolean = false
             private set
 
@@ -85,6 +88,10 @@ class IdleStreamForegroundService : Service() {
         fun setFarmingActive(context: Context, active: Boolean, commitSync: Boolean = false) {
             try {
                 val appCtx = context.applicationContext
+                if (active && (isStoppingByUser || isStoppingByRemoteTakeover)) {
+                    LifecycleLogger.log(appCtx, "FARMING_ACTIVE_BLOCKED", "Ignorado durante encerramento")
+                    return
+                }
                 val prefs = appCtx.getSharedPreferences(PREFS_RUNTIME, Context.MODE_PRIVATE)
                 val prev = prefs.getBoolean(KEY_FARMING_ACTIVE, false)
                 val editor = prefs.edit().putBoolean(KEY_FARMING_ACTIVE, active)
@@ -118,6 +125,9 @@ class IdleStreamForegroundService : Service() {
         }
 
         fun start(context: Context) {
+            if (isStoppingByRemoteTakeover) {
+                return
+            }
             isStoppingByUser = false
             val intent = Intent(context, IdleStreamForegroundService::class.java).apply {
                 action = ACTION_START
@@ -132,6 +142,7 @@ class IdleStreamForegroundService : Service() {
 
         fun stop(context: Context) {
             isStoppingByUser = true
+            isStoppingByRemoteTakeover = false
             setFarmingActive(context, false, commitSync = true)
             val intent = Intent(context, IdleStreamForegroundService::class.java).apply {
                 action = ACTION_STOP
@@ -143,7 +154,60 @@ class IdleStreamForegroundService : Service() {
             }
         }
 
+        fun shouldClearSlotPersistenceOnManualDestroy(
+            stoppingByUser: Boolean,
+            stoppingByRemoteTakeover: Boolean
+        ): Boolean {
+            return stoppingByUser && !stoppingByRemoteTakeover
+        }
+
+        fun performRemoteTakeoverShutdown(context: Context) {
+            val appCtx = context.applicationContext
+            LifecycleLogger.log(
+                appCtx,
+                "REMOTE_TAKEOVER_STOP",
+                "Outro dispositivo assumiu o farm -> encerrando serviço, jogos e janela preservando desired_game_slots_json"
+            )
+            isStoppingByUser = true
+            isStoppingByRemoteTakeover = true
+            setFarmingActive(appCtx, false, commitSync = true)
+            clearRecoveryNotification(appCtx)
+
+            val runShutdown = Runnable {
+                val svc = instance
+                if (svc != null) {
+                    svc.performManualShutdown("remote_takeover", removeTask = true, clearPersistence = false)
+                } else {
+                    try {
+                        (appCtx as? IdleStreamApplication)?.gameSlotManager?.destroy(clearPersistence = false)
+                    } catch (_: Throwable) {}
+                    isRunning = false
+                    try {
+                        appCtx.stopService(Intent(appCtx, IdleStreamForegroundService::class.java))
+                    } catch (_: Throwable) {}
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            MainActivity.instance?.finishAndRemoveTask()
+                        } else {
+                            MainActivity.instance?.finish()
+                        }
+                    } catch (_: Throwable) {
+                        MainActivity.instance?.finish()
+                    }
+                }
+            }
+
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                runShutdown.run()
+            } else {
+                android.os.Handler(android.os.Looper.getMainLooper()).post(runShutdown)
+            }
+        }
+
         fun updateStatus(context: Context, title: String, text: String) {
+            if (isStoppingByUser || isStoppingByRemoteTakeover) {
+                return
+            }
             val service = instance
             if (service != null) {
                 service.currentTitle = title
@@ -168,6 +232,9 @@ class IdleStreamForegroundService : Service() {
 
         @JvmStatic
         fun updateStatusDirect(title: String, text: String) {
+            if (isStoppingByUser || isStoppingByRemoteTakeover) {
+                return
+            }
             val service = instance
             if (service != null) {
                 service.currentTitle = title
@@ -394,13 +461,24 @@ class IdleStreamForegroundService : Service() {
         } catch (_: Throwable) {}
     }
 
-    private fun performManualShutdown(source: String, removeTask: Boolean) {
-        LifecycleLogger.log(this, "MANUAL_STOP", "source=$source -> encerramento manual sem auto-reabertura")
+    private fun performManualShutdown(
+        source: String,
+        removeTask: Boolean,
+        clearPersistence: Boolean = true
+    ) {
+        LifecycleLogger.log(
+            this,
+            "MANUAL_STOP",
+            "source=$source clearPersistence=$clearPersistence -> encerramento sem auto-reabertura"
+        )
         isStoppingByUser = true
+        if (source == "remote_takeover") {
+            isStoppingByRemoteTakeover = true
+        }
         setFarmingActive(this, false, commitSync = true)
         clearRecoveryNotification(this)
         try {
-            (application as? IdleStreamApplication)?.gameSlotManager?.destroy(clearPersistence = true)
+            (application as? IdleStreamApplication)?.gameSlotManager?.destroy(clearPersistence = clearPersistence)
         } catch (_: Throwable) {}
         releaseLocks()
         isRunning = false
@@ -481,7 +559,14 @@ class IdleStreamForegroundService : Service() {
             return START_STICKY
         }
 
-        isStoppingByUser = false
+        if (isStoppingByRemoteTakeover || (isStoppingByUser && intent.action == ACTION_UPDATE)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (intent.action == ACTION_START) {
+            isStoppingByUser = false
+        }
         acquireLocks()
 
         when (intent.action) {

@@ -367,3 +367,60 @@ pub fn send_android_vote_notification(account_id: &str, title: &str, text: &str,
 
 #[cfg(not(target_os = "android"))]
 pub fn send_android_vote_notification(_account_id: &str, _title: &str, _text: &str, _dedup_vote_at: i64) {}
+
+#[cfg(target_os = "android")]
+pub fn get_android_active_game_slots_count() -> usize {
+    let vm = match JVM.get() {
+        Some(v) => v,
+        None => return 0,
+    };
+    let mut env = match vm.attach_current_thread() {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+    let bridge_class = match BRIDGE_CLASS.get() {
+        Some(c) => c,
+        None => return 0,
+    };
+    match env.call_static_method(bridge_class, "getActiveGameSlotsCount", "()I", &[]) {
+        Ok(val) => val.i().unwrap_or(0).max(0) as usize,
+        Err(_) => {
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_clear();
+            }
+            0
+        }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn get_android_active_game_slots_count() -> usize {
+    0
+}
+
+#[cfg(target_os = "android")]
+pub fn shutdown_android_for_remote_takeover() {
+    let vm = match JVM.get() {
+        Some(v) => v,
+        None => return,
+    };
+    let mut env = match vm.attach_current_thread() {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let bridge_class = match BRIDGE_CLASS.get() {
+        Some(c) => c,
+        None => return,
+    };
+    if env
+        .call_static_method(bridge_class, "shutdownForRemoteTakeover", "()V", &[])
+        .is_err()
+    {
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn shutdown_android_for_remote_takeover() {}

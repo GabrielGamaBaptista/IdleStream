@@ -81,27 +81,29 @@ stateDiagram-v2
 
 ---
 
-## 3. Elo PC ↔ Celular (Exclusão Mútua Bidirecional)
+## 3. Elo PC ↔ Celular (Exclusão Mútua com Encerramento Automático)
 
-Garante que o usuário nunca tenha simultaneamente o aplicativo rodando no PC e no Celular coletando pontos e jogos na mesma rede ou conta, o que geraria descarte de sessões ou desconfiança pelas plataformas.
+Garante que **apenas 1 instância do aplicativo (PC ou Celular)** permaneça aberta e farmando jogos (PokeIdle) e lives (Twitch/Kick) por vez, mantendo ambos os dispositivos pareados via QR Code (`device_sync_id`).
 
 ```mermaid
 sequenceDiagram
-    participant PC as IdleStream Desktop
-    participant Cloud as API Cloud Sync
-    participant Mobile as IdleStream Celular
+    participant PC as "IdleStream Desktop (Rust)"
+    participant Cloud as "KeyVal Cloud (api.keyval.org)"
+    participant Mobile as "IdleStream Celular (Rust + JNI)"
 
     Note over PC,Mobile: Ambos pareados com o mesmo device_sync_id
-    PC->>Cloud: Heartbeat a cada 60s (active_device: desktop)
-    Mobile->>Cloud: Usuário abre app no celular
-    Mobile->>Cloud: Claim Active (active_device: mobile, timestamp: now)
-    PC->>Cloud: Polling de rotina (60s)
-    Cloud-->>PC: Retorna active_device: mobile
-    PC->>PC: Detecta exclusão mútua -> Pausa streams e jogos
-    PC->>PC: Exibe Banner de Aviso: "Em execução no Celular"
+    PC->>Cloud: Polling 5s (GET) + Heartbeat 30s (POST nonce_pc)
+    Mobile->>Cloud: Usuário abre app no celular e inicia jogos/lives
+    Mobile->>Cloud: Claim Active (active_device: mobile, claim_nonce: nonce_mob)
+    PC->>Cloud: Polling Rust Tokio (<= 5s)
+    Cloud-->>PC: Retorna active_device: mobile (nonce_mob != nonce_pc)
+    PC->>PC: Para Twitch/Kick e fecha GameViews (sem apagar desired_active_*)
+    PC->>PC: SafetyNet.mark_ok() e encerra processo PC (exit 0)
 ```
 
-- **Independente de Wi-Fi**: Utiliza `api.restful-api.dev` com polling inteligente, funcionando mesmo quando o celular está em rede 3G/4G fora de casa.
+- **Coordenador Nativo em Rust (`device_sync.rs`)**: Executa em Tokio tanto no Windows (mesmo minimizado na bandeja) quanto no Android (mesmo com tela bloqueada e `mainWebView.pauseTimers()` ativo), realizando polling a cada **5s** e heartbeat a cada **30s** sempre em modo **read-before-write**.
+- **Independente de Wi-Fi**: Utiliza `https://api.keyval.org` com `claim_nonce` por sessão para evitar *race conditions* ou *ping-pong* no boot.
+- **Encerramento Limpo do Dispositivo Substituído**: Quando o PC assume, aciona `KickHttpBridge.shutdownForRemoteTakeover()` no Android (desarma `ServiceWatchdogReceiver`, fecha `IdleStreamForegroundService` e `GameSlotManager` preservando `desired_game_slots_json` para a próxima abertura manual).
 - **Canal de Estado Separado**: Utiliza `device_sync_id` dedicado, sem risco de interferir no histórico e cooldown dos votos de `vote_sync_id`.
 
 ---

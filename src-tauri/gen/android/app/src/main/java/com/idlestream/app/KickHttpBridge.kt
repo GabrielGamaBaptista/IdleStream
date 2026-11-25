@@ -64,6 +64,29 @@ object KickHttpBridge {
     }
 
     @JvmStatic
+    fun getActiveGameSlotsCount(): Int {
+        return try {
+            IdleStreamApplication.instance?.gameSlotManager?.getActiveSlots()?.size ?: 0
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
+    @JvmStatic
+    fun shutdownForRemoteTakeover() {
+        try {
+            val ctx: Context? = IdleStreamApplication.instance
+                ?: MainActivity.instance
+                ?: IdleStreamForegroundService.instance
+            if (ctx != null) {
+                IdleStreamForegroundService.performRemoteTakeoverShutdown(ctx)
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in shutdownForRemoteTakeover: ${e.message}")
+        }
+    }
+
+    @JvmStatic
     fun request(
         method: String,
         urlStr: String,

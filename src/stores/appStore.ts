@@ -187,7 +187,6 @@ interface AppState {
 
   // Elo PC↔Mobile (Cloud Sync)
   deviceSyncRemoteState: DeviceSyncRemoteState | null;
-  pausedByOtherDevice: boolean;
   setDeviceSyncId: (syncId: string | null) => Promise<void>;
   claimDeviceActive: () => Promise<boolean>;
   releaseDeviceActive: () => Promise<boolean>;
@@ -205,7 +204,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '4.4.0',
+  appVersion: '4.4.1',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -258,7 +257,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Elo PC↔Mobile
   deviceSyncRemoteState: null,
-  pausedByOtherDevice: false,
 
   // Leitura de Estado do Jogo (Feature 7)
   gameStates: {},
@@ -466,8 +464,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             .catch((e) => console.warn(`Falha ao restaurar slot ${slot.id}:`, e));
         }
 
-        const totalActiveGames = alreadyRunning.length + toStart.length;
-        if (totalActiveGames > 0) {
+        const finalActiveGames = await gamePlatformService.getActiveSlots().catch(() => [] as string[]);
+        if (finalActiveGames.length > 0) {
+          await invoke('device_notify_game_slots', { activeSlotIds: finalActiveGames }).catch(() => {});
           if (get().activeTab !== 'games') {
             gamePlatformService.hideAll().catch(() => {});
           }
@@ -744,47 +743,32 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       });
 
-      // Inicializar Elo PC↔Mobile via Cloud Sync
-      deviceSyncService.setIsFarmingCheck(() => {
-        const { statuses } = get();
-        return Object.values(statuses || {}).some(
-          (st) => st.status === 'connected' || Boolean(st.is_farming)
-        );
-      });
-
-      const activeDeviceSyncId =
-        (await invoke<string | null>('device_get_sync_id').catch(() => null)) ||
-        deviceSyncService.getSyncId();
+      // Inicializar Elo PC↔Mobile via Coordenador Nativo Rust (polling 5s + heartbeat 30s + takeover shutdown)
+      const syncInfo = await deviceSyncService.syncIdentityFromBackend();
+      const backendSyncId =
+        syncInfo?.syncId ||
+        (await invoke<string | null>('device_get_sync_id').catch(() => null));
+      const localSyncId = deviceSyncService.getSyncId();
+      const activeDeviceSyncId = (backendSyncId && backendSyncId.trim()) || (localSyncId && localSyncId.trim()) || null;
 
       if (activeDeviceSyncId) {
         deviceSyncService.setSyncId(activeDeviceSyncId);
-        deviceSyncService.startPolling(45, (remoteState) => {
-          set({ deviceSyncRemoteState: remoteState });
-
-          // Se o outro dispositivo assumiu o farm:
-          if (remoteState.isOtherDeviceActive) {
-            if (!get().pausedByOtherDevice) {
-              set({ pausedByOtherDevice: true });
-              // Pausar streams locais para evitar conflito de IP
-              get().stopAll().catch(() => {});
-              console.warn(
-                `[DeviceSync] ${remoteState.otherDeviceType === 'mobile' ? 'Celular' : 'Computador'} assumiu o farm. Streams locais pausadas.`
-              );
-            }
-          } else {
-            if (get().pausedByOtherDevice) {
-              set({ pausedByOtherDevice: false });
-              console.info('[DeviceSync] Outro dispositivo offline. Farm liberado.');
-            }
-          }
-        });
-
-        if (typeof window !== 'undefined') {
-          window.addEventListener('beforeunload', () => {
-            deviceSyncService.releaseActive().catch(() => {});
-          });
+        if (!backendSyncId) {
+          await invoke('device_set_sync_id', { syncId: activeDeviceSyncId }).catch(() => {});
+          set((state) => ({
+            config: { ...state.config, device_sync_id: activeDeviceSyncId },
+          }));
+        }
+        if (syncInfo?.remoteState) {
+          set({ deviceSyncRemoteState: syncInfo.remoteState });
         }
       }
+
+      await listen<DeviceSyncRemoteState>('device-sync-state-updated', (event) => {
+        if (event.payload) {
+          set({ deviceSyncRemoteState: event.payload });
+        }
+      });
 
       // Escutar atualizações em tempo real do estado dos jogos PokeIdle (Feature 7)
       get().fetchGameStates().catch(() => {});
@@ -961,7 +945,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   startStream: async (streamId) => {
-    deviceSyncService.claimActive().catch(() => {});
     await invoke('start_stream', { streamId });
     await get().fetchStatuses();
   },
@@ -972,15 +955,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   startAll: async () => {
-    deviceSyncService.claimActive().catch(() => {});
     await invoke('start_all_streams');
+    await get().claimDeviceActive();
     await get().fetchStatuses();
   },
 
   stopAll: async () => {
-    deviceSyncService.releaseActive().catch(() => {});
     await invoke('stop_all_streams');
     await get().fetchStatuses();
+    const activeGames = await gamePlatformService.getActiveSlots().catch(() => [] as string[]);
+    if (activeGames.length === 0) {
+      deviceSyncService.releaseActive().catch(() => {});
+    }
   },
 
   openStreamRedeem: async (streamId: string, accountId: string) => {
@@ -1187,13 +1173,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sanitized = syncId?.trim() || null;
     deviceSyncService.setSyncId(sanitized);
 
-    deviceSyncService.setIsFarmingCheck(() => {
-      const { statuses } = get();
-      return Object.values(statuses || {}).some(
-        (st) => st.status === 'connected' || Boolean(st.is_farming)
-      );
-    });
-
     try {
       const updated = await invoke<AppConfig>('device_set_sync_id', { syncId: sanitized });
       set({ config: updated });
@@ -1205,22 +1184,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     if (sanitized) {
-      deviceSyncService.startPolling(45, (remoteState) => {
-        set({ deviceSyncRemoteState: remoteState });
-        if (remoteState.isOtherDeviceActive) {
-          if (!get().pausedByOtherDevice) {
-            set({ pausedByOtherDevice: true });
-            get().stopAll().catch(() => {});
-          }
-        } else {
-          if (get().pausedByOtherDevice) {
-            set({ pausedByOtherDevice: false });
-          }
-        }
-      });
+      await get().checkDeviceSync();
     } else {
       deviceSyncService.stopPolling();
-      set({ deviceSyncRemoteState: null, pausedByOtherDevice: false });
+      set({ deviceSyncRemoteState: null });
     }
   },
 
@@ -1244,16 +1211,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = await deviceSyncService.fetchRemoteState();
     if (state) {
       set({ deviceSyncRemoteState: state });
-      if (state.isOtherDeviceActive) {
-        if (!get().pausedByOtherDevice) {
-          set({ pausedByOtherDevice: true });
-          get().stopAll().catch(() => {});
-        }
-      } else {
-        if (get().pausedByOtherDevice) {
-          set({ pausedByOtherDevice: false });
-        }
-      }
     }
     return state;
   },

@@ -870,16 +870,79 @@ pub async fn device_set_sync_id(
         }
     });
 
-    let mut cfg = state.config.lock().await;
-    cfg.device_sync_id = sanitized;
-    state.config_store.save(&cfg)?;
-    Ok(cfg.clone())
+    let out_cfg = {
+        let mut cfg = state.config.lock().await;
+        cfg.device_sync_id = sanitized.clone();
+        state.config_store.save(&cfg)?;
+        cfg.clone()
+    };
+
+    {
+        let mut tracker = state.device_sync_tracker.lock().await;
+        tracker.reset_for_new_sync_id();
+    }
+
+    if let Some(ref sid) = sanitized {
+        let state_arc = state.inner().clone();
+        let sid_owned = sid.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = state_arc.poll_device_sync_once(&sid_owned).await;
+        });
+    }
+
+    Ok(out_cfg)
 }
 
 #[tauri::command]
 pub async fn device_get_sync_id(state: StateHandle<'_>) -> Result<Option<String>, String> {
     let cfg = state.config.lock().await;
     Ok(cfg.device_sync_id.clone())
+}
+
+#[tauri::command]
+pub async fn device_get_sync_info(
+    state: StateHandle<'_>,
+) -> Result<crate::device_sync::DeviceSyncInfo, String> {
+    Ok(state.get_device_sync_info().await)
+}
+
+#[tauri::command]
+pub async fn device_claim_active(state: StateHandle<'_>) -> Result<bool, String> {
+    let state_arc = state.inner().clone();
+    state_arc.claim_device_active().await
+}
+
+#[tauri::command]
+pub async fn device_release_active(state: StateHandle<'_>) -> Result<bool, String> {
+    state.release_device_active_if_owner(true).await
+}
+
+#[tauri::command]
+pub async fn device_check_sync(
+    state: StateHandle<'_>,
+) -> Result<Option<crate::device_sync::DeviceSyncRemoteState>, String> {
+    let sync_id = {
+        let cfg = state.config.lock().await;
+        cfg.device_sync_id
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    let Some(sid) = sync_id else {
+        return Ok(None);
+    };
+    let state_arc = state.inner().clone();
+    state_arc.poll_device_sync_once(&sid).await
+}
+
+#[tauri::command]
+pub async fn device_notify_game_slots(
+    state: StateHandle<'_>,
+    active_slot_ids: Vec<String>,
+) -> Result<(), String> {
+    let state_arc = state.inner().clone();
+    state_arc.set_android_active_game_slots(active_slot_ids).await;
+    Ok(())
 }
 
 #[tauri::command]

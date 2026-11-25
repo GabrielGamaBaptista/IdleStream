@@ -99,4 +99,32 @@ class BackgroundResilienceTest {
             )
         )
     }
+
+    @Test
+    fun testRemoteTakeoverPreservesSlotPersistenceOnDestroy() {
+        // Fechamento manual pelo usuário (Notificação Parar / Recents) DEVE limpar slots persistidos
+        assertTrue(
+            IdleStreamForegroundService.shouldClearSlotPersistenceOnManualDestroy(
+                stoppingByUser = true,
+                stoppingByRemoteTakeover = false
+            )
+        )
+
+        // Encerramento por takeover remoto do PC NÃO pode limpar desired_game_slots_json,
+        // permitindo que os jogos sejam restaurados na próxima abertura manual do celular
+        assertFalse(
+            IdleStreamForegroundService.shouldClearSlotPersistenceOnManualDestroy(
+                stoppingByUser = true,
+                stoppingByRemoteTakeover = true
+            )
+        )
+
+        // Morte involuntária em background também preserva persistência
+        assertFalse(
+            IdleStreamForegroundService.shouldClearSlotPersistenceOnManualDestroy(
+                stoppingByUser = false,
+                stoppingByRemoteTakeover = false
+            )
+        )
+    }
 }

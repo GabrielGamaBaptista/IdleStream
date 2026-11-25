@@ -6,11 +6,17 @@ use super::manager::{GameLayoutManager, PokeIdleGameState, SlotBounds, ViewLayou
 #[tauri::command]
 pub async fn game_start_slot(
     state: State<'_, Arc<GameLayoutManager>>,
+    app_state: State<'_, Arc<crate::state::AppState>>,
     slot_id: String,
     url: String,
     zoom: Option<f64>,
 ) -> Result<(), String> {
-    state.start_game_slot(&slot_id, &url, zoom).await
+    state.start_game_slot(&slot_id, &url, zoom).await?;
+    let app_st = app_state.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        app_st.notify_farming_started().await;
+    });
+    Ok(())
 }
 
 #[tauri::command]
