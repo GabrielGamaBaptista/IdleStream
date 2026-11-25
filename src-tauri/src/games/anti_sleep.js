@@ -1010,7 +1010,7 @@
 
         window.__claimPokeIdleBattlePass = function (forceManual = false) {
           try {
-            const ws = window.estado && window.estado.ws;
+            const ws = window.__idlestream_active_ws || (window.estado && window.estado.ws);
             if (!ws || ws.readyState !== 1) return false;
             const nowMs = Date.now();
             if (bpState.inFlight && nowMs - bpState.lastAttemptMs < 15000) return false;
@@ -1094,6 +1094,7 @@
           window.__idlestream_ws_hooked = true;
           window.WebSocket = function (url, protocols) {
             const sock = protocols ? new _NativeWS(url, protocols) : new _NativeWS(url);
+            window.__idlestream_active_ws = sock;
             sock.addEventListener('message', (ev) => {
               try {
                 if (window.estado) {

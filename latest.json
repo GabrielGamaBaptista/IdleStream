@@ -1,11 +1,11 @@
-﻿{
-  "version": "5.0.1",
-  "notes": "IdleStream v5.0.1 — Resgate Automático do Passe de Batalha do PokeIdle via WebSocket ({\"t\":\"passe.resgatar\"}), verificação passiva ao conectar (estado.passe.ultimo vs servidorAgora), persistência por slot (24h 05m fallback) e sincronização bidirecional PC ↔ Celular via vote_sync_id.",
-  "pub_date": "2026-11-25T20:01:00Z",
+{
+  "version": "5.0.2",
+  "notes": "IdleStream v5.0.2 - Correcao do resgate automatico do Passe de Batalha usando referencia direta do WebSocket ativo.",
+  "pub_date": "2026-11-25T20:25:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9mLzFEc2V0RVZQZnlkTGpBN2ZtVXdFc0VUT0RYdTM1eUVQMW5adkl0RklMZEk0Q1dpY2tjZXJQWlQ1Zmozd2JRd09CM3hoeG5LbjNZZ28rUmVoZGcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjM2ODc3CWZpbGU6SWRsZVN0cmVhbV81LjAuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4wLjEKUzBlSzlrWURWRUF2emIrNytETzU1cUo0MlF1bHhnRStKQ1A3a0FYT2hrSHNBVlR2Mnd0OERzSzdSZXY5dGJPY0sveGpkQkJvNG43S294Zmw5eEhiQnc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.0.1/IdleStream_5.0.1_x64-setup.exe"
+      "signature": "Your file was signed successfully, You can find the signature here:C:\Projetos\Chatter\src-tauri\target\release\bundle\nsis\IdleStream_5.0.2_x64-setup.exe.sigPublic signature:dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjF6cVhsMFNsZHByaURLd1UwZGI4MjE1Y0JZR01iYXZQY2NaQkNyc09lTldlalhNalJKdVBLNk02em5oTk5kV0xmMHArMHB1R3h1dlBiNGp2dmJxWndvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjM4Mjg5CWZpbGU6SWRsZVN0cmVhbV81LjAuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4wLjIKT1BuVXBzOUtrRmVxTHlpclZDZTJQWXg5RmYwMDYyUHpxSEsvLzFPenFjLzFrSkFQOW0zMXdYNWc4ZVRPcjJTb2llMGVmMXJueFV0T0ZmV2EybEhZQ1E9PQo=Make sure to include this into the signature field of your update server.",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.0.2/IdleStream_5.0.2_x64-setup.exe"
     }
   }
 }
