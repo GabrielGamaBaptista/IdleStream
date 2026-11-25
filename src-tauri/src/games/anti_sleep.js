@@ -533,7 +533,32 @@
     // ============================================================
     // 9. CONTROLE DO MODO ULTRA ECONOMIA NATIVO DO POKEIDLE (Stats Card)
     // ============================================================
-    window.__isPokeIdleUltraActive = function () {
+    let pendingUltraTimer = null;
+
+    const cancelPendingUltra = () => {
+      if (pendingUltraTimer) {
+        clearTimeout(pendingUltraTimer);
+        pendingUltraTimer = null;
+      }
+    };
+
+    const isGameUiReady = () => {
+      try {
+        const appEl = document.getElementById('app');
+        if (appEl && appEl.classList && appEl.classList.contains('hidden')) {
+          return false;
+        }
+        const portalEl = document.getElementById('portal');
+        if (portalEl && portalEl.classList && !portalEl.classList.contains('hidden')) {
+          return false;
+        }
+        return true;
+      } catch (_) {
+        return true;
+      }
+    };
+
+    const isUltraVisuallyActive = () => {
       try {
         const rootHasClass = document.documentElement.classList.contains('modo-ultra');
         const ultraDiv = document.getElementById('ultra');
@@ -546,74 +571,149 @@
       }
     };
 
+    const isCfgUltraSwitchOn = (el) => {
+      if (!el) return false;
+      if (el.type === 'checkbox') return !!el.checked;
+      const aria = typeof el.getAttribute === 'function' ? el.getAttribute('aria-checked') : null;
+      if (aria === 'true') return true;
+      if (aria === 'false') return false;
+      return !!(el.classList && el.classList.contains('on'));
+    };
+
+    const closePokeIdleModalIfOpen = () => {
+      try {
+        const modalEl = document.getElementById('modal');
+        const isModalOpen = modalEl && (!modalEl.classList || !modalEl.classList.contains('hidden'));
+        if (isModalOpen || !modalEl) {
+          const btnClose = document.getElementById('modal-fechar') ||
+            document.getElementById('btn-config-fechar') ||
+            (typeof document.querySelector === 'function' ? document.querySelector('.modal-fechar') : null);
+          if (btnClose && typeof btnClose.click === 'function') {
+            btnClose.click();
+          }
+        }
+      } catch (_) {}
+    };
+
+    const scheduleDeferredUltraEnable = (attemptsLeft = 25) => {
+      cancelPendingUltra();
+      if (attemptsLeft <= 0) return;
+      pendingUltraTimer = setTimeout(() => {
+        pendingUltraTimer = null;
+        if (isUltraVisuallyActive()) return;
+        if (isGameUiReady()) {
+          window.__togglePokeIdleUltra(true);
+        } else {
+          scheduleDeferredUltraEnable(attemptsLeft - 1);
+        }
+      }, 1000);
+    };
+
+    window.__isPokeIdleUltraActive = function () {
+      try {
+        if (isUltraVisuallyActive()) return true;
+        if (!isGameUiReady() && localStorage.getItem('cfg-ultra') === '1') {
+          return true;
+        }
+        return false;
+      } catch (_) {
+        return false;
+      }
+    };
+
     window.__togglePokeIdleUltra = function (forceState) {
       try {
+        cancelPendingUltra();
         const isCurrent = window.__isPokeIdleUltraActive();
         const targetState = forceState !== undefined ? !!forceState : !isCurrent;
 
-        // Se o estado desejado já é o atual, nada a fazer
-        if (isCurrent === targetState) {
-          return true;
-        }
-
-        if (isCurrent && !targetState) {
-          // Desativar: Clica no botão oficial de saída (#ultra-sair)
+        if (!targetState) {
           const btnSair = document.getElementById('ultra-sair');
           if (btnSair) {
             btnSair.click();
             console.log('[IdleStream] PokeIdle Ultra: Saiu com sucesso via #ultra-sair');
             return true;
           }
-        } else if (!isCurrent && targetState) {
-          // Ativar:
-          // Caso 1: O modal de configurações já está aberto no DOM
+
           let cfgUltra = document.getElementById('cfg-ultra');
           if (cfgUltra) {
-            if (cfgUltra.type === 'checkbox') {
-              if (!cfgUltra.checked) {
-                cfgUltra.click();
-              }
-            } else {
+            if (isCfgUltraSwitchOn(cfgUltra)) {
               cfgUltra.click();
             }
-            console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #cfg-ultra');
+            closePokeIdleModalIfOpen();
+            console.log('[IdleStream] PokeIdle Ultra: Desativado via #cfg-ultra');
             return true;
           }
 
-          // Caso 2: Clicar no botão oficial #btn-config para abrir o modal de configurações
-          // No PokeIdle, a abertura do modal e a montagem de #cfg-ultra é 100% síncrona
-          const btnConfig = document.getElementById('btn-config');
-          if (btnConfig) {
-            btnConfig.click();
-            cfgUltra = document.getElementById('cfg-ultra');
-            if (cfgUltra) {
-              if (cfgUltra.type === 'checkbox') {
-                if (!cfgUltra.checked) {
-                  cfgUltra.click();
-                }
-              } else {
+          if (!isGameUiReady()) {
+            try { localStorage.setItem('cfg-ultra', '0'); } catch (_) {}
+            document.documentElement.classList.remove('modo-ultra');
+            console.log('[IdleStream] PokeIdle Ultra: Desativado antes do welcome');
+            return true;
+          }
+
+          if (localStorage.getItem('cfg-ultra') === '1') {
+            const btnConfig = document.getElementById('btn-config');
+            if (btnConfig) {
+              btnConfig.click();
+              cfgUltra = document.getElementById('cfg-ultra');
+              if (cfgUltra && isCfgUltraSwitchOn(cfgUltra)) {
                 cfgUltra.click();
               }
-              const btnClose = document.getElementById('btn-config-fechar') ||
-                (typeof document.querySelector === 'function' ? document.querySelector('.modal-fechar') : null);
-              if (btnClose && typeof btnClose.click === 'function') {
-                btnClose.click();
-              }
-              console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #btn-config -> #cfg-ultra');
+              closePokeIdleModalIfOpen();
+              console.log('[IdleStream] PokeIdle Ultra: Desativado via #btn-config -> #cfg-ultra');
               return true;
             }
           }
+
+          return true;
         }
 
-        // Fallback de contingência idempotente (sem dispatch repetitivo de storage)
-        const currentStored = localStorage.getItem('cfg-ultra');
-        const nextStored = targetState ? '1' : '0';
-        if (currentStored !== nextStored) {
-          localStorage.setItem('cfg-ultra', nextStored);
+        // targetState === true (Ativar)
+        if (isUltraVisuallyActive()) {
+          return true;
         }
-        document.documentElement.classList.toggle('modo-ultra', targetState);
-        console.log('[IdleStream] PokeIdle Ultra alternado via fallback:', targetState);
-        return true;
+
+        if (!isGameUiReady()) {
+          if (localStorage.getItem('cfg-ultra') === '1') {
+            console.log('[IdleStream] PokeIdle Ultra: cfg-ultra=1 já ativo, aguardando welcome do jogo');
+            return true;
+          }
+          scheduleDeferredUltraEnable(25);
+          console.log('[IdleStream] PokeIdle Ultra: Jogo ainda carregando, ativação adiada');
+          return true;
+        }
+
+        // Caso 1: Modal de configurações já aberto no DOM
+        let cfgUltra = document.getElementById('cfg-ultra');
+        if (cfgUltra) {
+          if (!isCfgUltraSwitchOn(cfgUltra)) {
+            cfgUltra.click();
+          }
+          closePokeIdleModalIfOpen();
+          console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #cfg-ultra');
+          return true;
+        }
+
+        // Caso 2: Abrir modal de configurações apenas se nenhum outro modal estiver aberto
+        const modalEl = document.getElementById('modal');
+        const otherModalOpen = modalEl && modalEl.classList && !modalEl.classList.contains('hidden');
+        const btnConfig = document.getElementById('btn-config');
+        if (btnConfig && !otherModalOpen) {
+          btnConfig.click();
+          cfgUltra = document.getElementById('cfg-ultra');
+          if (cfgUltra) {
+            if (!isCfgUltraSwitchOn(cfgUltra)) {
+              cfgUltra.click();
+            }
+            closePokeIdleModalIfOpen();
+            console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #btn-config -> #cfg-ultra');
+            return true;
+          }
+          closePokeIdleModalIfOpen();
+        }
+
+        return false;
       } catch (err) {
         console.error('[IdleStream] Erro ao alternar PokeIdle Ultra:', err);
         return false;

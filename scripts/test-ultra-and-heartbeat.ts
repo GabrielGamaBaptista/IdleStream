@@ -7,9 +7,11 @@ console.log('🧪 Iniciando validação de anti_sleep.js (Ultra Mode & Heartbeat
 const antiSleepPath = path.resolve('src-tauri/src/games/anti_sleep.js');
 const antiSleepCode = fs.readFileSync(antiSleepPath, 'utf8');
 
-// 1. Simulação de DOM com JSDOM-like environment para testar o comportamento do PokeIdle
+// 1. Simulação de DOM fiel ao PokeIdle real (button[role="switch"], #modal.hidden, #modal-fechar, #app.hidden)
 let isUltraOn = false;
 let configModalOpen = false;
+let isAppHidden = false;
+let btnConfigClicks = 0;
 
 // Mock window e document
 const localStorageMap = new Map<string, string>();
@@ -57,25 +59,55 @@ const fakeDocument: any = {
     appendChild: () => {},
   },
   getElementById: (id: string) => {
+    if (id === 'app') {
+      return {
+        classList: { contains: (cls: string) => cls === 'hidden' && isAppHidden },
+      };
+    }
+    if (id === 'modal') {
+      return {
+        classList: { contains: (cls: string) => cls === 'hidden' && !configModalOpen },
+      };
+    }
+    if (id === 'modal-fechar') {
+      return {
+        click: () => {
+          configModalOpen = false;
+        },
+      };
+    }
     if (id === 'ultra-sair') {
       return isUltraOn ? {
-        click: () => { isUltraOn = false; }
+        click: () => {
+          isUltraOn = false;
+          fakeLocalStorage.setItem('cfg-ultra', '0');
+        },
       } : null;
     }
     if (id === 'btn-config') {
       return {
         click: () => {
+          btnConfigClicks++;
           configModalOpen = true;
-        }
+        },
       };
     }
     if (id === 'cfg-ultra') {
-      return configModalOpen ? {
+      if (!configModalOpen) return null;
+      const cfgOn = fakeLocalStorage.getItem('cfg-ultra') === '1';
+      return {
+        type: 'button',
+        getAttribute: (attr: string) => (attr === 'aria-checked' ? String(cfgOn) : null),
+        classList: { contains: (cls: string) => cls === 'on' && cfgOn },
         click: () => {
-          isUltraOn = true;
-          configModalOpen = false; // fecha o modal automaticamente no jogo
-        }
-      } : null;
+          const next = !cfgOn;
+          fakeLocalStorage.setItem('cfg-ultra', next ? '1' : '0');
+          isUltraOn = next;
+          if (next) {
+            configModalOpen = false; // PokeIdle só fecha automaticamente ao ligar
+          }
+        },
+      };
     }
     return domElements.get(id) || null;
   },
@@ -232,9 +264,31 @@ assert.strictEqual(callbackExecuted, 1, 'Callback acumulado em hidden/eco deve s
 console.log('✅ [7/8] Transição Hidden/Eco -> 60 FPS com flush imediato validada!');
 
 // [Teste 8]: Restauro automático do document.title após emissão de atividade
+// [Teste 9]: Não abrir #btn-config nem inverter cfg-ultra=1 quando #app ainda está hidden (startup/reconexão)
+isUltraOn = false;
+configModalOpen = false;
+isAppHidden = true;
+btnConfigClicks = 0;
+fakeLocalStorage.setItem('cfg-ultra', '1');
+assert.strictEqual(fakeWindow.__isPokeIdleUltraActive(), true, 'Com #app hidden e cfg-ultra=1, deve considerar Ultra ativo');
+fakeWindow.__togglePokeIdleUltra(true);
+assert.strictEqual(btnConfigClicks, 0, 'Não deve clicar em #btn-config enquanto #app está hidden e cfg-ultra=1');
+assert.strictEqual(configModalOpen, false, 'Modal de configurações não deve abrir no startup');
+assert.strictEqual(fakeLocalStorage.getItem('cfg-ultra'), '1', 'cfg-ultra deve permanecer 1');
+
+// [Teste 10]: Se #cfg-ultra já estiver aria-checked="true" com modal aberto, não deve desligar e deve fechar via #modal-fechar
+isAppHidden = false;
+isUltraOn = false;
+configModalOpen = true;
+fakeLocalStorage.setItem('cfg-ultra', '1');
+fakeWindow.__togglePokeIdleUltra(true);
+assert.strictEqual(fakeLocalStorage.getItem('cfg-ultra'), '1', 'Não deve inverter switch já ligado para 0');
+assert.strictEqual(configModalOpen, false, 'Deve fechar modal via #modal-fechar');
+console.log('✅ [9-10/10] Proteção contra inversão de switch e vazamento de modal validada!');
+
 setTimeout(() => {
   assert.strictEqual(fakeDocument.title, 'PokeIdle', 'document.title deve ser restaurado para PokeIdle');
-  console.log('✅ [8/8] Restauração de document.title após atividade validada!');
-  console.log('\n🎉 TODOS OS 8 TESTES DE ULTRA MODE, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
+  console.log('✅ [8/10] Restauração de document.title após atividade validada!');
+  console.log('\n🎉 TODOS OS 10 TESTES DE ULTRA MODE, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
   process.exit(0);
 }, 60);

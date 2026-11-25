@@ -650,6 +650,11 @@ export const GameWorkspace: React.FC = () => {
         url.trim() || 'https://pokeidle.io/app',
         zoom
       );
+      if (isPokeIdleUltra) {
+        setTimeout(() => {
+          gamePlatformService.togglePokeIdleUltra(slotId, true).catch(() => {});
+        }, 1500);
+      }
       const refreshed = await refreshActiveSlots();
       const effectiveSlots = refreshed ?? nextSlots;
       persistActiveGameSlots(effectiveSlots);
@@ -689,6 +694,11 @@ export const GameWorkspace: React.FC = () => {
   const handleReloadSlot = async (slotId: string) => {
     try {
       await gamePlatformService.reloadSlot(slotId);
+      if (isPokeIdleUltra) {
+        setTimeout(() => {
+          gamePlatformService.togglePokeIdleUltra(slotId, true).catch(() => {});
+        }, 2000);
+      }
     } catch (e) {
       console.error('Erro ao recarregar slot:', e);
     }
@@ -716,6 +726,11 @@ export const GameWorkspace: React.FC = () => {
       await invoke('device_notify_game_slots', { activeSlotIds: refreshed }).catch(() => {});
       if (refreshed.length > 0) {
         deviceSyncService.claimActive().catch(() => {});
+        if (isPokeIdleUltra) {
+          setTimeout(() => {
+            gamePlatformService.togglePokeIdleUltra(undefined, true).catch(() => {});
+          }, 2000);
+        }
       }
     }
     setTimeout(syncBounds, 100);

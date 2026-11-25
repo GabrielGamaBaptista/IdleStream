@@ -1,11 +1,11 @@
-{
-  "version": "4.4.1",
-  "notes": "IdleStream v4.4.1 — Elo PC ↔ Celular com Exclusão Mútua Única: coordenador nativo em Rust/Tokio (polling 5s + heartbeat 30s read-before-write), desligamento automático completo do app substituído (PC fecha janela/tray e Android encerra ForegroundService, GameSlotManager e Watchdog via JNI mesmo em 2º plano com tela apagada, preservando sessões para próxima abertura) e remoção do botão manual Tomar Farm.",
-  "pub_date": "2026-11-25T15:32:15Z",
-  "platforms": {
-    "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjJPMUUwUDJxV0MxS0o3UmErNExyY1VxRGlWRjJYb0hlZVVpNlR3b09HNDB2Z0NYQmVOODZabVcvY2p1Vm1ZU1M5d1BtSUNGQUJsS1hsTHlncWpPaXdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjIwNDQ5CWZpbGU6SWRsZVN0cmVhbV80LjQuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC40LjEKT2ozTWRJYkpmK3ZUd0lPWEVobW91SnQ4TXZvNnYrOEQ2NWszUmlZeUI1UWdncGlWWU9rblB2S3JBSGlzcmdFTTh1WlVRRCtrSDBUallaTGpGU3prQWc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.4.1/IdleStream_4.4.1_x64-setup.exe"
-    }
-  }
+﻿{
+    "platforms":  {
+                      "windows-x86_64":  {
+                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjlPSjl0NEFHNXZSSHo2eERaTEJhZ0QzV1ZmdGNtbXZiaGs2MVBRZGcyZEJSL05WR0NqdWhGK0FyVnJRV2tmajdURkVsZEhabDFFQkJ3QzZjanc1K1FNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjMzMzgxCWZpbGU6SWRsZVN0cmVhbV80LjQuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NC40LjIKdURMZnZpakFLcGs5aUtlKzZuQkt0cTJHZEd2bGZRYUhRZ3lZZXRlMUMvSjVZMURHa3IybjdueTVSQzMzVCs1Ny9SK3hsejBXbU5hWnVXbEF2bGhLQ3c9PQo=",
+                                             "url":  "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.4.2/IdleStream_4.4.2_x64-setup.exe"
+                                         }
+                  },
+    "pub_date":  "2026-11-25T19:03:13Z",
+    "version":  "4.4.2",
+    "notes":  "IdleStream v4.4.2 — Correção definitiva do Modo Ultra Economia do PokeIdle: leitura correta do switch role=\"switch\" (#cfg-ultra), guarda de prontidão (#app.hidden / #portal) com ativação adiada sem inversão de estado, e fechamento automático do modal via #modal-fechar."
 }
