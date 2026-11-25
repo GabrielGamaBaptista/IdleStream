@@ -328,7 +328,20 @@
       isMutedByEco = isEcoMode;
       window.__setIdleStreamEcoMode(isEcoMode, targetFps);
       clearTimeout(flushTimer);
+      if (targetFps >= 60 && !isEcoMode && !isSlotHidden) {
+        flushCallbacks();
+        _NativeRAF(() => {});
+      }
       scheduleNextFlush();
+    };
+
+    window.__getIdleStreamDebugState = function () {
+      return {
+        targetFps,
+        isEcoMode,
+        isSlotHidden,
+        pendingCallbacks: pendingCallbacks.size,
+      };
     };
 
     window.__setIdleStreamSlotHidden = function (hidden) {
@@ -356,8 +369,11 @@
           }
         } else {
           htmlEl.classList.remove('idlestream-slot-hidden');
+          // Força layout/compositor a reconhecer a restauração visual imediatamente
+          try { void htmlEl.offsetHeight; } catch (_) {}
           // NUNCA descartar callbacks do jogo! Despacha os callbacks acumulados para manter a cadeia viva
           flushCallbacks();
+          _NativeRAF(() => {});
           try {
             if (window.__idlestreamAudioCtx && window.__idlestreamAudioCtx.state === 'suspended') {
               window.__idlestreamAudioCtx.resume().catch(() => {});
@@ -607,21 +623,57 @@
     // ============================================================
     // 10. REPORTE DE ATIVIDADE DO USUÁRIO PARA ANTI-SLEEP / INATIVIDADE
     // ============================================================
+    let lastActivityEmitAt = 0;
+    let lastActivityMousePos = null;
+
     const reportUserActivity = (e) => {
       try {
         if (e && 'isTrusted' in e && !e.isTrusted) return;
+        if (e && e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) {
+          return;
+        }
         if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.reportActivity === 'function') {
           window.IdleStreamSlotBridge.reportActivity();
         }
         if (typeof window.__onUserActivity === 'function') {
           window.__onUserActivity();
         }
+        if (!isAndroid) {
+          const now = Date.now();
+          if (now - lastActivityEmitAt >= 1500) {
+            lastActivityEmitAt = now;
+            const origTitle = document.title && !document.title.startsWith('__IDLESTREAM_')
+              ? document.title
+              : 'PokeIdle';
+            document.title = '__IDLESTREAM_USER_ACTIVITY__|' + now;
+            setTimeout(() => {
+              if (document.title && document.title.startsWith('__IDLESTREAM_USER_ACTIVITY__|')) {
+                document.title = origTitle;
+              }
+            }, 30);
+          }
+        }
       } catch (_) {}
     };
 
-    ['mousedown', 'touchstart', 'keydown'].forEach((evtName) => {
+    const reportMouseActivity = (e) => {
+      try {
+        if (e && 'isTrusted' in e && !e.isTrusted) return;
+        if (!lastActivityMousePos) {
+          lastActivityMousePos = { x: e.clientX, y: e.clientY };
+          return;
+        }
+        const distance = Math.hypot(e.clientX - lastActivityMousePos.x, e.clientY - lastActivityMousePos.y);
+        if (distance < 25) return;
+        lastActivityMousePos = { x: e.clientX, y: e.clientY };
+        reportUserActivity(e);
+      } catch (_) {}
+    };
+
+    ['mousedown', 'pointerdown', 'touchstart', 'keydown', 'wheel'].forEach((evtName) => {
       window.addEventListener(evtName, reportUserActivity, { passive: true, capture: true });
     });
+    window.addEventListener('mousemove', reportMouseActivity, { passive: true, capture: true });
 
     // ============================================================
     // 11. POKEIDLE WEBSOCKET & STATE INTERCEPTOR (FEATURE 7 - AUDITADO)

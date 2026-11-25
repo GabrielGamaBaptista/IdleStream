@@ -1,11 +1,11 @@
 {
-  "version": "4.3.9",
-  "notes": "IdleStream v4.3.9 — Correção definitiva do Sleep Mode (Auto-Sleep): introdução da Imunidade Sleep Lock contra perdas de foco/blur, unificação da inatividade com GetLastInputInfo do Windows e proteção contra eventos espúrios.",
-  "pub_date": "2026-11-24T18:15:00Z",
+  "version": "4.4.0",
+  "notes": "IdleStream v4.4.0 — Correção definitiva de Eco/Sleep durante jogo ativo e erradicação de tela preta DirectComposition: autoridade nativa de foco Win32 (GetForegroundWindow + IsChild), ponte de atividade nas Child WebViews (__IDLESTREAM_USER_ACTIVITY__), correção do fallback systemIdleSec=0 e preservação de dimensões offscreen.",
+  "pub_date": "2026-11-25T05:45:33Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjFEN3A4NS9MMU9PYk1UbG93N2M1b2M0S1ZHYkZnMVU5U0RXandMSFNCZUUwRjcvU2hCbll4UnY5RXBSNVVubTZvcDBIZE9yY1krZFprWWpNNFVBVHc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTQ0MDkwCWZpbGU6SWRsZVN0cmVhbV80LjMuOV94NjQtc2V0dXAuZXhlCXZlcnNpb246NC4zLjkKeW5GWXVZMTFBdHZFTXB3cEdFTWVieHcvTHNQcGpQNzdwVDVDQ3h2RDVRa3JKbHhwSFhTQTR2S1hNV2dYMlM2cmZXZVQ0YkhralluTXh6QUx5OHk1QUE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.3.9/IdleStream_4.3.9_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjFLVG1GV0pFMTJNOGprU3lQN3BrcUVQbG1FbXZ0QlhhdlZrZnVEaHpZV0VvSDZwKzBLNmRySGZpOE9nRStWWnVGNzZtdVJ0OUFuL2VxSmQyMUtXSXdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NTg1NTMyCWZpbGU6SWRsZVN0cmVhbV80LjQuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NC40LjAKb3d5Ulptd0hMbWJpVnIyb3BjUFhLWGhDeGEvWU80MUdwNlBpZ1FZNHhFMlZsMnFraXdwbzQ5b2RjMEZpZnRTQkduQW9vYWl1UEUyL1hZTXF2enNqQmc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v4.4.0/IdleStream_4.4.0_x64-setup.exe"
     }
   }
 }

@@ -27,6 +27,28 @@ use tauri::Manager;
 #[cfg(desktop)]
 use tauri::WindowEvent;
 
+#[cfg(all(desktop, target_os = "windows"))]
+fn is_window_or_child_foreground(window: &tauri::Window) -> bool {
+    if window.is_minimized().unwrap_or(false) {
+        return false;
+    }
+    if let Ok(hwnd) = window.hwnd() {
+        extern "system" {
+            fn GetForegroundWindow() -> isize;
+            fn IsChild(hwnd_parent: isize, hwnd: isize) -> i32;
+        }
+        let main_hwnd = hwnd.0 as isize;
+        unsafe {
+            let fg = GetForegroundWindow();
+            if fg == 0 {
+                return false;
+            }
+            return fg == main_hwnd || IsChild(main_hwnd, fg) != 0;
+        }
+    }
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "windows")]
@@ -76,9 +98,9 @@ pub fn run() {
             match event {
                 WindowEvent::Focused(is_focused) => {
                     if window.label() == "main" {
-                        let _ = window.emit("window-focus-changed", *is_focused);
                         if !(*is_focused) {
                             if window.is_minimized().unwrap_or(false) {
+                                let _ = window.emit("window-focus-changed", false);
                                 let _ = window.emit("window-minimized", ());
                                 if let Some(gm) = window.app_handle().try_state::<Arc<games::manager::GameLayoutManager>>() {
                                     let gm = Arc::clone(&gm);
@@ -86,8 +108,18 @@ pub fn run() {
                                         let _ = gm.hide_all_game_views().await;
                                     });
                                 }
+                            } else {
+                                #[cfg(target_os = "windows")]
+                                let still_in_app = is_window_or_child_foreground(window);
+                                #[cfg(not(target_os = "windows"))]
+                                let still_in_app = false;
+
+                                if !still_in_app {
+                                    let _ = window.emit("window-focus-changed", false);
+                                }
                             }
                         } else if !window.is_minimized().unwrap_or(false) {
+                            let _ = window.emit("window-focus-changed", true);
                             let _ = window.emit("window-restored", ());
                         }
                     }
@@ -400,6 +432,8 @@ pub fn run() {
             games::commands::game_trim_memory,
             games::commands::game_get_active_slots,
             games::commands::game_get_system_idle_seconds,
+            games::commands::game_is_window_foreground,
+            games::commands::game_get_last_activity_ms,
             games::commands::game_read_slot_state,
             games::commands::game_get_all_states,
             games::commands::game_freeze_slot,

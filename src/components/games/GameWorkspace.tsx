@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
 import { GameSlotConfig, SlotBounds } from '../../types';
 import { gamePlatformService, isAndroidPlatform } from '../../services/gamePlatformService';
+import { computeDynamicPerformanceState } from './dynamicPerformance';
 import {
   LayoutGrid,
   Maximize2,
@@ -102,10 +103,11 @@ export const GameWorkspace: React.FC = () => {
   useEffect(() => {
     isIdleDimmedRef.current = isIdleDimmed;
   }, [isIdleDimmed]);
-  const [isWindowFocused, setIsWindowFocused] = useState<boolean>(() => {
-    if (typeof document === 'undefined') return true;
-    return document.hasFocus();
-  });
+  const [isWindowFocused, setIsWindowFocused] = useState<boolean>(true);
+  const isWindowFocusedRef = useRef<boolean>(true);
+  useEffect(() => {
+    isWindowFocusedRef.current = isWindowFocused;
+  }, [isWindowFocused]);
   const [isWindowMinimized, setIsWindowMinimized] = useState<boolean>(false);
   const lastActivityTimeRef = useRef<number>(Date.now());
   const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
@@ -122,6 +124,7 @@ export const GameWorkspace: React.FC = () => {
 
   const wakeUpFromIdle = useCallback(() => {
     lastActivityTimeRef.current = Date.now();
+    isWindowFocusedRef.current = true;
     setIsWindowFocused(true);
     setIsWindowMinimized(false);
     if (isIdleDimmedRef.current) {
@@ -137,7 +140,9 @@ export const GameWorkspace: React.FC = () => {
 
   // Monitora foco da janela, minimização e restauração da bandeja/tarefas
   useEffect(() => {
+    const isAndroid = isAndroidPlatform();
     const handleFocus = () => {
+      isWindowFocusedRef.current = true;
       setIsWindowFocused(true);
       setIsWindowMinimized(false);
       // Imunidade do Sleep: se o modo Sleep está ativo, foco passivo NÃO acorda o app nem reseta inatividade
@@ -151,12 +156,17 @@ export const GameWorkspace: React.FC = () => {
     };
 
     const handleBlur = () => {
+      isWindowFocusedRef.current = false;
       setIsWindowFocused(false);
       // Perda de foco jamais altera o estado de sleep se já estava dormindo
     };
 
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
+    // No Desktop, clicar dentro de uma Child WebView dispara blur no DOM da janela principal mesmo
+    // com o app em primeiro plano; o foco real da janela é monitorado via Win32/Tauri window-focus-changed.
+    if (isAndroid) {
+      window.addEventListener('blur', handleBlur);
+    }
 
     let unlistenFocus: (() => void) | undefined;
     let unlistenMin: (() => void) | undefined;
@@ -172,6 +182,7 @@ export const GameWorkspace: React.FC = () => {
 
     listen('window-minimized', () => {
       setIsWindowMinimized(true);
+      isWindowFocusedRef.current = false;
       setIsWindowFocused(false);
     }).then((u) => { unlistenMin = u; }).catch(() => {});
 
@@ -181,14 +192,16 @@ export const GameWorkspace: React.FC = () => {
 
     return () => {
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
+      if (isAndroid) {
+        window.removeEventListener('blur', handleBlur);
+      }
       if (unlistenFocus) unlistenFocus();
       if (unlistenMin) unlistenMin();
       if (unlistenRestored) unlistenRestored();
     };
   }, []);
 
-  // Escutar eventos de atividade do usuário na janela e nas WebViews filhas (via bridge e window.__onUserActivity)
+  // Escutar eventos de atividade do usuário na janela e nas WebViews filhas (via bridge, evento nativo e window.__onUserActivity)
   useEffect(() => {
     const handleUserActivity = (e?: Event) => {
       // Imunidade do Sleep: eventos genéricos de janela NÃO acordam o aplicativo se estiver dormindo
@@ -196,6 +209,7 @@ export const GameWorkspace: React.FC = () => {
       if (e && 'isTrusted' in e && !(e as any).isTrusted) return;
 
       lastActivityTimeRef.current = Date.now();
+      isWindowFocusedRef.current = true;
       setIsWindowFocused(true);
       if (currentDynamicFpsRef.current !== 60 && !isWindowMinimized) {
         currentDynamicFpsRef.current = 60;
@@ -236,7 +250,7 @@ export const GameWorkspace: React.FC = () => {
         return;
       }
 
-      // Filtro anti-jitter em modo normal: ignora micro-vibrações de sensores ópticos (<= 25 pixels)
+      // Filtro anti-jitter em modo normal: ignora micro-vibrações de sensores ópticos (< 25 pixels)
       if (distance < 25) return;
 
       lastMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -255,6 +269,12 @@ export const GameWorkspace: React.FC = () => {
       handleUserActivity();
     };
 
+    let unlistenGameActivity: (() => void) | undefined;
+    listen('game-user-activity', () => {
+      if (isIdleDimmedRef.current) return;
+      handleUserActivity();
+    }).then((u) => { unlistenGameActivity = u; }).catch(() => {});
+
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mousedown', handleUserActivity, { passive: true });
     window.addEventListener('keydown', handleKeyDown, { passive: true });
@@ -263,6 +283,7 @@ export const GameWorkspace: React.FC = () => {
 
     return () => {
       delete (window as any).__onUserActivity;
+      if (unlistenGameActivity) unlistenGameActivity();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleUserActivity);
       window.removeEventListener('keydown', handleKeyDown);
@@ -272,100 +293,56 @@ export const GameWorkspace: React.FC = () => {
   }, [wakeUpFromIdle, isWindowMinimized]);
 
   // Loop de monitoramento inteligente de performance e economia:
-  // - 60 FPS ativo: estritamente em primeiro plano, focado e com interação recente (<30s)
-  // - 10 FPS eco: se o usuário estiver usando outro app/jogo no PC (unfocused) ou inativo por >30s no app
-  // - 1 FPS sleep: se a janela estiver minimizada, oculta, ou inativa por >inactivityMinutes
+  // - 60 FPS ativo: primeiro plano, focado e com interação recente (<30s na janela ou Child WebViews)
+  // - 10 FPS eco: usuário em outro app no PC (unfocused) ou inativo por >=30s no app
+  // - 1 FPS sleep: janela minimizada ou inativa por >=inactivityMinutes
   useEffect(() => {
+    const isAndroid = isAndroidPlatform();
     const interval = setInterval(async () => {
-      const thresholdSeconds = inactivityMinutes * 60;
-      const appIdleSec = Math.floor((Date.now() - lastActivityTimeRef.current) / 1000);
+      const [systemIdleSec, nativeForeground, lastGameActivityMs] = await Promise.all([
+        gamePlatformService.getSystemIdleSeconds().catch(() => 0),
+        isAndroid ? Promise.resolve(isWindowFocusedRef.current) : gamePlatformService.isWindowForeground(),
+        isAndroid ? Promise.resolve(0) : gamePlatformService.getLastGameActivityMs(),
+      ]);
 
-      // 1. Minimizada: máxima economia imediata (1 FPS + corte total de GPU/RAM)
-      if (isWindowMinimized) {
-        if (currentDynamicFpsRef.current !== 1) {
-          currentDynamicFpsRef.current = 1;
-          setCurrentDynamicFps(1);
-          gamePlatformService.setFps(1).catch(() => {});
+      if (!isAndroid && nativeForeground !== isWindowFocusedRef.current) {
+        isWindowFocusedRef.current = nativeForeground;
+        setIsWindowFocused(nativeForeground);
+      }
+
+      if (!isIdleDimmedRef.current && lastGameActivityMs > lastActivityTimeRef.current) {
+        lastActivityTimeRef.current = lastGameActivityMs;
+      }
+
+      const appIdleSec = Math.max(0, Math.floor((Date.now() - lastActivityTimeRef.current) / 1000));
+      const decision = computeDynamicPerformanceState({
+        inactivityMinutes,
+        appIdleSec,
+        systemIdleSec,
+        isWindowFocused: isAndroid ? isWindowFocusedRef.current : nativeForeground,
+        isWindowMinimized,
+        isIdleDimmed: isIdleDimmedRef.current,
+        isAndroid,
+        activeSlotsCount: activeSlots.length,
+      });
+
+      if (currentDynamicFpsRef.current !== decision.fps) {
+        currentDynamicFpsRef.current = decision.fps;
+        setCurrentDynamicFps(decision.fps);
+        gamePlatformService.setFps(decision.fps).catch(() => {});
+        if (decision.shouldTrimMemory) {
           gamePlatformService.trimMemory().catch(() => {});
         }
-        return;
       }
 
-      // Consulta segundos de inatividade do sistema operacional (Windows GetLastInputInfo)
-      let systemIdleSec = 0;
-      try {
-        systemIdleSec = await gamePlatformService.getSystemIdleSeconds();
-      } catch (_) {}
-
-      // Inatividade efetiva:
-      // Em primeiro plano, unifica o tempo de inatividade do app com o do SO (GetLastInputInfo).
-      // Se o usuário está fisicamente ausente do PC (systemIdleSec >= thresholdSeconds), ele está comprovadamente inativo!
-      // Se a janela estiver em segundo plano (unfocused):
-      // - Se o usuário estiver ausente do PC (systemIdleSec >= thresholdSeconds), entra em 1 FPS sleep.
-      // - Se o usuário estiver mexendo em outro app no PC (systemIdleSec < thresholdSeconds), mantém 10 FPS eco.
-      const effectiveIdleSec = isWindowFocused
-        ? Math.max(appIdleSec, systemIdleSec)
-        : (systemIdleSec > 0 ? systemIdleSec : appIdleSec);
-
-      // 2. Sleep Lock: se o modo Sleep já está ativo (isIdleDimmed === true),
-      // MANTÉM RIGOROSAMENTE 1 FPS E PURGA DE MEMÓRIA!
-      // Jamais acorda sozinho no loop periódico!
-      if (isIdleDimmed) {
-        if (currentDynamicFpsRef.current !== 1) {
-          currentDynamicFpsRef.current = 1;
-          setCurrentDynamicFps(1);
-          gamePlatformService.setFps(1).catch(() => {});
-          gamePlatformService.trimMemory().catch(() => {});
-        }
-        return;
-      }
-
-      // 3. Tempo de inatividade configurado atingido (ex: 5 min de sleep):
-      // APLICA SLEEP MODE REAL (1 FPS + corte total de GPU/RAM) TANTO EM PRIMEIRO QUANTO EM SEGUNDO PLANO!
-      if (thresholdSeconds > 0 && effectiveIdleSec >= thresholdSeconds) {
-        if (currentDynamicFpsRef.current !== 1) {
-          currentDynamicFpsRef.current = 1;
-          setCurrentDynamicFps(1);
-          gamePlatformService.setFps(1).catch(() => {});
-          gamePlatformService.trimMemory().catch(() => {});
-        }
-        if (!isIdleDimmed && activeSlots.length > 0 && isWindowFocused) {
-          setIsIdleDimmed(true);
-        }
-        return;
-      }
-
-      // 4. Janela em segundo plano (usuário mexendo ativamente em outro app/jogo no PC, mas effectiveIdleSec < thresholdSeconds):
-      // Reduz para 10 FPS (alivia GPU em 85% e não disputa recursos do PC com outros jogos)
-      if (!isWindowFocused) {
-        if (currentDynamicFpsRef.current !== 10) {
-          currentDynamicFpsRef.current = 10;
-          setCurrentDynamicFps(10);
-          gamePlatformService.setFps(10).catch(() => {});
-        }
-        return;
-      }
-
-      // 5. Janela em primeiro plano e focada: verifica tempo de inatividade no IdleStream
-      if (appIdleSec >= 30) {
-        // Inatividade após 30s: reduz performance para poupar GPU (10 FPS)
-        if (currentDynamicFpsRef.current !== 10) {
-          currentDynamicFpsRef.current = 10;
-          setCurrentDynamicFps(10);
-          gamePlatformService.setFps(10).catch(() => {});
-        }
-      } else {
-        // Usuário em primeiro plano interagindo ativamente (<30s): máxima fluidez (60 FPS VSync)
-        if (currentDynamicFpsRef.current !== 60) {
-          currentDynamicFpsRef.current = 60;
-          setCurrentDynamicFps(60);
-          gamePlatformService.setFps(60).catch(() => {});
-        }
+      if (decision.shouldDim && !isIdleDimmedRef.current) {
+        isIdleDimmedRef.current = true;
+        setIsIdleDimmed(true);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [inactivityMinutes, isIdleDimmed, activeSlots.length, isWindowFocused, isWindowMinimized]);
+  }, [inactivityMinutes, activeSlots.length, isWindowMinimized]);
 
   // Referências para os containers DOM onde cada WebView deve se posicionar
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -561,11 +538,15 @@ export const GameWorkspace: React.FC = () => {
   // Recalcular limites quando o modo de inatividade, minimização, modo imersivo ou visibilidade da barra mudar
   useEffect(() => {
     syncBounds();
+    const rafId = requestAnimationFrame(() => syncBounds());
     const t = setTimeout(syncBounds, 80);
-    return () => clearTimeout(t);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(t);
+    };
   }, [isIdleDimmed, isWindowMinimized, isImmersiveMode, isToolbarVisible, syncBounds]);
 
-  // Monitorar redimensionamento, foco na janela e restauração da bandeja do sistema
+  // Monitorar redimensionamento (ResizeObserver + window resize), foco na janela e restauração da bandeja do sistema
   useEffect(() => {
     syncBounds();
     const timer = setTimeout(syncBounds, 100);
@@ -578,6 +559,14 @@ export const GameWorkspace: React.FC = () => {
         syncBounds();
       }, 60);
     };
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && workspaceRef.current) {
+      observer = new ResizeObserver(() => {
+        syncBounds();
+      });
+      observer.observe(workspaceRef.current);
+    }
 
     window.addEventListener('resize', handleSync);
     window.addEventListener('focus', handleSync);
@@ -592,6 +581,7 @@ export const GameWorkspace: React.FC = () => {
     return () => {
       clearTimeout(timer);
       if (debounceTimer) clearTimeout(debounceTimer);
+      if (observer) observer.disconnect();
       window.removeEventListener('resize', handleSync);
       window.removeEventListener('focus', handleSync);
       if (unlistenRestored) unlistenRestored();

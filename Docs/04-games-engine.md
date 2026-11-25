@@ -340,7 +340,24 @@ A versão **v4.3.3** corrige três comportamentos críticos relacionados à esta
 
 ---
 
-## 11. Próximos Passos & Documentos Relacionados
+## 11. Jogo Fluido em Primeiro Plano, Ponte de Atividade em Child WebViews & Anti-Tela Preta DirectComposition (v4.4.0)
+
+A versão **v4.4.0** elimina falsos disparos dos modos Eco (10 FPS) e Sleep (1 FPS) durante jogo ativo e erradica a tela preta na recuperação de slots em foco:
+
+1. **Autoridade Nativa de Foco Win32 (`lib.rs` & `commands.rs`)**:
+   - No Windows, clicar dentro de uma Child WebView (`slot-1`..`slot-4`) retira o foco DOM da WebView principal `"main"`, disparando `window.blur` mesmo com o IdleStream em primeiro plano.
+   - `GameWorkspace.tsx` ignora o `blur` do DOM principal no Desktop e consulta a autoridade Win32 (`GetForegroundWindow()` + `IsChild(main_hwnd, fg)` via `WindowEvent::Focused` e `game_is_window_foreground`).
+2. **Ponte de Atividade das Child WebViews (`anti_sleep.js` $\to$ `manager.rs`)**:
+   - Eventos confiáveis (`mousedown`, `pointerdown`, `keydown`, `wheel`, `touchstart` e `mousemove` com filtro anti-jitter $\ge 25\text{px}$) dentro das Child WebViews emitem `__IDLESTREAM_USER_ACTIVITY__|` (com throttle de 1500 ms), atualizando `last_activity_ms` e disparando o evento `"game-user-activity"` para manter **60 FPS VSync** contínuos enquanto o jogador joga ativamente.
+3. **Correção do Fallback `systemIdleSec === 0` em Segundo Plano (`dynamicPerformance.ts`)**:
+   - Em segundo plano no Desktop (`isWindowFocused === false`), `effectiveIdleSec` usa diretamente `systemIdleSec` (`0` indica que o usuário está ativo em outro programa, mantendo **10 FPS Eco** estável sem oscilar para **1 FPS Sleep**).
+4. **Preservação de Swapchain DirectComposition (`compute_offscreen_size`)**:
+   - Ao mover WebViews ocultas ou em Sleep para `(-99999, -99999)`, o `GameLayoutManager` preserva as dimensões lógicas do slot (ou `1024x680`) em vez de encolher o `ICoreWebView2Controller` para `1x1`, evitando destruição da swapchain DirectComposition e tela preta ao retomar.
+   - `trim_memory()` só executa `SetProcessWorkingSetSize` quando `current_fps <= 1`.
+
+---
+
+## 12. Próximos Passos & Documentos Relacionados
 
 Para compreender a estrutura interna do estado global em Rust (`AppState`), a persistência em `config.json` e consultar o dicionário exaustivo de comandos IPC:
 👉 Prossiga para: **[[05-backend-core]] — Backend Rust Core, Estado Global e Dicionário IPC** e **[[13-melhorias-v4.3-novos-subsistemas]] — Novos Subsistemas v4.3.0**.

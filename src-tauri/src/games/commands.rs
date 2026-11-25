@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use super::manager::{GameLayoutManager, PokeIdleGameState, SlotBounds, ViewLayoutMode, ViewportRect};
 
 #[tauri::command]
@@ -181,5 +181,40 @@ pub fn game_get_system_idle_seconds() -> u64 {
         }
     }
     0
+}
+
+#[tauri::command]
+pub fn game_is_window_foreground(app: AppHandle) -> bool {
+    #[cfg(desktop)]
+    {
+        if let Some(win) = app.get_window("main") {
+            if win.is_minimized().unwrap_or(false) || !win.is_visible().unwrap_or(true) {
+                return false;
+            }
+            #[cfg(target_os = "windows")]
+            {
+                if let Ok(hwnd) = win.hwnd() {
+                    extern "system" {
+                        fn GetForegroundWindow() -> isize;
+                        fn IsChild(hwnd_parent: isize, hwnd: isize) -> i32;
+                    }
+                    let main_hwnd = hwnd.0 as isize;
+                    unsafe {
+                        let fg = GetForegroundWindow();
+                        return fg != 0 && (fg == main_hwnd || IsChild(main_hwnd, fg) != 0);
+                    }
+                }
+            }
+            return win.is_focused().unwrap_or(true);
+        }
+    }
+    true
+}
+
+#[tauri::command]
+pub fn game_get_last_activity_ms(
+    state: State<'_, Arc<GameLayoutManager>>,
+) -> Result<u64, String> {
+    Ok(state.get_last_activity_ms())
 }
 

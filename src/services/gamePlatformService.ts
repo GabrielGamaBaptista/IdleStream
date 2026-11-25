@@ -161,6 +161,26 @@ export const gamePlatformService = {
     }
   },
 
+  async isWindowForeground(): Promise<boolean> {
+    const bridge = getAndroidBridge();
+    if (bridge) return true;
+    try {
+      return await invoke<boolean>('game_is_window_foreground');
+    } catch {
+      return true;
+    }
+  },
+
+  async getLastGameActivityMs(): Promise<number> {
+    const bridge = getAndroidBridge();
+    if (bridge) return 0;
+    try {
+      return await invoke<number>('game_get_last_activity_ms');
+    } catch {
+      return 0;
+    }
+  },
+
   syncFarmingActive(active: boolean): void {
     if (typeof window === 'undefined') return;
     try {

@@ -1,5 +1,5 @@
 use crate::config::{default_game_slots, GameSlotConfig};
-use crate::games::manager::{PokeIdleGameState, SlotBounds, ViewLayoutMode, ViewportRect};
+use crate::games::manager::{compute_offscreen_size, PokeIdleGameState, SlotBounds, ViewLayoutMode, ViewportRect};
 use std::path::PathBuf;
 
 #[test]
@@ -128,6 +128,34 @@ fn test_anti_sleep_script_contents() {
     assert!(script.contains("__idlestream_eco_style__"), "Deve conter injeção de CSS de Eco-Mode");
     assert!(script.contains("__setIdleStreamEcoMode"), "Deve conter função de controle ao vivo do modo econômico");
     assert!(script.contains("idlestream-eco-mode"), "Deve conter classe toggleable de modo econômico");
+    assert!(script.contains("__IDLESTREAM_USER_ACTIVITY__|"), "Deve reportar atividade do usuário nas Child WebViews");
+    assert!(script.contains("__getIdleStreamDebugState"), "Deve expor estado de debug do anti-sleep");
+}
+
+#[test]
+fn test_compute_offscreen_size_preserves_dimensions() {
+    let default_sz = compute_offscreen_size(None);
+    assert_eq!(default_sz, (1024.0, 680.0), "Sem histórico válido deve usar dimensão padrão segura");
+
+    let tiny = SlotBounds {
+        slot_id: "slot-1".to_string(),
+        x: -99999.0,
+        y: -99999.0,
+        width: 1.0,
+        height: 1.0,
+        visible: false,
+    };
+    assert_eq!(compute_offscreen_size(Some(&tiny)), (1024.0, 680.0), "Nunca deve preservar 1x1");
+
+    let valid = SlotBounds {
+        slot_id: "slot-1".to_string(),
+        x: 260.0,
+        y: 80.0,
+        width: 1320.0,
+        height: 790.0,
+        visible: true,
+    };
+    assert_eq!(compute_offscreen_size(Some(&valid)), (1320.0, 790.0), "Deve preservar dimensões lógicas reais do slot");
 }
 
 #[test]

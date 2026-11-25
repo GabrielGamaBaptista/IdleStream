@@ -1,6 +1,7 @@
 /**
  * Teste unitário e de simulação da máquina de estados do Sleep Lock e inatividade
  */
+import { computeDynamicPerformanceState } from '../src/components/games/dynamicPerformance.ts';
 
 function simulateSleepEngine() {
   let inactivityMinutes = 5;
@@ -48,54 +49,27 @@ function simulateSleepEngine() {
     }
   };
 
-  const tickInterval = (simulatedSystemIdle: number, activeSlotsCount = 1) => {
-    const thresholdSeconds = inactivityMinutes * 60;
-    const appIdleSec = Math.floor((Date.now() - lastActivityTime) / 1000);
+  const tickInterval = (simulatedSystemIdle: number, activeSlotsCount = 1, simulatedAppIdleSec?: number) => {
+    const appIdleSec =
+      simulatedAppIdleSec !== undefined
+        ? simulatedAppIdleSec
+        : Math.floor((Date.now() - lastActivityTime) / 1000);
     systemIdleSec = simulatedSystemIdle;
 
-    if (isWindowMinimized) {
-      currentDynamicFps = 1;
-      return;
-    }
+    const decision = computeDynamicPerformanceState({
+      inactivityMinutes,
+      appIdleSec,
+      systemIdleSec,
+      isWindowFocused,
+      isWindowMinimized,
+      isIdleDimmed,
+      isAndroid: false,
+      activeSlotsCount,
+    });
 
-    const effectiveIdleSec = isWindowFocused
-      ? Math.max(appIdleSec, systemIdleSec)
-      : (systemIdleSec > 0 ? systemIdleSec : appIdleSec);
-
-    // 2. Sleep Lock
-    if (isIdleDimmed) {
-      if (currentDynamicFps !== 1) {
-        currentDynamicFps = 1;
-      }
-      return;
-    }
-
-    // 3. Threshold atingido
-    if (thresholdSeconds > 0 && effectiveIdleSec >= thresholdSeconds) {
-      currentDynamicFps = 1;
-      if (!isIdleDimmed && activeSlotsCount > 0 && isWindowFocused) {
-        isIdleDimmed = true;
-      }
-      return;
-    }
-
-    // 4. Background unfocused
-    if (!isWindowFocused) {
-      if (currentDynamicFps !== 10) {
-        currentDynamicFps = 10;
-      }
-      return;
-    }
-
-    // 5. Foreground focado
-    if (appIdleSec >= 30) {
-      if (currentDynamicFps !== 10) {
-        currentDynamicFps = 10;
-      }
-    } else {
-      if (currentDynamicFps !== 60) {
-        currentDynamicFps = 60;
-      }
+    currentDynamicFps = decision.fps;
+    if (decision.shouldDim && !isIdleDimmed) {
+      isIdleDimmed = true;
     }
   };
 
@@ -112,11 +86,10 @@ function simulateSleepEngine() {
 
 console.log('🧪 Iniciando testes de validação do Sleep Lock...');
 
-// Teste 1: Entrada em Sleep após inatividade do Windows (GetLastInputInfo >= 300s)
+// Teste 1: Entrada em Sleep após inatividade do app em primeiro plano (>= 300s)
 {
   const sim = simulateSleepEngine();
-  // Simula usuário que não mexe no teclado do Windows há 305 segundos
-  sim.tickInterval(305, 1);
+  sim.tickInterval(305, 1, 305);
   const st = sim.getState();
   if (!st.isIdleDimmed || st.currentDynamicFps !== 1) {
     throw new Error(`Falha no Teste 1: esperado isIdleDimmed=true e 1 FPS, obtido: ${JSON.stringify(st)}`);
@@ -127,11 +100,11 @@ console.log('🧪 Iniciando testes de validação do Sleep Lock...');
 // Teste 2: Imunidade a Blur e Focus (Sleep Lock)
 {
   const sim = simulateSleepEngine();
-  sim.tickInterval(305, 1); // Entrou em sleep
+  sim.tickInterval(305, 1, 305); // Entrou em sleep
 
   // Ocorre blur (outra janela ou verificação)
   sim.handleBlur();
-  sim.tickInterval(306, 1);
+  sim.tickInterval(306, 1, 306);
   let st = sim.getState();
   if (!st.isIdleDimmed || st.currentDynamicFps !== 1) {
     throw new Error(`Falha no Teste 2 (blur): sleep quebrado no blur! ${JSON.stringify(st)}`);
@@ -139,7 +112,7 @@ console.log('🧪 Iniciando testes de validação do Sleep Lock...');
 
   // Ocorre focus (retorno à janela)
   sim.handleFocus();
-  sim.tickInterval(307, 1);
+  sim.tickInterval(307, 1, 307);
   st = sim.getState();
   if (!st.isIdleDimmed || st.currentDynamicFps !== 1) {
     throw new Error(`Falha no Teste 2 (focus): sleep quebrado no focus! ${JSON.stringify(st)}`);
@@ -150,11 +123,11 @@ console.log('🧪 Iniciando testes de validação do Sleep Lock...');
 // Teste 3: Eventos espúrios e não confiáveis NÃO quebram o Sleep
 {
   const sim = simulateSleepEngine();
-  sim.tickInterval(305, 1); // Entrou em sleep
+  sim.tickInterval(305, 1, 305); // Entrou em sleep
 
   // Evento não confiável (sintético de jogo ou scroll)
   sim.handleUserActivity({ isTrusted: false });
-  sim.tickInterval(308, 1);
+  sim.tickInterval(308, 1, 308);
   let st = sim.getState();
   if (!st.isIdleDimmed || st.currentDynamicFps !== 1) {
     throw new Error(`Falha no Teste 3: evento sintético quebrou o sleep! ${JSON.stringify(st)}`);
@@ -162,7 +135,7 @@ console.log('🧪 Iniciando testes de validação do Sleep Lock...');
 
   // Evento genérico com sleep ativo
   sim.handleUserActivity({ isTrusted: true });
-  sim.tickInterval(309, 1);
+  sim.tickInterval(309, 1, 309);
   st = sim.getState();
   if (!st.isIdleDimmed || st.currentDynamicFps !== 1) {
     throw new Error(`Falha no Teste 3: evento de janela quebrou o sleep! ${JSON.stringify(st)}`);
@@ -173,7 +146,7 @@ console.log('🧪 Iniciando testes de validação do Sleep Lock...');
 // Teste 4: Despertar Intencional restaura 60 FPS
 {
   const sim = simulateSleepEngine();
-  sim.tickInterval(305, 1); // Entrou em sleep
+  sim.tickInterval(305, 1, 305); // Entrou em sleep
   sim.wakeUpFromIdle(); // Usuário clica no botão "Acordar"
 
   const st = sim.getState();
@@ -181,6 +154,20 @@ console.log('🧪 Iniciando testes de validação do Sleep Lock...');
     throw new Error(`Falha no Teste 4: despertar intencional falhou! ${JSON.stringify(st)}`);
   }
   console.log('✅ Teste 4 OK: Despertar intencional retoma instantaneamente para 60 FPS');
+}
+
+// Teste 5: Jogando ativamente em Child WebView (activity reset a cada 10s, mesmo com 400s de sessão) mantém 60 FPS
+{
+  const sim = simulateSleepEngine();
+  for (let i = 0; i < 40; i++) {
+    sim.handleUserActivity({ isTrusted: true });
+    sim.tickInterval(0, 1, 5);
+    const st = sim.getState();
+    if (st.currentDynamicFps !== 60 || st.isIdleDimmed) {
+      throw new Error(`Falha no Teste 5 (ciclo ${i}): dropou indevidamente para ${JSON.stringify(st)}`);
+    }
+  }
+  console.log('✅ Teste 5 OK: Sessão ativa contínua em Child WebView mantém 60 FPS sem falso Eco/Sleep');
 }
 
 console.log('🎉 TODOS OS TESTES DO SLEEP LOCK PASSARAM COM 100% DE SUCESSO!');

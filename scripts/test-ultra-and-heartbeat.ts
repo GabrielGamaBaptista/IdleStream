@@ -21,19 +21,41 @@ const fakeLocalStorage = {
 
 const domElements = new Map<string, any>();
 
+const htmlClasses = new Set<string>();
+const bodyClasses = new Set<string>();
+const makeClassList = (set: Set<string>, onModoUltra?: (v: boolean) => void) => ({
+  contains: (cls: string) => (cls === 'modo-ultra' ? isUltraOn : set.has(cls)),
+  toggle: (cls: string, state?: boolean) => {
+    if (cls === 'modo-ultra') {
+      isUltraOn = state !== undefined ? state : !isUltraOn;
+      onModoUltra?.(isUltraOn);
+    } else if (state !== undefined) {
+      if (state) set.add(cls); else set.delete(cls);
+    } else if (set.has(cls)) {
+      set.delete(cls);
+    } else {
+      set.add(cls);
+    }
+  },
+  add: (cls: string) => {
+    if (cls === 'modo-ultra') isUltraOn = true;
+    set.add(cls);
+  },
+  remove: (cls: string) => {
+    if (cls === 'modo-ultra') isUltraOn = false;
+    set.delete(cls);
+  },
+});
+
 const fakeDocument: any = {
   documentElement: {
-    classList: {
-      contains: (cls: string) => (cls === 'modo-ultra' ? isUltraOn : false),
-      toggle: (cls: string, state?: boolean) => {
-        if (cls === 'modo-ultra') isUltraOn = state !== undefined ? state : !isUltraOn;
-      },
-      add: (cls: string) => { if (cls === 'modo-ultra') isUltraOn = true; },
-      remove: (cls: string) => { if (cls === 'modo-ultra') isUltraOn = false; },
-    },
+    classList: makeClassList(htmlClasses),
     appendChild: () => {},
   },
-  body: { appendChild: () => {} },
+  body: {
+    classList: makeClassList(bodyClasses),
+    appendChild: () => {},
+  },
   getElementById: (id: string) => {
     if (id === 'ultra-sair') {
       return isUltraOn ? {
@@ -64,6 +86,7 @@ const fakeDocument: any = {
     appendChild: () => {},
   }),
   querySelector: () => null,
+  querySelectorAll: () => [],
   dispatchEvent: () => true,
   addEventListener: () => {},
 };
@@ -71,11 +94,18 @@ const fakeDocument: any = {
 let webSocketSent: string[] = [];
 let reconnectedCount = 0;
 
+const windowListeners = new Map<string, Array<(e: any) => void>>();
+let rafFlushCount = 0;
+
 const fakeWindow: any = {
   location: { hostname: 'pokeidle.io' },
   document: fakeDocument,
   localStorage: fakeLocalStorage,
-  addEventListener: () => {},
+  addEventListener: (evt: string, cb: (e: any) => void) => {
+    const arr = windowListeners.get(evt) || [];
+    arr.push(cb);
+    windowListeners.set(evt, arr);
+  },
   dispatchEvent: () => true,
   AudioContext: class {
     state = 'running';
@@ -84,12 +114,16 @@ const fakeWindow: any = {
     createBufferSource() { return { buffer: null, loop: false, connect() {}, start() {} }; }
     createGain() { return { gain: { value: 1 }, connect() {} }; }
     resume() { this.state = 'running'; return Promise.resolve(); }
+    suspend() { this.state = 'suspended'; return Promise.resolve(); }
     destination = {};
   },
   HTMLMediaElement: { prototype: { play: () => Promise.resolve() } },
   performance: { now: () => Date.now() },
-  requestAnimationFrame: null,
-  cancelAnimationFrame: null,
+  requestAnimationFrame: (cb: (t: number) => void) => {
+    rafFlushCount++;
+    return rafFlushCount;
+  },
+  cancelAnimationFrame: () => {},
   estado: {
     ws: {
       readyState: 1, // OPEN
@@ -104,6 +138,7 @@ const fakeWindow: any = {
 
 // Executar o script no contexto mockado
 const runner = new Function('window', 'document', 'localStorage', 'HTMLMediaElement', 'location', antiSleepCode);
+fakeDocument.title = 'PokeIdle';
 runner(fakeWindow, fakeDocument, fakeLocalStorage, fakeWindow.HTMLMediaElement, fakeWindow.location);
 
 // [Teste 1]: Verificar exportações globais
@@ -144,7 +179,62 @@ console.log('Testando Heartbeat Watchdog com WebSocket fechado...');
 fakeWindow.estado.ws.readyState = 3; // CLOSED
 fakeWindow.__idlestreamHeartbeat();
 assert.strictEqual(reconnectedCount, 1, 'Heartbeat deve acionar verificarConexao()');
-console.log('✅ [5/5] Reconexão automática em segundo plano validada com sucesso!');
+console.log('✅ [5/8] Reconexão automática em segundo plano validada com sucesso!');
 
-console.log('\n🎉 TODOS OS 5 TESTES DE ULTRA MODE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
-process.exit(0);
+// [Teste 6]: Ponte de atividade do usuário via __IDLESTREAM_USER_ACTIVITY__ (mousedown / wheel / mousemove >=25px)
+console.log('Testando ponte de atividade do usuário em Child WebView (Desktop)...');
+const emitEvent = (type: string, props: any) => {
+  const cbs = windowListeners.get(type) || [];
+  for (const cb of cbs) cb({ type, ...props });
+};
+
+// Evento não confiável e micro-jitter devem ser ignorados
+fakeDocument.title = 'PokeIdle';
+emitEvent('mousedown', { isTrusted: false });
+assert.strictEqual(fakeDocument.title, 'PokeIdle', 'Evento não confiável não deve emitir atividade');
+
+emitEvent('mousemove', { isTrusted: true, clientX: 100, clientY: 100 }); // calibra
+emitEvent('mousemove', { isTrusted: true, clientX: 103, clientY: 104 }); // delta 5px (< 25px)
+assert.strictEqual(fakeDocument.title, 'PokeIdle', 'Micro-jitter (<25px) não deve emitir atividade');
+
+// Tecla modificadora isolada deve ser ignorada
+emitEvent('keydown', { isTrusted: true, key: 'Shift' });
+assert.strictEqual(fakeDocument.title, 'PokeIdle', 'Tecla modificadora isolada não deve emitir atividade');
+
+// Clique real confiável DEVE emitir __IDLESTREAM_USER_ACTIVITY__|
+emitEvent('mousedown', { isTrusted: true });
+assert.ok(
+  String(fakeDocument.title).startsWith('__IDLESTREAM_USER_ACTIVITY__|'),
+  'Clique confiável em Child WebView deve emitir __IDLESTREAM_USER_ACTIVITY__|'
+);
+console.log('✅ [6/8] Ponte de atividade Desktop (__IDLESTREAM_USER_ACTIVITY__) validada!');
+
+// [Teste 7]: Transição 1 FPS / Hidden -> 60 FPS Ativo despacha callbacks acumulados sem travar
+console.log('Testando transição Slot Hidden + 1 FPS -> 60 FPS Ativo...');
+fakeWindow.__setIdleStreamFps(10);
+fakeWindow.__setIdleStreamSlotHidden(true);
+let callbackExecuted = 0;
+fakeWindow.requestAnimationFrame(() => {
+  callbackExecuted++;
+});
+const dbgHidden = fakeWindow.__getIdleStreamDebugState();
+assert.strictEqual(dbgHidden.isSlotHidden, true);
+assert.strictEqual(dbgHidden.targetFps, 10);
+assert.strictEqual(dbgHidden.pendingCallbacks, 1);
+
+fakeWindow.__setIdleStreamSlotHidden(false);
+fakeWindow.__setIdleStreamFps(60);
+const dbgActive = fakeWindow.__getIdleStreamDebugState();
+assert.strictEqual(dbgActive.isSlotHidden, false);
+assert.strictEqual(dbgActive.targetFps, 60);
+assert.strictEqual(dbgActive.isEcoMode, false);
+assert.strictEqual(callbackExecuted, 1, 'Callback acumulado em hidden/eco deve ser despachado ao voltar para 60 FPS');
+console.log('✅ [7/8] Transição Hidden/Eco -> 60 FPS com flush imediato validada!');
+
+// [Teste 8]: Restauro automático do document.title após emissão de atividade
+setTimeout(() => {
+  assert.strictEqual(fakeDocument.title, 'PokeIdle', 'document.title deve ser restaurado para PokeIdle');
+  console.log('✅ [8/8] Restauração de document.title após atividade validada!');
+  console.log('\n🎉 TODOS OS 8 TESTES DE ULTRA MODE, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
+  process.exit(0);
+}, 60);
