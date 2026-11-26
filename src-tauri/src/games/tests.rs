@@ -1,5 +1,8 @@
 use crate::config::{default_game_slots, GameSlotConfig};
-use crate::games::manager::{compute_offscreen_size, PokeIdleGameState, SlotBounds, ViewLayoutMode, ViewportRect};
+use crate::games::manager::{
+    compute_offscreen_size, should_nudge_on_restore, PokeIdleGameState, SlotBounds, ViewLayoutMode,
+    ViewportRect,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -268,6 +271,7 @@ fn test_pokeidle_game_state_deserialization() {
         "bonusTwitchSecs": 1800,
         "bonusKickSecs": 3600,
         "xpRatePerHour": 254000,
+        "ultraActive": true,
         "updatedAt": 1700000000
     }"#;
 
@@ -281,5 +285,55 @@ fn test_pokeidle_game_state_deserialization() {
     assert_eq!(parsed.bonus_twitch_secs, Some(1800));
     assert_eq!(parsed.bonus_kick_secs, Some(3600));
     assert_eq!(parsed.xp_rate_per_hour, Some(254000));
+    assert_eq!(parsed.ultra_active, Some(true));
     assert_eq!(parsed.updated_at, 1700000000);
+}
+
+#[test]
+fn test_should_nudge_on_restore_behavior() {
+    let offscreen_same = SlotBounds {
+        slot_id: "slot-1".to_string(),
+        x: -99999.0,
+        y: -99999.0,
+        width: 1200.0,
+        height: 700.0,
+        visible: false,
+    };
+    let restored_same = SlotBounds {
+        slot_id: "slot-1".to_string(),
+        x: 200.0,
+        y: 60.0,
+        width: 1200.0,
+        height: 700.0,
+        visible: true,
+    };
+    let restored_resized = SlotBounds {
+        slot_id: "slot-1".to_string(),
+        x: 0.0,
+        y: 40.0,
+        width: 1440.0,
+        height: 860.0,
+        visible: true,
+    };
+
+    assert!(
+        should_nudge_on_restore(Some(&offscreen_same), &restored_same),
+        "Deve aplicar nudge 1px ao voltar do offscreen com exatamente as mesmas dimensões"
+    );
+    assert!(
+        !should_nudge_on_restore(Some(&offscreen_same), &restored_resized),
+        "Não precisa nudge quando largura/altura já mudaram"
+    );
+    assert!(
+        should_nudge_on_restore(None, &restored_same),
+        "Deve aplicar nudge na primeira restauração sem histórico"
+    );
+    assert!(
+        !should_nudge_on_restore(Some(&restored_same), &restored_same),
+        "Não deve aplicar nudge quando já estava visível"
+    );
+    assert!(
+        !should_nudge_on_restore(Some(&restored_same), &offscreen_same),
+        "Não deve aplicar nudge ao ocultar slot"
+    );
 }

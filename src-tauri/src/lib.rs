@@ -111,13 +111,16 @@ pub fn run() {
 
     #[cfg(desktop)]
     {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let was_minimized = Arc::new(AtomicBool::new(false));
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
-        builder = builder.on_window_event(|window, event| {
+        builder = builder.on_window_event(move |window, event| {
             match event {
                 WindowEvent::Focused(is_focused) => {
                     if window.label() == "main" {
                         if !(*is_focused) {
                             if window.is_minimized().unwrap_or(false) {
+                                was_minimized.store(true, Ordering::SeqCst);
                                 let _ = window.emit("window-focus-changed", false);
                                 let _ = window.emit("window-minimized", ());
                                 if let Some(gm) = window.app_handle().try_state::<Arc<games::manager::GameLayoutManager>>() {
@@ -137,19 +140,27 @@ pub fn run() {
                                 }
                             }
                         } else if !window.is_minimized().unwrap_or(false) {
+                            was_minimized.store(false, Ordering::SeqCst);
                             let _ = window.emit("window-focus-changed", true);
                             let _ = window.emit("window-restored", ());
                         }
                     }
                 }
                 WindowEvent::Resized(_) => {
-                    if window.label() == "main" && window.is_minimized().unwrap_or(false) {
-                        let _ = window.emit("window-minimized", ());
-                        if let Some(gm) = window.app_handle().try_state::<Arc<games::manager::GameLayoutManager>>() {
-                            let gm = Arc::clone(&gm);
-                            tauri::async_runtime::spawn(async move {
-                                let _ = gm.hide_all_game_views().await;
-                            });
+                    if window.label() == "main" {
+                        if window.is_minimized().unwrap_or(false) {
+                            if !was_minimized.swap(true, Ordering::SeqCst) {
+                                let _ = window.emit("window-minimized", ());
+                                if let Some(gm) = window.app_handle().try_state::<Arc<games::manager::GameLayoutManager>>() {
+                                    let gm = Arc::clone(&gm);
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = gm.hide_all_game_views().await;
+                                    });
+                                }
+                            }
+                        } else if was_minimized.swap(false, Ordering::SeqCst) {
+                            let _ = window.emit("window-focus-changed", true);
+                            let _ = window.emit("window-restored", ());
                         }
                     }
                 }
@@ -164,6 +175,7 @@ pub fn run() {
 
                         if should_minimize {
                             api.prevent_close();
+                            was_minimized.store(true, Ordering::SeqCst);
                             let _ = window.hide();
                             if let Some(gm) = app.try_state::<Arc<games::manager::GameLayoutManager>>() {
                                 let gm = Arc::clone(&gm);
@@ -455,6 +467,7 @@ pub fn run() {
             games::commands::game_mark_battle_pass_claimed,
             games::commands::game_reset_battle_pass_timer,
             games::commands::game_hide_all,
+            games::commands::game_refresh_views,
             games::commands::game_trim_memory,
             games::commands::game_get_active_slots,
             games::commands::game_get_system_idle_seconds,

@@ -1,11 +1,11 @@
 {
-  "version": "5.0.2",
-  "notes": "IdleStream v5.0.2 - Correcao do resgate automatico do Passe de Batalha e fechamento automatico do modal apos resgate.",
-  "pub_date": "2026-11-25T21:05:00Z",
+  "version": "5.0.3",
+  "notes": "IdleStream v5.0.3 - Correcao de tela preta WebView2/DirectComposition (compositor nudge e restore ao desminimizar), estabilizacao do Modo Ultra Economia do PokeIdle e separacao de comportamento entre alternador por aba e ativar/desativar todos no botao global.",
+  "pub_date": "2026-11-26T13:50:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "Your file was signed successfully, You can find the signature here:C:\Projetos\Chatter\src-tauri\target\release\bundle\nsis\IdleStream_5.0.2_x64-setup.exe.sigPublic signature:dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjNXTFVOOWN5c2ZIV215Q2hjU1pxUjhwQWdmMTB2aktqUWhaaVVmdVZ1aldBem1LQndSdHlyVS8waHYvdzJENGFrLzEydVM4T09UL2FkdVk3UFY5M2dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NjQwNjY1CWZpbGU6SWRsZVN0cmVhbV81LjAuMl94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4wLjIKNGVuSjNCenRPd2REMm5rNmgwY2tUVGJLTmxocGdwSEtRZTkzcUp0TndlTFNMenM4TmxuK3cyeUJYc0t0ckRNUFR6VkU0eWRxbEhJcmJaUVo3UE5pRFE9PQo=Make sure to include this into the signature field of your update server.",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.0.2/IdleStream_5.0.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vi9yU1Nsa1NvWmUvaGUrOXQ1Mjk3OFhoVEZtVXRHcExVQllVTWYzM3ZpaXZYK2RqMnBUU244a2VDemU3Mzk4aVlzU0s2dG53MDVUSTRLWmFIdFFoYmdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzAwNzg2CWZpbGU6SWRsZVN0cmVhbV81LjAuM194NjQtc2V0dXAuZXhlCXZlcnNpb246NS4wLjMKNXpIVWQ4UlNkN3FnY2dLUWU0aGRrMHFsZTJBanJNM0h2OURkdEhYZFNuanNvTDljNWk1QmE0YXMzRyt3bmhPREVaT3VjRi9YaE5henNWaFR4UEJYQnc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.0.3/IdleStream_5.0.3_x64-setup.exe"
     }
   }
 }

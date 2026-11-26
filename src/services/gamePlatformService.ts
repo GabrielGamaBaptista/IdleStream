@@ -131,6 +131,13 @@ export const gamePlatformService = {
     await invoke('game_hide_all');
   },
 
+  async refreshViews(): Promise<void> {
+    if (isAndroidPlatform()) return;
+    try {
+      await invoke('game_refresh_views');
+    } catch (_) {}
+  },
+
   async trimMemory(): Promise<void> {
     if (isAndroidPlatform()) return;
     try {

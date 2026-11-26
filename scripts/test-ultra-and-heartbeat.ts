@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { computeGlobalUltraDecision } from '../src/components/games/ultraMode.ts';
 
 console.log('🧪 Iniciando validação de anti_sleep.js (Ultra Mode & Heartbeat Watchdog)...');
 
@@ -10,8 +11,11 @@ const antiSleepCode = fs.readFileSync(antiSleepPath, 'utf8');
 // 1. Simulação de DOM fiel ao PokeIdle real (button[role="switch"], #modal.hidden, #modal-fechar, #app.hidden)
 let isUltraOn = false;
 let configModalOpen = false;
+let otherModalOpenMock = false;
 let isAppHidden = false;
+let simulateDomNotMounted = false;
 let btnConfigClicks = 0;
+let tabPerfClicks = 0;
 
 // Mock window e document
 const localStorageMap = new Map<string, string>();
@@ -59,6 +63,7 @@ const fakeDocument: any = {
     appendChild: () => {},
   },
   getElementById: (id: string) => {
+    if (simulateDomNotMounted) return null;
     if (id === 'app') {
       return {
         classList: { contains: (cls: string) => cls === 'hidden' && isAppHidden },
@@ -66,13 +71,14 @@ const fakeDocument: any = {
     }
     if (id === 'modal') {
       return {
-        classList: { contains: (cls: string) => cls === 'hidden' && !configModalOpen },
+        classList: { contains: (cls: string) => cls === 'hidden' && !configModalOpen && !otherModalOpenMock },
       };
     }
     if (id === 'modal-fechar') {
       return {
         click: () => {
           configModalOpen = false;
+          otherModalOpenMock = false;
         },
       };
     }
@@ -88,9 +94,17 @@ const fakeDocument: any = {
       return {
         click: () => {
           btnConfigClicks++;
+          otherModalOpenMock = false;
           configModalOpen = true;
         },
       };
+    }
+    if (id === 'cfg-aba-desempenho') {
+      return configModalOpen ? {
+        click: () => {
+          tabPerfClicks++;
+        },
+      } : null;
     }
     if (id === 'cfg-ultra') {
       if (!configModalOpen) return null;
@@ -284,11 +298,67 @@ fakeLocalStorage.setItem('cfg-ultra', '1');
 fakeWindow.__togglePokeIdleUltra(true);
 assert.strictEqual(fakeLocalStorage.getItem('cfg-ultra'), '1', 'Não deve inverter switch já ligado para 0');
 assert.strictEqual(configModalOpen, false, 'Deve fechar modal via #modal-fechar');
-console.log('✅ [9-10/10] Proteção contra inversão de switch e vazamento de modal validada!');
+console.log('✅ [9-10/14] Proteção contra inversão de switch e vazamento de modal validada!');
+
+// [Teste 11]: Outro modal aberto (ex: Passe de Batalha/Loja) não deve bloquear ativação do Ultra
+isUltraOn = false;
+configModalOpen = false;
+otherModalOpenMock = true;
+tabPerfClicks = 0;
+fakeLocalStorage.setItem('cfg-ultra', '0');
+const toggleWithOtherModal = fakeWindow.__togglePokeIdleUltra(true);
+assert.strictEqual(toggleWithOtherModal, true, 'Deve fechar outro modal e ativar Ultra');
+assert.strictEqual(isUltraOn, true, 'Ultra deve estar ativo após fechar modal anterior');
+assert.strictEqual(otherModalOpenMock, false, 'Outro modal não pode permanecer aberto');
+assert.ok(tabPerfClicks >= 1, 'Deve selecionar a aba #cfg-aba-desempenho antes de alternar #cfg-ultra');
+console.log('✅ [11/14] Superação de modal aberto e seleção da aba Desempenho validadas!');
+
+// [Teste 12]: Quando DOM ainda não montou (#btn-config ausente), não deve retornar erro nem desistir
+isUltraOn = false;
+configModalOpen = false;
+simulateDomNotMounted = true;
+fakeLocalStorage.setItem('cfg-ultra', '0');
+const toggleWhileLoading = fakeWindow.__togglePokeIdleUltra(true);
+assert.strictEqual(toggleWhileLoading, true, 'Enquanto DOM carrega, deve agendar ativação adiada com sucesso');
+simulateDomNotMounted = false;
+fakeWindow.__togglePokeIdleUltra(false); // limpa timer pendente e restaura estado
+console.log('✅ [12/14] Detecção segura de carregamento inicial (sem falso positivo de UI pronta) validada!');
+
+// [Teste 13]: __idlestreamForceRepaint limpa estado oculto e despacha callbacks
+fakeWindow.__setIdleStreamSlotHidden(true);
+let forceRepaintCb = 0;
+fakeWindow.requestAnimationFrame(() => { forceRepaintCb++; });
+assert.strictEqual(fakeWindow.__getIdleStreamDebugState().isSlotHidden, true);
+fakeWindow.__idlestreamForceRepaint();
+assert.strictEqual(fakeWindow.__getIdleStreamDebugState().isSlotHidden, false, '__idlestreamForceRepaint deve limpar isSlotHidden');
+assert.strictEqual(forceRepaintCb, 1, '__idlestreamForceRepaint deve despachar callbacks acumulados');
+console.log('✅ [13/14] __idlestreamForceRepaint validado!');
+
+// [Teste 14]: Semântica Global (ativar todos / desativar todos) vs Individual
+const gAllOff = computeGlobalUltraDecision(['slot-1', 'slot-2', 'slot-3', 'slot-4'], {}, false);
+assert.strictEqual(gAllOff.mode, 'all_off');
+assert.strictEqual(gAllOff.targetState, true, 'Com todos desligados, global deve ativar em todos');
+
+const gPartial = computeGlobalUltraDecision(
+  ['slot-1', 'slot-2', 'slot-3', 'slot-4'],
+  { 'slot-1': true, 'slot-2': false, 'slot-3': true, 'slot-4': false },
+  true
+);
+assert.strictEqual(gPartial.mode, 'partial');
+assert.strictEqual(gPartial.targetState, true, 'Com estado parcial, global deve ativar em todos (nunca inverter!)');
+
+const gAllOn = computeGlobalUltraDecision(
+  ['slot-1', 'slot-2', 'slot-3', 'slot-4'],
+  { 'slot-1': true, 'slot-2': true, 'slot-3': true, 'slot-4': true },
+  true
+);
+assert.strictEqual(gAllOn.mode, 'all_on');
+assert.strictEqual(gAllOn.targetState, false, 'Com todos ativos, global deve desativar em todos');
+console.log('✅ [14/14] Decisão Global (Ativar Todos / Desativar Todos) validada!');
 
 setTimeout(() => {
   assert.strictEqual(fakeDocument.title, 'PokeIdle', 'document.title deve ser restaurado para PokeIdle');
-  console.log('✅ [8/10] Restauração de document.title após atividade validada!');
-  console.log('\n🎉 TODOS OS 10 TESTES DE ULTRA MODE, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
+  console.log('✅ [8/14] Restauração de document.title após atividade validada!');
+  console.log('\n🎉 TODOS OS 14 TESTES DE ULTRA MODE, REPAINT, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
   process.exit(0);
 }, 60);

@@ -32,6 +32,8 @@ pub struct PokeIdleGameState {
     #[serde(default)]
     pub xp_rate_per_hour: Option<u64>,
     #[serde(default)]
+    pub ultra_active: Option<bool>,
+    #[serde(default)]
     pub updated_at: u64,
 }
 
@@ -101,6 +103,67 @@ pub fn compute_offscreen_size(prev: Option<&SlotBounds>) -> (f64, f64) {
         }
     }
     (1024.0, 680.0)
+}
+
+/// Indica se ao restaurar um slot visível é necessário aplicar um nudge de 1px
+/// para forçar WM_SIZE / recriação da superfície DirectComposition quando as dimensões
+/// permaneceram idênticas às do estado offscreen.
+pub fn should_nudge_on_restore(prev: Option<&SlotBounds>, next: &SlotBounds) -> bool {
+    if !next.visible || next.width <= 20.0 || next.height <= 20.0 {
+        return false;
+    }
+    match prev {
+        Some(p) if !p.visible => (p.width - next.width).abs() < 1.0 && (p.height - next.height).abs() < 1.0,
+        None => true,
+        _ => false,
+    }
+}
+
+#[cfg(desktop)]
+fn apply_webview_visible_bounds<R: tauri::Runtime>(
+    wv: &tauri::Webview<R>,
+    b: &SlotBounds,
+    nudge_compositor: bool,
+) {
+    if nudge_compositor && b.width > 20.0 && b.height > 20.0 {
+        let _ = wv.set_bounds(Rect {
+            position: LogicalPosition::new(b.x, b.y).into(),
+            size: LogicalSize::new((b.width - 1.0).max(10.0), b.height).into(),
+        });
+    }
+    let _ = wv.set_bounds(Rect {
+        position: LogicalPosition::new(b.x, b.y).into(),
+        size: LogicalSize::new(b.width, b.height).into(),
+    });
+    let _ = wv.eval(
+        "if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); } \
+         if (typeof window.__idlestreamForceRepaint === 'function') { window.__idlestreamForceRepaint(); }",
+    );
+}
+
+#[cfg(desktop)]
+fn apply_webview_offscreen_bounds<R: tauri::Runtime>(
+    wv: &tauri::Webview<R>,
+    slot_id: &str,
+    prev: Option<&SlotBounds>,
+) -> SlotBounds {
+    let (off_w, off_h) = compute_offscreen_size(prev);
+    let hidden_bounds = SlotBounds {
+        slot_id: slot_id.to_string(),
+        x: -99999.0,
+        y: -99999.0,
+        width: off_w,
+        height: off_h,
+        visible: false,
+    };
+    let _ = wv.set_bounds(Rect {
+        position: LogicalPosition::new(-99999.0, -99999.0).into(),
+        size: LogicalSize::new(off_w, off_h).into(),
+    });
+    let _ = wv.eval(
+        "if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }",
+    );
+    hidden_bounds
 }
 
 impl GameLayoutManager {
@@ -325,116 +388,109 @@ impl GameLayoutManager {
         }
 
         #[cfg(desktop)]
-        match &mode {
-            ViewLayoutMode::Grid2x2 => {
-                let half_w = (rect.width / 2.0).max(10.0);
-                let half_h = (rect.height / 2.0).max(10.0);
+        {
+            let mut last_bounds = self.last_bounds.lock().await;
+            match &mode {
+                ViewLayoutMode::Grid2x2 => {
+                    let half_w = (rect.width / 2.0).max(10.0);
+                    let half_h = (rect.height / 2.0).max(10.0);
 
-                let positions = [
-                    (rect.x, rect.y),                   // Top-Left
-                    (rect.x + half_w, rect.y),          // Top-Right
-                    (rect.x, rect.y + half_h),          // Bottom-Left
-                    (rect.x + half_w, rect.y + half_h), // Bottom-Right
-                ];
+                    let positions = [
+                        (rect.x, rect.y),                   // Top-Left
+                        (rect.x + half_w, rect.y),          // Top-Right
+                        (rect.x, rect.y + half_h),          // Bottom-Left
+                        (rect.x + half_w, rect.y + half_h), // Bottom-Right
+                    ];
 
-                for (idx, slot_id) in slot_keys.iter().enumerate() {
-                    if let Some(wv) = self.app.get_webview(slot_id) {
-                        if idx < 4 {
-                            let (px, py) = positions[idx];
-                            let _ = wv.set_bounds(Rect {
-                                position: LogicalPosition::new(px, py).into(),
-                                size: LogicalSize::new(half_w, half_h).into(),
-                            });
-                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
-                        } else {
-                            let mut last_bounds = self.last_bounds.lock().await;
-                            let (off_w, off_h) = compute_offscreen_size(last_bounds.get(slot_id));
-                            last_bounds.insert(slot_id.clone(), SlotBounds {
-                                slot_id: slot_id.clone(),
-                                x: -99999.0,
-                                y: -99999.0,
-                                width: off_w,
-                                height: off_h,
-                                visible: false,
-                            });
-                            let _ = wv.set_bounds(Rect {
-                                position: LogicalPosition::new(-99999.0, -99999.0).into(),
-                                size: LogicalSize::new(off_w, off_h).into(),
-                            });
-                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                    for (idx, slot_id) in slot_keys.iter().enumerate() {
+                        if let Some(wv) = self.app.get_webview(slot_id) {
+                            let prev = last_bounds.get(slot_id).cloned();
+                            if idx < 4 {
+                                let (px, py) = positions[idx];
+                                let b = SlotBounds {
+                                    slot_id: slot_id.clone(),
+                                    x: px,
+                                    y: py,
+                                    width: half_w,
+                                    height: half_h,
+                                    visible: true,
+                                };
+                                let nudge = should_nudge_on_restore(prev.as_ref(), &b);
+                                apply_webview_visible_bounds(&wv, &b, nudge);
+                                last_bounds.insert(slot_id.clone(), b);
+                            } else {
+                                let hidden = apply_webview_offscreen_bounds(&wv, slot_id, prev.as_ref());
+                                last_bounds.insert(slot_id.clone(), hidden);
+                            }
                         }
                     }
                 }
-            }
-            ViewLayoutMode::FocusSingle(focused_id) => {
-                for slot_id in &slot_keys {
-                    if let Some(wv) = self.app.get_webview(slot_id) {
-                        if slot_id == focused_id {
-                            self.last_bounds.lock().await.insert(slot_id.clone(), SlotBounds {
-                                slot_id: slot_id.clone(),
-                                x: rect.x,
-                                y: rect.y,
-                                width: rect.width,
-                                height: rect.height,
+                ViewLayoutMode::FocusSingle(focused_id) => {
+                    for slot_id in &slot_keys {
+                        if let Some(wv) = self.app.get_webview(slot_id) {
+                            let prev = last_bounds.get(slot_id).cloned();
+                            if slot_id == focused_id {
+                                let b = SlotBounds {
+                                    slot_id: slot_id.clone(),
+                                    x: rect.x,
+                                    y: rect.y,
+                                    width: rect.width,
+                                    height: rect.height,
+                                    visible: true,
+                                };
+                                let nudge = should_nudge_on_restore(prev.as_ref(), &b);
+                                apply_webview_visible_bounds(&wv, &b, nudge);
+                                last_bounds.insert(slot_id.clone(), b);
+                            } else {
+                                // Move para offscreen preservando dimensões e DirectComposition sem tela preta/TDR
+                                let hidden = apply_webview_offscreen_bounds(&wv, slot_id, prev.as_ref());
+                                last_bounds.insert(slot_id.clone(), hidden);
+                            }
+                        }
+                    }
+                }
+                ViewLayoutMode::FocusSidebar(focused_id) => {
+                    let main_w = (rect.width * 0.72).max(10.0);
+                    let side_w = (rect.width - main_w).max(10.0);
+                    let side_slots: Vec<&String> = slot_keys.iter().filter(|s| *s != focused_id).collect();
+                    let side_h = if side_slots.is_empty() {
+                        rect.height
+                    } else {
+                        (rect.height / (side_slots.len() as f64)).max(10.0)
+                    };
+
+                    // Focused slot na esquerda
+                    if let Some(wv) = self.app.get_webview(focused_id) {
+                        let prev = last_bounds.get(focused_id).cloned();
+                        let b = SlotBounds {
+                            slot_id: focused_id.clone(),
+                            x: rect.x,
+                            y: rect.y,
+                            width: main_w,
+                            height: rect.height,
+                            visible: true,
+                        };
+                        let nudge = should_nudge_on_restore(prev.as_ref(), &b);
+                        apply_webview_visible_bounds(&wv, &b, nudge);
+                        last_bounds.insert(focused_id.clone(), b);
+                    }
+
+                    // Slots secundários na coluna direita
+                    for (idx, slot_id) in side_slots.iter().enumerate() {
+                        if let Some(wv) = self.app.get_webview(slot_id) {
+                            let prev = last_bounds.get(*slot_id).cloned();
+                            let b = SlotBounds {
+                                slot_id: (*slot_id).clone(),
+                                x: rect.x + main_w,
+                                y: rect.y + (idx as f64 * side_h),
+                                width: side_w,
+                                height: side_h,
                                 visible: true,
-                            });
-                            let _ = wv.set_bounds(Rect {
-                                position: LogicalPosition::new(rect.x, rect.y).into(),
-                                size: LogicalSize::new(rect.width, rect.height).into(),
-                            });
-                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
-                        } else {
-                            // Move para offscreen preservando dimensões e DirectComposition sem tela preta/TDR
-                            let mut last_bounds = self.last_bounds.lock().await;
-                            let (off_w, off_h) = compute_offscreen_size(last_bounds.get(slot_id));
-                            last_bounds.insert(slot_id.clone(), SlotBounds {
-                                slot_id: slot_id.clone(),
-                                x: -99999.0,
-                                y: -99999.0,
-                                width: off_w,
-                                height: off_h,
-                                visible: false,
-                            });
-                            let _ = wv.set_bounds(Rect {
-                                position: LogicalPosition::new(-99999.0, -99999.0).into(),
-                                size: LogicalSize::new(off_w, off_h).into(),
-                            });
-                            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                            };
+                            let nudge = should_nudge_on_restore(prev.as_ref(), &b);
+                            apply_webview_visible_bounds(&wv, &b, nudge);
+                            last_bounds.insert((*slot_id).clone(), b);
                         }
-                    }
-                }
-            }
-            ViewLayoutMode::FocusSidebar(focused_id) => {
-                let main_w = (rect.width * 0.72).max(10.0);
-                let side_w = (rect.width - main_w).max(10.0);
-                let side_slots: Vec<&String> = slot_keys.iter().filter(|s| *s != focused_id).collect();
-                let side_h = if side_slots.is_empty() {
-                    rect.height
-                } else {
-                    (rect.height / (side_slots.len() as f64)).max(10.0)
-                };
-
-                // Focused slot na esquerda
-                if let Some(wv) = self.app.get_webview(focused_id) {
-                    let _ = wv.set_bounds(Rect {
-                        position: LogicalPosition::new(rect.x, rect.y).into(),
-                        size: LogicalSize::new(main_w, rect.height).into(),
-                    });
-                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
-                }
-
-                // Slots secundários na coluna direita
-                for (idx, slot_id) in side_slots.iter().enumerate() {
-                    if let Some(wv) = self.app.get_webview(slot_id) {
-                        let _ = wv.set_bounds(Rect {
-                            position: LogicalPosition::new(
-                                rect.x + main_w,
-                                rect.y + (idx as f64 * side_h),
-                            )
-                            .into(),
-                            size: LogicalSize::new(side_w, side_h).into(),
-                        });
-                        let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                     }
                 }
             }
@@ -464,32 +520,14 @@ impl GameLayoutManager {
 
                 if let Some(wv) = self.app.get_webview(&b.slot_id) {
                     if b.visible && b.width > 10.0 && b.height > 10.0 {
+                        let nudge = should_nudge_on_restore(prev_opt.as_ref(), &b);
+                        apply_webview_visible_bounds(&wv, &b, nudge);
                         last_bounds.insert(b.slot_id.clone(), b.clone());
-                        let _ = wv.set_bounds(Rect {
-                            position: LogicalPosition::new(b.x, b.y).into(),
-                            size: LogicalSize::new(b.width, b.height).into(),
-                        });
-                        let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); }");
                     } else {
                         // Oculta movendo para fora da tela (offscreen) sem chamar wv.hide() e sem encolher para 1x1
                         // Isso preserva o tamanho e a árvore DirectComposition do Windows DWM, prevenindo tela preta
-                        let (off_w, off_h) = compute_offscreen_size(prev_opt.as_ref());
-                        last_bounds.insert(
-                            b.slot_id.clone(),
-                            SlotBounds {
-                                slot_id: b.slot_id.clone(),
-                                x: -99999.0,
-                                y: -99999.0,
-                                width: off_w,
-                                height: off_h,
-                                visible: false,
-                            },
-                        );
-                        let _ = wv.set_bounds(Rect {
-                            position: LogicalPosition::new(-99999.0, -99999.0).into(),
-                            size: LogicalSize::new(off_w, off_h).into(),
-                        });
-                        let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                        let hidden = apply_webview_offscreen_bounds(&wv, &b.slot_id, prev_opt.as_ref());
+                        last_bounds.insert(b.slot_id.clone(), hidden);
                     }
                 } else {
                     last_bounds.insert(b.slot_id.clone(), b.clone());
@@ -568,7 +606,8 @@ impl GameLayoutManager {
                         let is_vis = last_bounds.get(slot_id).map(|b| b.visible).unwrap_or(false);
                         if is_vis {
                             let full_script = format!(
-                                "{}; if (typeof window.__setIdleStreamSlotHidden === 'function') {{ window.__setIdleStreamSlotHidden(false); }}",
+                                "{}; if (typeof window.__setIdleStreamSlotHidden === 'function') {{ window.__setIdleStreamSlotHidden(false); }} \
+                                 if (typeof window.__idlestreamForceRepaint === 'function') {{ window.__idlestreamForceRepaint(); }}",
                                 script
                             );
                             let _ = wv.eval(&full_script);
@@ -606,7 +645,7 @@ impl GameLayoutManager {
         {
             let script = match enabled {
                 Some(en) => format!("if (typeof window.__togglePokeIdleUltra === 'function') {{ window.__togglePokeIdleUltra({}); }}", en),
-                None => "if (typeof window.__togglePokeIdleUltra === 'function') {{ window.__togglePokeIdleUltra(); }}".to_string(),
+                None => "if (typeof window.__togglePokeIdleUltra === 'function') { window.__togglePokeIdleUltra(); }".to_string(),
             };
 
             let slots_map = self.active_slots.lock().await;
@@ -637,31 +676,49 @@ impl GameLayoutManager {
             let mut last_bounds = self.last_bounds.lock().await;
             let slots_map = self.active_slots.lock().await;
             for slot_id in slots_map.keys() {
-                let (off_w, off_h) = compute_offscreen_size(last_bounds.get(slot_id));
-                last_bounds.insert(
-                    slot_id.clone(),
-                    SlotBounds {
-                        slot_id: slot_id.clone(),
-                        x: -99999.0,
-                        y: -99999.0,
-                        width: off_w,
-                        height: off_h,
-                        visible: false,
-                    },
-                );
+                let prev = last_bounds.get(slot_id).cloned();
                 if let Some(wv) = self.app.get_webview(slot_id) {
-                    // Oculta movendo para offscreen preservando dimensões para não destruir DirectComposition no DWM
-                    let _ = wv.set_bounds(Rect {
-                        position: LogicalPosition::new(-99999.0, -99999.0).into(),
-                        size: LogicalSize::new(off_w, off_h).into(),
-                    });
-                    let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
+                    let hidden = apply_webview_offscreen_bounds(&wv, slot_id, prev.as_ref());
+                    last_bounds.insert(slot_id.clone(), hidden);
                     let _ = wv.eval("if (typeof window.__setIdleStreamFps === 'function') { window.__setIdleStreamFps(1); }");
+                } else {
+                    let (off_w, off_h) = compute_offscreen_size(prev.as_ref());
+                    last_bounds.insert(
+                        slot_id.clone(),
+                        SlotBounds {
+                            slot_id: slot_id.clone(),
+                            x: -99999.0,
+                            y: -99999.0,
+                            width: off_w,
+                            height: off_h,
+                            visible: false,
+                        },
+                    );
                 }
             }
         }
 
         let _ = self.trim_memory().await;
+        Ok(())
+    }
+
+    /// Força atualização visual (compositor nudge de 1px + repaint JS) em todas as WebViews
+    /// atualmente visíveis, prevenindo telas pretas após Sleep/DWM/mudança de foco sem exigir troca de layout.
+    pub async fn refresh_visible_views(&self) -> Result<(), String> {
+        #[cfg(desktop)]
+        {
+            let slots_map = self.active_slots.lock().await;
+            let last_bounds = self.last_bounds.lock().await;
+            for slot_id in slots_map.keys() {
+                if let Some(b) = last_bounds.get(slot_id) {
+                    if b.visible && b.width > 20.0 && b.height > 20.0 {
+                        if let Some(wv) = self.app.get_webview(slot_id) {
+                            apply_webview_visible_bounds(&wv, b, true);
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -741,23 +798,9 @@ impl GameLayoutManager {
         #[cfg(desktop)]
         if let Some(wv) = self.app.get_webview(slot_id) {
             let mut last_bounds = self.last_bounds.lock().await;
-            let (off_w, off_h) = compute_offscreen_size(last_bounds.get(slot_id));
-            last_bounds.insert(
-                slot_id.to_string(),
-                SlotBounds {
-                    slot_id: slot_id.to_string(),
-                    x: -99999.0,
-                    y: -99999.0,
-                    width: off_w,
-                    height: off_h,
-                    visible: false,
-                },
-            );
-            let _ = wv.eval("if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(true); }");
-            let _ = wv.set_bounds(Rect {
-                position: LogicalPosition::new(-99999.0, -99999.0).into(),
-                size: LogicalSize::new(off_w, off_h).into(),
-            });
+            let prev = last_bounds.get(slot_id).cloned();
+            let hidden = apply_webview_offscreen_bounds(&wv, slot_id, prev.as_ref());
+            last_bounds.insert(slot_id.to_string(), hidden);
         }
         let map = self.slot_snapshots.lock().await;
         Ok(map.get(slot_id).cloned())

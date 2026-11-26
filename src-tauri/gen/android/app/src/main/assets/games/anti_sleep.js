@@ -344,6 +344,21 @@
       };
     };
 
+    window.__idlestreamForceRepaint = function () {
+      try {
+        isSlotHidden = false;
+        const htmlEl = document.documentElement;
+        if (htmlEl) {
+          htmlEl.classList.remove('idlestream-slot-hidden');
+          try { void htmlEl.offsetHeight; } catch (_) {}
+        }
+        flushCallbacks();
+        _NativeRAF(() => {});
+        clearTimeout(flushTimer);
+        scheduleNextFlush();
+      } catch (_) {}
+    };
+
     window.__setIdleStreamSlotHidden = function (hidden) {
       const nextHidden = !!hidden;
       if (isSlotHidden === nextHidden) {
@@ -534,11 +549,16 @@
     // 9. CONTROLE DO MODO ULTRA ECONOMIA NATIVO DO POKEIDLE (Stats Card)
     // ============================================================
     let pendingUltraTimer = null;
+    let pendingUltraModalRetry = null;
 
     const cancelPendingUltra = () => {
       if (pendingUltraTimer) {
         clearTimeout(pendingUltraTimer);
         pendingUltraTimer = null;
+      }
+      if (pendingUltraModalRetry) {
+        clearTimeout(pendingUltraModalRetry);
+        pendingUltraModalRetry = null;
       }
     };
 
@@ -552,9 +572,13 @@
         if (portalEl && portalEl.classList && !portalEl.classList.contains('hidden')) {
           return false;
         }
-        return true;
+        return Boolean(
+          document.getElementById('btn-config') ||
+          document.getElementById('ultra-sair') ||
+          document.getElementById('cfg-ultra')
+        );
       } catch (_) {
-        return true;
+        return false;
       }
     };
 
@@ -562,10 +586,20 @@
       try {
         const rootHasClass = document.documentElement.classList.contains('modo-ultra');
         const ultraDiv = document.getElementById('ultra');
-        const isUltraVisible = ultraDiv && ultraDiv.getAttribute('aria-hidden') !== 'true' && ultraDiv.style.display !== 'none';
+        const ultraAriaOn = ultraDiv && ultraDiv.getAttribute('aria-hidden') === 'false';
+        const ultraDisplayOk = ultraDiv && (!ultraDiv.classList || !ultraDiv.classList.contains('hidden')) && ultraDiv.style.display !== 'none';
+        const isUltraVisible = Boolean(ultraAriaOn && ultraDisplayOk);
         const btnSair = document.getElementById('ultra-sair');
-        const isBtnSairVisible = btnSair && btnSair.offsetParent !== null;
-        return rootHasClass || Boolean(isUltraVisible) || Boolean(isBtnSairVisible);
+        let isBtnSairVisible = false;
+        if (btnSair) {
+          if (typeof window.getComputedStyle === 'function') {
+            const cs = window.getComputedStyle(btnSair);
+            isBtnSairVisible = cs.display !== 'none' && cs.visibility !== 'hidden';
+          } else {
+            isBtnSairVisible = btnSair.offsetParent !== null;
+          }
+        }
+        return rootHasClass || isUltraVisible || isBtnSairVisible;
       } catch (_) {
         return false;
       }
@@ -595,12 +629,75 @@
       } catch (_) {}
     };
 
+    const notifyUltraStateChanged = () => {
+      try {
+        if (window.__idlestream_game_state) {
+          window.__idlestream_game_state.ultraActive = window.__isPokeIdleUltraActive();
+          window.__idlestream_game_state.updatedAt = Date.now();
+        }
+        if (typeof window.__emitIdleStreamGameState === 'function') {
+          window.__emitIdleStreamGameState();
+        }
+      } catch (_) {}
+    };
+
+    const applyCfgUltraSwitch = (cfgUltra, desiredOn) => {
+      const tabPerf = document.getElementById('cfg-aba-desempenho');
+      if (tabPerf && typeof tabPerf.click === 'function') {
+        tabPerf.click();
+      }
+      if (isCfgUltraSwitchOn(cfgUltra) !== desiredOn) {
+        cfgUltra.click();
+      }
+      closePokeIdleModalIfOpen();
+      notifyUltraStateChanged();
+    };
+
+    const openConfigAndSetUltra = (desiredOn) => {
+      let cfgUltra = document.getElementById('cfg-ultra');
+      if (cfgUltra) {
+        applyCfgUltraSwitch(cfgUltra, desiredOn);
+        return true;
+      }
+
+      const modalEl = document.getElementById('modal');
+      const otherModalOpen = modalEl && modalEl.classList && !modalEl.classList.contains('hidden');
+      if (otherModalOpen) {
+        closePokeIdleModalIfOpen();
+      }
+
+      const btnConfig = document.getElementById('btn-config');
+      if (!btnConfig) return false;
+
+      btnConfig.click();
+      cfgUltra = document.getElementById('cfg-ultra');
+      if (cfgUltra) {
+        applyCfgUltraSwitch(cfgUltra, desiredOn);
+        return true;
+      }
+
+      // Fallback assíncrono caso o modal renderize após o tick atual
+      pendingUltraModalRetry = setTimeout(() => {
+        pendingUltraModalRetry = null;
+        const retryCfg = document.getElementById('cfg-ultra');
+        if (retryCfg) {
+          applyCfgUltraSwitch(retryCfg, desiredOn);
+        } else {
+          closePokeIdleModalIfOpen();
+        }
+      }, 80);
+      return true;
+    };
+
     const scheduleDeferredUltraEnable = (attemptsLeft = 25) => {
       cancelPendingUltra();
       if (attemptsLeft <= 0) return;
       pendingUltraTimer = setTimeout(() => {
         pendingUltraTimer = null;
-        if (isUltraVisuallyActive()) return;
+        if (isUltraVisuallyActive()) {
+          notifyUltraStateChanged();
+          return;
+        }
         if (isGameUiReady()) {
           window.__togglePokeIdleUltra(true);
         } else {
@@ -631,51 +728,41 @@
           const btnSair = document.getElementById('ultra-sair');
           if (btnSair) {
             btnSair.click();
-            console.log('[IdleStream] PokeIdle Ultra: Saiu com sucesso via #ultra-sair');
-            return true;
-          }
-
-          let cfgUltra = document.getElementById('cfg-ultra');
-          if (cfgUltra) {
-            if (isCfgUltraSwitchOn(cfgUltra)) {
-              cfgUltra.click();
+            if (!isUltraVisuallyActive() && localStorage.getItem('cfg-ultra') !== '1') {
+              notifyUltraStateChanged();
+              console.log('[IdleStream] PokeIdle Ultra: Saiu com sucesso via #ultra-sair');
+              return true;
             }
-            closePokeIdleModalIfOpen();
-            console.log('[IdleStream] PokeIdle Ultra: Desativado via #cfg-ultra');
-            return true;
           }
 
           if (!isGameUiReady()) {
             try { localStorage.setItem('cfg-ultra', '0'); } catch (_) {}
             document.documentElement.classList.remove('modo-ultra');
+            notifyUltraStateChanged();
             console.log('[IdleStream] PokeIdle Ultra: Desativado antes do welcome');
             return true;
           }
 
-          if (localStorage.getItem('cfg-ultra') === '1') {
-            const btnConfig = document.getElementById('btn-config');
-            if (btnConfig) {
-              btnConfig.click();
-              cfgUltra = document.getElementById('cfg-ultra');
-              if (cfgUltra && isCfgUltraSwitchOn(cfgUltra)) {
-                cfgUltra.click();
-              }
-              closePokeIdleModalIfOpen();
-              console.log('[IdleStream] PokeIdle Ultra: Desativado via #btn-config -> #cfg-ultra');
+          if (document.getElementById('cfg-ultra') || isUltraVisuallyActive() || localStorage.getItem('cfg-ultra') === '1') {
+            if (openConfigAndSetUltra(false)) {
+              console.log('[IdleStream] PokeIdle Ultra: Desativado via #cfg-ultra');
               return true;
             }
           }
 
+          notifyUltraStateChanged();
           return true;
         }
 
         // targetState === true (Ativar)
         if (isUltraVisuallyActive()) {
+          notifyUltraStateChanged();
           return true;
         }
 
         if (!isGameUiReady()) {
           if (localStorage.getItem('cfg-ultra') === '1') {
+            notifyUltraStateChanged();
             console.log('[IdleStream] PokeIdle Ultra: cfg-ultra=1 já ativo, aguardando welcome do jogo');
             return true;
           }
@@ -684,33 +771,9 @@
           return true;
         }
 
-        // Caso 1: Modal de configurações já aberto no DOM
-        let cfgUltra = document.getElementById('cfg-ultra');
-        if (cfgUltra) {
-          if (!isCfgUltraSwitchOn(cfgUltra)) {
-            cfgUltra.click();
-          }
-          closePokeIdleModalIfOpen();
+        if (openConfigAndSetUltra(true)) {
           console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #cfg-ultra');
           return true;
-        }
-
-        // Caso 2: Abrir modal de configurações apenas se nenhum outro modal estiver aberto
-        const modalEl = document.getElementById('modal');
-        const otherModalOpen = modalEl && modalEl.classList && !modalEl.classList.contains('hidden');
-        const btnConfig = document.getElementById('btn-config');
-        if (btnConfig && !otherModalOpen) {
-          btnConfig.click();
-          cfgUltra = document.getElementById('cfg-ultra');
-          if (cfgUltra) {
-            if (!isCfgUltraSwitchOn(cfgUltra)) {
-              cfgUltra.click();
-            }
-            closePokeIdleModalIfOpen();
-            console.log('[IdleStream] PokeIdle Ultra: Ativado com sucesso via #btn-config -> #cfg-ultra');
-            return true;
-          }
-          closePokeIdleModalIfOpen();
         }
 
         return false;
@@ -791,6 +854,7 @@
           bonusTwitchSecs: null,
           bonusKickSecs: null,
           xpRatePerHour: 0,
+          ultraActive: window.__isPokeIdleUltraActive(),
           updatedAt: Date.now(),
         };
 
@@ -892,6 +956,9 @@
               }
             }
 
+            const currentUltra = window.__isPokeIdleUltraActive();
+            st.ultraActive = currentUltra;
+
             const payload = {
               nick: st.nick,
               level: st.level,
@@ -902,17 +969,22 @@
               bonusTwitchSecs: st.bonusTwitchSecs,
               bonusKickSecs: st.bonusKickSecs,
               xpRatePerHour: st.xpRatePerHour,
+              ultraActive: currentUltra,
               updatedAt: Math.floor(st.updatedAt / 1000),
             };
 
             const serialized = JSON.stringify(payload);
             if (serialized !== lastEmittedPayload) {
+              if (document.title && document.title.startsWith('__IDLESTREAM_')) {
+                setTimeout(emitGameStateToHost, 70);
+                return;
+              }
               lastEmittedPayload = serialized;
               const origTitle = document.title && !document.title.startsWith('__IDLESTREAM_') ? document.title : 'PokeIdle';
               document.title = '__IDLESTREAM_GAME_STATE__|' + serialized;
               lastTitleEmit = Date.now();
               setTimeout(() => {
-                if (document.title.startsWith('__IDLESTREAM_GAME_STATE__|')) {
+                if (document.title && document.title.startsWith('__IDLESTREAM_GAME_STATE__|')) {
                   document.title = origTitle;
                 }
               }, 80);
@@ -921,6 +993,21 @@
         };
 
         window.__emitIdleStreamGameState = emitGameStateToHost;
+
+        if (typeof MutationObserver === 'function' && document.documentElement) {
+          let lastObservedUltra = window.__isPokeIdleUltraActive();
+          const ultraObserver = new MutationObserver(() => {
+            const nowUltra = window.__isPokeIdleUltraActive();
+            if (nowUltra !== lastObservedUltra) {
+              lastObservedUltra = nowUltra;
+              notifyUltraStateChanged();
+            }
+          });
+          ultraObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class'],
+          });
+        }
 
         const scheduleEmit = (immediate) => {
           const now = Date.now();
@@ -968,12 +1055,143 @@
         connectWithHuntBus();
         window.addEventListener('DOMContentLoaded', connectWithHuntBus, { once: true });
 
+        // ============================================================
+        // 12. PASSE DE BATALHA POKEIDLE (AUTO-RESGATE & SYNC VIA WS)
+        // ============================================================
+        const bpState = (window.__idlestream_battle_pass = window.__idlestream_battle_pass || {
+          ultimo: null,
+          degrau: null,
+          total: null,
+          servidorAgora: null,
+          lastAttemptMs: 0,
+          lastReportedDay: null,
+          inFlight: false,
+        });
+
+        const emitBattlePassEvent = (payload) => {
+          try {
+            const serialized = JSON.stringify(payload);
+            if (window.IdleStreamSlotBridge && typeof window.IdleStreamSlotBridge.reportBattlePassEvent === 'function') {
+              window.IdleStreamSlotBridge.reportBattlePassEvent(serialized);
+            }
+            if (!isAndroid) {
+              const sendTitle = () => {
+                if (document.title && document.title.startsWith('__IDLESTREAM_')) {
+                  setTimeout(sendTitle, 60);
+                  return;
+                }
+                const origTitle = document.title && !document.title.startsWith('__IDLESTREAM_')
+                  ? document.title
+                  : 'PokeIdle';
+                document.title = '__IDLESTREAM_BATTLE_PASS__|' + serialized;
+                setTimeout(() => {
+                  if (document.title && document.title.startsWith('__IDLESTREAM_BATTLE_PASS__|')) {
+                    document.title = origTitle;
+                  }
+                }, 60);
+              };
+              sendTitle();
+            }
+          } catch (_) {}
+        };
+
+        window.__claimPokeIdleBattlePass = function (forceManual = false) {
+          try {
+            const ws = window.__idlestream_active_ws || (window.estado && window.estado.ws);
+            if (!ws || ws.readyState !== 1) return false;
+            const nowMs = Date.now();
+            if (bpState.inFlight && nowMs - bpState.lastAttemptMs < 15000) return false;
+            if (!forceManual && nowMs - bpState.lastAttemptMs < 60000) return false;
+
+            const refMs = bpState.servidorAgora || nowMs;
+            const serverDay = Math.floor(refMs / 86400000);
+            if (!forceManual && bpState.ultimo !== null && bpState.ultimo >= serverDay) {
+              return false; // Já resgatado no dia atual do servidor
+            }
+
+            bpState.inFlight = true;
+            bpState.lastAttemptMs = nowMs;
+            ws.send(JSON.stringify({ t: 'passe.resgatar' }));
+            console.log('[IdleStream] Passe de Batalha: enviado {"t":"passe.resgatar"}');
+            return true;
+          } catch (err) {
+            bpState.inFlight = false;
+            console.warn('[IdleStream] Erro ao enviar resgate do Passe:', err);
+            return false;
+          }
+        };
+
+        const handleBattlePassPacket = (raw) => {
+          if (!raw || typeof raw !== 'object') return;
+          const tipo = raw.t || (raw.data && raw.data.t);
+
+          if (tipo === 'passe' && raw.resgate) {
+            bpState.inFlight = false;
+            const nowSec = Math.floor(Date.now() / 1000);
+            const serverDay = Math.floor((bpState.servidorAgora || Date.now()) / 86400000);
+            bpState.ultimo = serverDay;
+            bpState.lastReportedDay = serverDay;
+            emitBattlePassEvent({
+              status: 'claimed',
+              claimedAt: nowSec,
+              nextAvailableAt: nowSec + 86700, // 24h 05m
+              dayKey: String(serverDay),
+              degrau: raw.resgate.degrau ?? bpState.degrau,
+            });
+            // Fecha automaticamente o modal de recompensa/passe se o jogo abriu na tela
+            const closePassModal = () => {
+              try {
+                const btnOk = document.getElementById('ps-abrir-ok');
+                if (btnOk && typeof btnOk.click === 'function') btnOk.click();
+                closePokeIdleModalIfOpen();
+              } catch (_) {}
+            };
+            setTimeout(closePassModal, 350);
+            setTimeout(closePassModal, 1000);
+            return;
+          }
+
+          const est = raw.estado && typeof raw.estado === 'object' ? raw.estado : null;
+          if (!est) return;
+          if (typeof est.servidorAgora === 'number') {
+            bpState.servidorAgora = est.servidorAgora;
+          }
+          if (est.passe && typeof est.passe === 'object') {
+            if (typeof est.passe.ultimo === 'number') bpState.ultimo = est.passe.ultimo;
+            if (typeof est.passe.degrau === 'number') bpState.degrau = est.passe.degrau;
+            if (typeof est.passe.total === 'number') bpState.total = est.passe.total;
+
+            const serverDay = Math.floor((bpState.servidorAgora || Date.now()) / 86400000);
+            if (bpState.ultimo !== null) {
+              if (bpState.ultimo >= serverDay) {
+                if (bpState.lastReportedDay !== bpState.ultimo) {
+                  bpState.lastReportedDay = bpState.ultimo;
+                  const nowSec = Math.floor(Date.now() / 1000);
+                  emitBattlePassEvent({
+                    status: 'already_claimed',
+                    claimedAt: nowSec,
+                    nextAvailableAt: (bpState.ultimo + 1) * 86400 + 300,
+                    dayKey: String(bpState.ultimo),
+                    degrau: bpState.degrau,
+                  });
+                }
+              } else {
+                // Passe disponível hoje! Agenda resgate automático após estabilização da sessão
+                setTimeout(() => {
+                  window.__claimPokeIdleBattlePass(false);
+                }, 1500);
+              }
+            }
+          }
+        };
+
         // Interceptar WebSocket nativo
         const _NativeWS = window.WebSocket;
         if (_NativeWS && !window.__idlestream_ws_hooked) {
           window.__idlestream_ws_hooked = true;
           window.WebSocket = function (url, protocols) {
             const sock = protocols ? new _NativeWS(url, protocols) : new _NativeWS(url);
+            window.__idlestream_active_ws = sock;
             sock.addEventListener('message', (ev) => {
               try {
                 if (window.estado) {
@@ -981,11 +1199,12 @@
                 }
                 if (typeof ev.data === 'string') {
                   // Filtro rápido por cabeçalho antes de deserializar JSON desnecessário
-                  const head = ev.data.slice(0, 40);
-                  if (head.includes('"t":"campo"') || head.includes('"t":"campo.init"')) {
+                  const head = ev.data.slice(0, 60);
+                  if (head.includes('"t":"campo"') || head.includes('"t":"campo.init"') || head.includes('"t":"pong"') || head.includes('"t":"ping"')) {
                     return; // Passa direto sem parsing pesado de batalha
                   }
                   const parsed = JSON.parse(ev.data);
+                  handleBattlePassPacket(parsed);
                   processMessageData(parsed);
                 }
               } catch (_) {}

@@ -60,6 +60,7 @@ export interface PokeIdleGameState {
   bonusTwitchSecs?: number | null;
   bonusKickSecs?: number | null;
   xpRatePerHour?: number | null;
+  ultraActive?: boolean | null;
   updatedAt?: number;
 }
 

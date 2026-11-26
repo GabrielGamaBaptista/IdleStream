@@ -6,6 +6,7 @@ import { GameSlotConfig, SlotBounds } from '../../types';
 import { gamePlatformService, isAndroidPlatform } from '../../services/gamePlatformService';
 import { deviceSyncService } from '../../services/deviceSyncService';
 import { computeDynamicPerformanceState } from './dynamicPerformance';
+import { computeGlobalUltraDecision } from './ultraMode';
 import {
   LayoutGrid,
   Maximize2,
@@ -83,6 +84,7 @@ export const GameWorkspace: React.FC = () => {
     } catch (_) {}
     return false;
   });
+  const [slotUltraStates, setSlotUltraStates] = useState<Record<string, boolean>>({});
   const [editingSlot, setEditingSlot] = useState<GameSlotConfig | null>(null);
   const [slotZooms, setSlotZooms] = useState<Record<string, number>>({});
   const [isToolbarVisible, setIsToolbarVisible] = useState<boolean>(true);
@@ -128,7 +130,8 @@ export const GameWorkspace: React.FC = () => {
     isWindowFocusedRef.current = true;
     setIsWindowFocused(true);
     setIsWindowMinimized(false);
-    if (isIdleDimmedRef.current) {
+    const wasDimmed = isIdleDimmedRef.current;
+    if (wasDimmed) {
       isIdleDimmedRef.current = false;
       setIsIdleDimmed(false);
     }
@@ -136,6 +139,11 @@ export const GameWorkspace: React.FC = () => {
       currentDynamicFpsRef.current = 60;
       setCurrentDynamicFps(60);
       gamePlatformService.setFps(60).catch(() => {});
+    }
+    if (wasDimmed) {
+      setTimeout(() => {
+        gamePlatformService.refreshViews().catch(() => {});
+      }, 120);
     }
   }, []);
 
@@ -459,22 +467,54 @@ export const GameWorkspace: React.FC = () => {
     gamePlatformService.setFps(60).catch(() => {});
   }, []);
 
+  // Sincroniza estado real do Modo Ultra reportado pelas WebViews
+  useEffect(() => {
+    if (!gameStates) return;
+    setSlotUltraStates((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [sid, st] of Object.entries(gameStates)) {
+        if (typeof st?.ultraActive === 'boolean' && next[sid] !== st.ultraActive) {
+          next[sid] = st.ultraActive;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [gameStates]);
+
+  const globalUltraDecision = computeGlobalUltraDecision(
+    activeSlots,
+    slotUltraStates,
+    isPokeIdleUltra
+  );
+
   const handleToggleGlobalUltra = async () => {
-    const nextState = !isPokeIdleUltra;
-    setIsPokeIdleUltra(nextState);
+    const { targetState } = globalUltraDecision;
+    setIsPokeIdleUltra(targetState);
+    setSlotUltraStates((prev) => {
+      const next = { ...prev };
+      for (const sid of activeSlots) {
+        next[sid] = targetState;
+      }
+      return next;
+    });
     try {
-      localStorage.setItem('__idlestream_pokeidle_ultra__', String(nextState));
+      localStorage.setItem('__idlestream_pokeidle_ultra__', String(targetState));
     } catch (_) {}
     try {
-      await gamePlatformService.togglePokeIdleUltra(undefined, nextState);
+      await gamePlatformService.togglePokeIdleUltra(undefined, targetState);
     } catch (e) {
       console.error('Erro ao alternar Modo Ultra PokeIdle:', e);
     }
   };
 
   const handleToggleSlotUltra = async (slotId: string) => {
+    const currentSlotUltra = Boolean(slotUltraStates[slotId]);
+    const nextSlotState = !currentSlotUltra;
+    setSlotUltraStates((prev) => ({ ...prev, [slotId]: nextSlotState }));
     try {
-      await gamePlatformService.togglePokeIdleUltra(slotId);
+      await gamePlatformService.togglePokeIdleUltra(slotId, nextSlotState);
     } catch (e) {
       console.error(`Erro ao alternar Ultra no slot ${slotId}:`, e);
     }
@@ -591,27 +631,46 @@ export const GameWorkspace: React.FC = () => {
     const timer = setTimeout(syncBounds, 100);
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const handleSync = () => {
+    const handleSync = (forceRepaint = false) => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         refreshActiveSlots().catch(() => {});
         syncBounds();
+        if (forceRepaint) {
+          setTimeout(() => {
+            gamePlatformService.refreshViews().catch(() => {});
+          }, 50);
+        }
       }, 60);
     };
 
+    const handleResizeOrFocus = () => handleSync(false);
+    const handleRestoredSync = () => handleSync(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleSync(true);
+      }
+    };
+
     let observer: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && workspaceRef.current) {
+    if (typeof ResizeObserver !== 'undefined') {
       observer = new ResizeObserver(() => {
         syncBounds();
       });
-      observer.observe(workspaceRef.current);
+      if (workspaceRef.current) {
+        observer.observe(workspaceRef.current);
+      }
+      for (const el of Object.values(containerRefs.current)) {
+        if (el) observer.observe(el);
+      }
     }
 
-    window.addEventListener('resize', handleSync);
-    window.addEventListener('focus', handleSync);
+    window.addEventListener('resize', handleResizeOrFocus);
+    window.addEventListener('focus', handleResizeOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     let unlistenRestored: (() => void) | undefined;
-    listen('window-restored', handleSync)
+    listen('window-restored', handleRestoredSync)
       .then((unsub) => {
         unlistenRestored = unsub;
       })
@@ -621,8 +680,9 @@ export const GameWorkspace: React.FC = () => {
       clearTimeout(timer);
       if (debounceTimer) clearTimeout(debounceTimer);
       if (observer) observer.disconnect();
-      window.removeEventListener('resize', handleSync);
-      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('resize', handleResizeOrFocus);
+      window.removeEventListener('focus', handleResizeOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (unlistenRestored) unlistenRestored();
     };
   }, [syncBounds]);
@@ -888,18 +948,31 @@ export const GameWorkspace: React.FC = () => {
               )}
             </div>
 
-            {/* Alternador do Modo Ultra PokeIdle */}
+            {/* Botão Global Ultra PokeIdle: ativa em todos ou desativa em todos */}
             <button
               onClick={handleToggleGlobalUltra}
               className={`flex items-center gap-1 px-2 py-1 rounded-lg font-semibold transition cursor-pointer text-[11px] border shrink-0 ${
-                isPokeIdleUltra
+                globalUltraDecision.mode === 'all_on'
                   ? 'bg-purple-950 text-purple-200 border-purple-600/80 shadow-xs'
+                  : globalUltraDecision.mode === 'partial'
+                  ? 'bg-purple-950/50 text-purple-300 border-purple-500/60 border-dashed'
                   : 'bg-neutral-800/90 text-neutral-400 border-neutral-700/80 hover:text-purple-300'
               }`}
-              title="Alternar Modo Ultra Economia Oficial PokeIdle (Card de estatísticas, desliga Canvas)"
+              title={
+                globalUltraDecision.mode === 'all_on'
+                  ? 'Desativar Modo Ultra Economia PokeIdle em todas as abas ativas'
+                  : globalUltraDecision.mode === 'partial'
+                  ? `Ultra ativo em ${globalUltraDecision.activeOnCount}/${globalUltraDecision.totalActive} abas — clique para ativar em todas`
+                  : 'Ativar Modo Ultra Economia PokeIdle em todas as abas ativas'
+              }
             >
               <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
-              <span className="hidden sm:inline">Ultra PokeIdle</span>
+              <span className="hidden sm:inline">
+                Ultra PokeIdle
+                {globalUltraDecision.mode === 'partial'
+                  ? ` (${globalUltraDecision.activeOnCount}/${globalUltraDecision.totalActive})`
+                  : ''}
+              </span>
             </button>
 
             {/* Seletor de Inatividade / Auto-Sleep (Economia de GPU a 1 FPS) */}
@@ -1352,8 +1425,16 @@ export const GameWorkspace: React.FC = () => {
             {isRunning && (
               <button
                 onClick={() => handleToggleSlotUltra(slot.id)}
-                className="w-5 h-5 flex items-center justify-center rounded text-purple-400 hover:text-purple-300 hover:bg-neutral-800 transition cursor-pointer shrink-0"
-                title="Alternar Modo Ultra Economia (Estatísticas)"
+                className={`w-5 h-5 flex items-center justify-center rounded transition cursor-pointer shrink-0 ${
+                  slotUltraStates[slot.id]
+                    ? 'bg-purple-950 text-purple-200 border border-purple-500/70'
+                    : 'text-neutral-400 hover:text-purple-300 hover:bg-neutral-800'
+                }`}
+                title={
+                  slotUltraStates[slot.id]
+                    ? 'Ultra Economia ativo nesta aba (clique para desativar)'
+                    : 'Ultra Economia desativado nesta aba (clique para ativar)'
+                }
               >
                 <BarChart3 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>

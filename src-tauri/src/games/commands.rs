@@ -44,6 +44,13 @@ pub async fn game_hide_all(
 }
 
 #[tauri::command]
+pub async fn game_refresh_views(
+    state: State<'_, Arc<GameLayoutManager>>,
+) -> Result<(), String> {
+    state.refresh_visible_views().await
+}
+
+#[tauri::command]
 pub async fn game_trim_memory(
     state: State<'_, Arc<GameLayoutManager>>,
 ) -> Result<(), String> {
