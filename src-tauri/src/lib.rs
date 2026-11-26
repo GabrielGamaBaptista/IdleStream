@@ -76,8 +76,7 @@ pub fn run() {
         // 2. Resiliência de GPU: Processo out-of-process com auto-recuperação sem blackout em Device Loss
         // 3. RAM e TurboFan Otimizados: Heap do V8 de 1024MB com TurboFan ativo prevenindo GC thrashing em sessões 80h-300h
         // 4. Bloat Disabler: Desativa spare renderers, media router, autofill e tradução
-        std::env::set_var(
-            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        let mut browser_args = String::from(
             "--disable-background-timer-throttling \
              --disable-renderer-backgrounding \
              --disable-backgrounding-occluded-windows \
@@ -90,6 +89,13 @@ pub fn run() {
              --no-default-browser-check \
              --js-flags=\"--max-old-space-size=1024 --expose-gc\""
         );
+        if let Ok(port) = std::env::var("IDLESTREAM_WEBVIEW_DEBUG_PORT") {
+            let trimmed = port.trim();
+            if !trimmed.is_empty() {
+                browser_args.push_str(&format!(" --remote-debugging-port={}", trimmed));
+            }
+        }
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", browser_args);
     }
 
     std::panic::set_hook(Box::new(|panic_info| {

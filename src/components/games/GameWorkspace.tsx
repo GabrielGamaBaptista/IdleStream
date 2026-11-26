@@ -177,6 +177,7 @@ export const GameWorkspace: React.FC = () => {
       window.addEventListener('blur', handleBlur);
     }
 
+    let cancelled = false;
     let unlistenFocus: (() => void) | undefined;
     let unlistenMin: (() => void) | undefined;
     let unlistenRestored: (() => void) | undefined;
@@ -198,7 +199,7 @@ export const GameWorkspace: React.FC = () => {
         p.dayKey ?? null,
         p.status === 'claimed'
       );
-    }).then((u) => { unlistenBattlePass = u; }).catch(() => {});
+    }).then((u) => { if (cancelled) u(); else unlistenBattlePass = u; }).catch(() => {});
 
     listen<boolean>('window-focus-changed', (e) => {
       if (e.payload) {
@@ -206,19 +207,20 @@ export const GameWorkspace: React.FC = () => {
       } else {
         handleBlur();
       }
-    }).then((u) => { unlistenFocus = u; }).catch(() => {});
+    }).then((u) => { if (cancelled) u(); else unlistenFocus = u; }).catch(() => {});
 
     listen('window-minimized', () => {
       setIsWindowMinimized(true);
       isWindowFocusedRef.current = false;
       setIsWindowFocused(false);
-    }).then((u) => { unlistenMin = u; }).catch(() => {});
+    }).then((u) => { if (cancelled) u(); else unlistenMin = u; }).catch(() => {});
 
     listen('window-restored', () => {
       handleFocus();
-    }).then((u) => { unlistenRestored = u; }).catch(() => {});
+    }).then((u) => { if (cancelled) u(); else unlistenRestored = u; }).catch(() => {});
 
     return () => {
+      cancelled = true;
       window.removeEventListener('focus', handleFocus);
       if (isAndroid) {
         window.removeEventListener('blur', handleBlur);
@@ -353,8 +355,12 @@ export const GameWorkspace: React.FC = () => {
       ]);
 
       if (!isAndroid && nativeForeground !== isWindowFocusedRef.current) {
+        const becameForeground = nativeForeground && !isWindowFocusedRef.current;
         isWindowFocusedRef.current = nativeForeground;
         setIsWindowFocused(nativeForeground);
+        if (becameForeground && !isIdleDimmedRef.current) {
+          gamePlatformService.refreshViews().catch(() => {});
+        }
       }
 
       if (!isIdleDimmedRef.current && lastGameActivityMs > lastActivityTimeRef.current) {
@@ -669,14 +675,17 @@ export const GameWorkspace: React.FC = () => {
     window.addEventListener('focus', handleResizeOrFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    let cancelled = false;
     let unlistenRestored: (() => void) | undefined;
     listen('window-restored', handleRestoredSync)
       .then((unsub) => {
-        unlistenRestored = unsub;
+        if (cancelled) unsub();
+        else unlistenRestored = unsub;
       })
       .catch(() => {});
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       if (debounceTimer) clearTimeout(debounceTimer);
       if (observer) observer.disconnect();

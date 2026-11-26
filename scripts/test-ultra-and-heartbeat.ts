@@ -14,6 +14,8 @@ let configModalOpen = false;
 let otherModalOpenMock = false;
 let isAppHidden = false;
 let simulateDomNotMounted = false;
+let keepStaleCfgUltraWhenModalHidden = false;
+let staleCfgUltraOn = false;
 let btnConfigClicks = 0;
 let tabPerfClicks = 0;
 
@@ -107,7 +109,19 @@ const fakeDocument: any = {
       } : null;
     }
     if (id === 'cfg-ultra') {
-      if (!configModalOpen) return null;
+      if (!configModalOpen) {
+        if (!keepStaleCfgUltraWhenModalHidden) return null;
+        return {
+          type: 'button',
+          getAttribute: (attr: string) => (attr === 'aria-checked' ? String(staleCfgUltraOn) : null),
+          classList: { contains: (cls: string) => cls === 'on' && staleCfgUltraOn },
+          click: () => {
+            staleCfgUltraOn = !staleCfgUltraOn;
+            fakeLocalStorage.setItem('cfg-ultra', staleCfgUltraOn ? '1' : '0');
+            isUltraOn = staleCfgUltraOn;
+          },
+        };
+      }
       const cfgOn = fakeLocalStorage.getItem('cfg-ultra') === '1';
       return {
         type: 'button',
@@ -354,11 +368,27 @@ const gAllOn = computeGlobalUltraDecision(
 );
 assert.strictEqual(gAllOn.mode, 'all_on');
 assert.strictEqual(gAllOn.targetState, false, 'Com todos ativos, global deve desativar em todos');
-console.log('✅ [14/14] Decisão Global (Ativar Todos / Desativar Todos) validada!');
+console.log('✅ [14/15] Decisão Global (Ativar Todos / Desativar Todos) validada!');
+
+// [Teste 15]: Regressão real observada no PokeIdle: #cfg-ultra obsoleto dentro de #modal oculto com aria-checked="true" após sair via #ultra-sair
+isUltraOn = false;
+configModalOpen = false;
+otherModalOpenMock = false;
+keepStaleCfgUltraWhenModalHidden = true;
+staleCfgUltraOn = true; // ficou preso em "true" de abertura anterior enquanto modal fechou
+fakeLocalStorage.setItem('cfg-ultra', '0');
+btnConfigClicks = 0;
+const toggleFromStale = fakeWindow.__togglePokeIdleUltra(true);
+assert.strictEqual(toggleFromStale, true);
+assert.ok(btnConfigClicks >= 1, 'Deve reabrir #btn-config quando #modal está oculto em vez de confiar em #cfg-ultra obsoleto');
+assert.strictEqual(isUltraOn, true, 'Deve reativar Ultra mesmo após ciclo #ultra-sair com #cfg-ultra obsoleto no DOM');
+assert.strictEqual(fakeLocalStorage.getItem('cfg-ultra'), '1');
+keepStaleCfgUltraWhenModalHidden = false;
+console.log('✅ [15/15] Regressão #cfg-ultra obsoleto em #modal oculto validada!');
 
 setTimeout(() => {
   assert.strictEqual(fakeDocument.title, 'PokeIdle', 'document.title deve ser restaurado para PokeIdle');
-  console.log('✅ [8/14] Restauração de document.title após atividade validada!');
-  console.log('\n🎉 TODOS OS 14 TESTES DE ULTRA MODE, REPAINT, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
+  console.log('✅ [8/15] Restauração de document.title após atividade validada!');
+  console.log('\n🎉 TODOS OS 15 TESTES DE ULTRA MODE, REPAINT, ATIVIDADE E HEARTBEAT FORAM APROVADOS COM SUCESSO!\n');
   process.exit(0);
 }, 60);

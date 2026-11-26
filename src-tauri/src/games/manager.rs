@@ -78,7 +78,7 @@ pub struct GameLayoutManager {
     pub active_slots: Mutex<HashMap<String, String>>, // slot_id -> url
     pub game_states: Arc<Mutex<HashMap<String, PokeIdleGameState>>>, // slot_id -> game_state
     pub slot_snapshots: Arc<Mutex<HashMap<String, String>>>, // slot_id -> base64 dataUrl
-    pub last_bounds: Mutex<HashMap<String, SlotBounds>>, // slot_id -> last applied bounds
+    pub last_bounds: Arc<Mutex<HashMap<String, SlotBounds>>>, // slot_id -> last applied bounds
     pub current_layout: Mutex<ViewLayoutMode>,
     pub current_rect: Mutex<Option<ViewportRect>>,
     pub eco_mode: Mutex<bool>,
@@ -124,17 +124,45 @@ fn apply_webview_visible_bounds<R: tauri::Runtime>(
     wv: &tauri::Webview<R>,
     b: &SlotBounds,
     nudge_compositor: bool,
+    last_bounds_arc: &Arc<Mutex<HashMap<String, SlotBounds>>>,
 ) {
     if nudge_compositor && b.width > 20.0 && b.height > 20.0 {
         let _ = wv.set_bounds(Rect {
             position: LogicalPosition::new(b.x, b.y).into(),
             size: LogicalSize::new((b.width - 1.0).max(10.0), b.height).into(),
         });
+        let wv_restore = wv.clone();
+        let target = b.clone();
+        let lb_arc = Arc::clone(last_bounds_arc);
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+            let still_visible_same = {
+                let map = lb_arc.lock().await;
+                map.get(&target.slot_id).map_or(false, |cur| {
+                    cur.visible
+                        && (cur.x - target.x).abs() < 1.0
+                        && (cur.y - target.y).abs() < 1.0
+                        && (cur.width - target.width).abs() < 1.0
+                        && (cur.height - target.height).abs() < 1.0
+                })
+            };
+            if still_visible_same {
+                let _ = wv_restore.set_bounds(Rect {
+                    position: LogicalPosition::new(target.x, target.y).into(),
+                    size: LogicalSize::new(target.width, target.height).into(),
+                });
+                let _ = wv_restore.eval(
+                    "if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); } \
+                     if (typeof window.__idlestreamForceRepaint === 'function') { window.__idlestreamForceRepaint(); }",
+                );
+            }
+        });
+    } else {
+        let _ = wv.set_bounds(Rect {
+            position: LogicalPosition::new(b.x, b.y).into(),
+            size: LogicalSize::new(b.width, b.height).into(),
+        });
     }
-    let _ = wv.set_bounds(Rect {
-        position: LogicalPosition::new(b.x, b.y).into(),
-        size: LogicalSize::new(b.width, b.height).into(),
-    });
     let _ = wv.eval(
         "if (typeof window.__setIdleStreamSlotHidden === 'function') { window.__setIdleStreamSlotHidden(false); } \
          if (typeof window.__idlestreamForceRepaint === 'function') { window.__idlestreamForceRepaint(); }",
@@ -174,7 +202,7 @@ impl GameLayoutManager {
             active_slots: Mutex::new(HashMap::new()),
             game_states: Arc::new(Mutex::new(HashMap::new())),
             slot_snapshots: Arc::new(Mutex::new(HashMap::new())),
-            last_bounds: Mutex::new(HashMap::new()),
+            last_bounds: Arc::new(Mutex::new(HashMap::new())),
             current_layout: Mutex::new(ViewLayoutMode::Grid2x2),
             current_rect: Mutex::new(None),
             eco_mode: Mutex::new(true),
@@ -304,6 +332,8 @@ impl GameLayoutManager {
                             }
                             let _ = app_title.emit("game-battle-pass-update", &payload);
                         }
+                    } else if let Some(dbg_json) = title.strip_prefix("__IDLESTREAM_DEBUG_REPORT__|") {
+                        crate::audit_log!("GAMES", "INFO", "[{}] ULTRA_TRACE: {}", slot_id_title, dbg_json);
                     }
                 });
 
@@ -416,7 +446,7 @@ impl GameLayoutManager {
                                     visible: true,
                                 };
                                 let nudge = should_nudge_on_restore(prev.as_ref(), &b);
-                                apply_webview_visible_bounds(&wv, &b, nudge);
+                                apply_webview_visible_bounds(&wv, &b, nudge, &self.last_bounds);
                                 last_bounds.insert(slot_id.clone(), b);
                             } else {
                                 let hidden = apply_webview_offscreen_bounds(&wv, slot_id, prev.as_ref());
@@ -439,7 +469,7 @@ impl GameLayoutManager {
                                     visible: true,
                                 };
                                 let nudge = should_nudge_on_restore(prev.as_ref(), &b);
-                                apply_webview_visible_bounds(&wv, &b, nudge);
+                                apply_webview_visible_bounds(&wv, &b, nudge, &self.last_bounds);
                                 last_bounds.insert(slot_id.clone(), b);
                             } else {
                                 // Move para offscreen preservando dimensões e DirectComposition sem tela preta/TDR
@@ -471,7 +501,7 @@ impl GameLayoutManager {
                             visible: true,
                         };
                         let nudge = should_nudge_on_restore(prev.as_ref(), &b);
-                        apply_webview_visible_bounds(&wv, &b, nudge);
+                        apply_webview_visible_bounds(&wv, &b, nudge, &self.last_bounds);
                         last_bounds.insert(focused_id.clone(), b);
                     }
 
@@ -488,7 +518,7 @@ impl GameLayoutManager {
                                 visible: true,
                             };
                             let nudge = should_nudge_on_restore(prev.as_ref(), &b);
-                            apply_webview_visible_bounds(&wv, &b, nudge);
+                            apply_webview_visible_bounds(&wv, &b, nudge, &self.last_bounds);
                             last_bounds.insert((*slot_id).clone(), b);
                         }
                     }
@@ -521,7 +551,7 @@ impl GameLayoutManager {
                 if let Some(wv) = self.app.get_webview(&b.slot_id) {
                     if b.visible && b.width > 10.0 && b.height > 10.0 {
                         let nudge = should_nudge_on_restore(prev_opt.as_ref(), &b);
-                        apply_webview_visible_bounds(&wv, &b, nudge);
+                        apply_webview_visible_bounds(&wv, &b, nudge, &self.last_bounds);
                         last_bounds.insert(b.slot_id.clone(), b.clone());
                     } else {
                         // Oculta movendo para fora da tela (offscreen) sem chamar wv.hide() e sem encolher para 1x1
@@ -589,7 +619,12 @@ impl GameLayoutManager {
     /// Altera o limite de FPS (60, 30 ou 10 Super Economia) em todas as child webviews ativas
     pub async fn set_fps(&self, fps: u32) -> Result<(), String> {
         crate::audit_log!("GAMES", "INFO", "Ajustando taxa de quadros (FPS) para: {} FPS", fps);
-        *self.current_fps.lock().await = fps;
+        let prev_fps = {
+            let mut guard = self.current_fps.lock().await;
+            let prev = *guard;
+            *guard = fps;
+            prev
+        };
         *self.eco_mode.lock().await = fps < 60;
 
         #[cfg(desktop)]
@@ -601,19 +636,24 @@ impl GameLayoutManager {
             if fps >= 60 {
                 let last_bounds = self.last_bounds.lock().await;
                 let slots_map = self.active_slots.lock().await;
+                let woke_from_sleep = prev_fps <= 1;
                 for slot_id in slots_map.keys() {
                     if let Some(wv) = self.app.get_webview(slot_id) {
-                        let is_vis = last_bounds.get(slot_id).map(|b| b.visible).unwrap_or(false);
-                        if is_vis {
-                            let full_script = format!(
-                                "{}; if (typeof window.__setIdleStreamSlotHidden === 'function') {{ window.__setIdleStreamSlotHidden(false); }} \
-                                 if (typeof window.__idlestreamForceRepaint === 'function') {{ window.__idlestreamForceRepaint(); }}",
-                                script
-                            );
-                            let _ = wv.eval(&full_script);
-                        } else {
-                            let _ = wv.eval(&script);
+                        if let Some(b) = last_bounds.get(slot_id) {
+                            if b.visible {
+                                let full_script = format!(
+                                    "{}; if (typeof window.__setIdleStreamSlotHidden === 'function') {{ window.__setIdleStreamSlotHidden(false); }} \
+                                     if (typeof window.__idlestreamForceRepaint === 'function') {{ window.__idlestreamForceRepaint(); }}",
+                                    script
+                                );
+                                let _ = wv.eval(&full_script);
+                                if woke_from_sleep {
+                                    apply_webview_visible_bounds(&wv, b, true, &self.last_bounds);
+                                }
+                                continue;
+                            }
                         }
+                        let _ = wv.eval(&script);
                     }
                 }
             } else {
@@ -641,6 +681,13 @@ impl GameLayoutManager {
 
     /// Alterna o Modo Ultra Economia oficial do PokeIdle (card escuro de estatísticas)
     pub async fn toggle_pokeidle_ultra(&self, slot_id: Option<&str>, enabled: Option<bool>) -> Result<(), String> {
+        crate::audit_log!(
+            "GAMES",
+            "INFO",
+            "toggle_pokeidle_ultra(slot={:?}, enabled={:?})",
+            slot_id,
+            enabled
+        );
         #[cfg(desktop)]
         {
             let script = match enabled {
@@ -705,6 +752,7 @@ impl GameLayoutManager {
     /// Força atualização visual (compositor nudge de 1px + repaint JS) em todas as WebViews
     /// atualmente visíveis, prevenindo telas pretas após Sleep/DWM/mudança de foco sem exigir troca de layout.
     pub async fn refresh_visible_views(&self) -> Result<(), String> {
+        crate::audit_log!("GAMES", "INFO", "refresh_visible_views acionado");
         #[cfg(desktop)]
         {
             let slots_map = self.active_slots.lock().await;
@@ -713,7 +761,7 @@ impl GameLayoutManager {
                 if let Some(b) = last_bounds.get(slot_id) {
                     if b.visible && b.width > 20.0 && b.height > 20.0 {
                         if let Some(wv) = self.app.get_webview(slot_id) {
-                            apply_webview_visible_bounds(&wv, b, true);
+                            apply_webview_visible_bounds(&wv, b, true, &self.last_bounds);
                         }
                     }
                 }

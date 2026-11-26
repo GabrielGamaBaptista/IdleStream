@@ -629,6 +629,19 @@
       } catch (_) {}
     };
 
+    const emitDebugTrace = (step, extra) => {
+      try {
+        const payload = JSON.stringify({ step, extra: extra || null });
+        const origTitle = document.title && !document.title.startsWith('__IDLESTREAM_') ? document.title : 'PokeIdle';
+        document.title = '__IDLESTREAM_DEBUG_REPORT__|' + payload;
+        setTimeout(() => {
+          if (document.title && document.title.startsWith('__IDLESTREAM_DEBUG_REPORT__|')) {
+            document.title = origTitle;
+          }
+        }, 40);
+      } catch (_) {}
+    };
+
     const notifyUltraStateChanged = () => {
       try {
         if (window.__idlestream_game_state) {
@@ -654,20 +667,23 @@
     };
 
     const openConfigAndSetUltra = (desiredOn) => {
-      let cfgUltra = document.getElementById('cfg-ultra');
+      const modalEl = document.getElementById('modal');
+      const isModalOpen = modalEl && modalEl.classList && !modalEl.classList.contains('hidden');
+      let cfgUltra = isModalOpen ? document.getElementById('cfg-ultra') : null;
       if (cfgUltra) {
         applyCfgUltraSwitch(cfgUltra, desiredOn);
         return true;
       }
 
-      const modalEl = document.getElementById('modal');
-      const otherModalOpen = modalEl && modalEl.classList && !modalEl.classList.contains('hidden');
-      if (otherModalOpen) {
+      if (isModalOpen) {
         closePokeIdleModalIfOpen();
       }
 
       const btnConfig = document.getElementById('btn-config');
-      if (!btnConfig) return false;
+      if (!btnConfig) {
+        emitDebugTrace('missing_btn_config', { desiredOn });
+        return false;
+      }
 
       btnConfig.click();
       cfgUltra = document.getElementById('cfg-ultra');
@@ -683,6 +699,7 @@
         if (retryCfg) {
           applyCfgUltraSwitch(retryCfg, desiredOn);
         } else {
+          emitDebugTrace('cfgUltra_retry_failed', { desiredOn });
           closePokeIdleModalIfOpen();
         }
       }, 80);
