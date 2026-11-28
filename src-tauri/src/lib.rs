@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod auto_redeem;
 pub mod commands;
 pub mod config;
 pub mod device_sync;
@@ -306,6 +307,13 @@ pub fn run() {
             // Start PC <-> Mobile exclusive sync loop (polling 5s + heartbeat 30s)
             device_sync::start_device_sync_loop(app_state.clone());
 
+            // Start Auto-Redeem loops for enabled configurations
+            let ar_state = app_state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                ar_state.sync_auto_redeem_loops().await;
+            });
+
             #[cfg(desktop)]
             {
                 // Build Tray Menu
@@ -517,6 +525,12 @@ pub fn run() {
             start_session_export,
             stop_session_export,
             get_session_export_status,
+            list_auto_redeems,
+            add_auto_redeem,
+            update_auto_redeem,
+            remove_auto_redeem,
+            plan_duration_redeem,
+            test_auto_redeem,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -301,6 +301,90 @@ pub fn default_vote_accounts() -> Vec<VoteAccountConfig> {
     ]
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RedeemMode {
+    #[default]
+    Forever,
+    Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BonusType {
+    Xp,
+    Capture,
+    Lure,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoRedeemConfig {
+    pub id: String,
+    pub account_id: String,
+    pub platform: Platform,
+
+    // Escopo do canal
+    #[serde(default)]
+    pub all_channels: bool,
+    #[serde(default)]
+    pub channel_slug: Option<String>,
+    #[serde(default)]
+    pub channel_id: Option<String>,
+
+    // Recompensa (reward_id opcional no modo catálogo para Twitch)
+    #[serde(default)]
+    pub reward_id: Option<String>,
+    pub reward_title: String,
+    pub cost: i64,
+    #[serde(default)]
+    pub duration_hours: Option<f64>,
+    #[serde(default)]
+    pub bonus_type: Option<BonusType>,
+    #[serde(default)]
+    pub auto_select_package: bool,
+    #[serde(default)]
+    pub text_input: Option<String>,
+
+    // Cache persistente de resolução por (channel_slug::title -> reward_id)
+    #[serde(default)]
+    pub resolved_reward_ids: HashMap<String, String>,
+
+    // Controle e modo de operação
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub redeem_mode: RedeemMode,
+    #[serde(default)]
+    pub target_duration_hours: Option<f64>,
+    #[serde(default)]
+    pub accumulated_hours: f64,
+
+    // Histórico (escrito apenas pelo engine)
+    #[serde(default)]
+    pub last_redeemed_at: Option<i64>,
+    #[serde(default)]
+    pub total_redeems: u32,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    #[serde(default)]
+    pub next_available_at: Option<i64>,
+    #[serde(default)]
+    pub channel_cooldowns: HashMap<String, i64>,
+}
+
+impl AutoRedeemConfig {
+    /// Retorna true se esta config deve ser executada para o dado canal.
+    pub fn matches_channel(&self, slug: &str) -> bool {
+        if self.all_channels {
+            return true;
+        }
+        self.channel_slug
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case(slug.trim().trim_start_matches('#')))
+            .unwrap_or(false)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -317,6 +401,8 @@ pub struct AppConfig {
     pub vote_sync_id: Option<String>,
     #[serde(default)]
     pub device_sync_id: Option<String>,
+    #[serde(default)]
+    pub auto_redeems: Vec<AutoRedeemConfig>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -342,6 +428,7 @@ impl Default for AppConfig {
             vote_accounts: default_vote_accounts(),
             vote_sync_id: None,
             device_sync_id: None,
+            auto_redeems: Vec::new(),
         }
     }
 }

@@ -1,11 +1,11 @@
 {
-  "version": "5.1.0",
-  "notes": "IdleStream v5.1.0 - Nova funcionalidade de Prioridade Manual de Streams (checkbox em Editar Stream, badge Prioritaria no card, ordenacao em dois niveis nos coordenadores Twitch e Kick mantendo a media de horas entre multiplas prioritarias e fallback automatico quando offline, com repriorizacao em tempo real).",
-  "pub_date": "2026-11-28T01:55:00Z",
+  "version": "6.0.0",
+  "notes": "IdleStream v6.0.0 - Auto-Resgate Automático Programado de Pontos (Catálogo oficial Twitch e Kick, resolução automática de reward_id por nome com cache persistente, modo Para sempre e Meta em horas com seleção automática de pacotes pelo saldo das lives).",
+  "pub_date": "2026-11-28T08:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjhyRnhodndnRDhwaDE4VFYwUHdoamNPQkN4V2FUaU9wYTM3a0F4dFRyZzhZN1hLTTNaN01xM1Z6UkVuM29aWlhtREJwOGNhTUpNbjA1Qjl5M3BnZkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODMwNTg0CWZpbGU6SWRsZVN0cmVhbV81LjEuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4xLjAKSEhzb3FkckVNOVFLS1VPYk1PaDBLcGdweE82cUFIcDVPKzZzdEQwbmR4U2xhK0hGTmFDRU9Rb3lvaS9nKzBWRGJwVHNwTk02bFVPMDJLUnUxUGowQkE9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.1.0/IdleStream_5.1.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VndxMDUvSEpPTTMvNlI2cmxiSUhoaEZUcDhnbGlZVDBMWWJicUk4UnRFUEhMSUl3cTZSaGFmK2I3NXZEcjJFbVY5SXhHVU5ucmg4UHc1SEJlOGpiN2dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODUyODA5CWZpbGU6SWRsZVN0cmVhbV82LjAuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246Ni4wLjAKVWN4b2VvejBtdGZ2SDIzakVyUFYxUzIyUURzMDc2OSsyMGhzY0tvYkVOeHJIdzk4LzFZcUc1NE83ZktMNW9pUHNkSGt1OXFWemgwYm8yNTRuQW1sRHc9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v6.0.0/IdleStream_6.0.0_x64-setup.exe"
     }
   }
 }

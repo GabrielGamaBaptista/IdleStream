@@ -8,6 +8,10 @@ import {
   AccountsHealthSummary,
   AppConfig,
   AppSettings,
+  AutoRedeemConfig,
+  AutoRedeemErrorPayload,
+  AutoRedeemExecutedPayload,
+  AutoRedeemGoalReachedPayload,
   BackupInfo,
   DeviceSyncRemoteState,
   GameSlotConfig,
@@ -28,6 +32,11 @@ import { votePlatformService } from '../services/votePlatformService';
 import { voteSyncService } from '../services/voteSyncService';
 import { deviceSyncService } from '../services/deviceSyncService';
 import { extractDeviceSyncId } from '../utils/deviceSyncUrl';
+import {
+  applyAutoRedeemErrorEvent,
+  applyAutoRedeemExecutedEvent,
+  applyAutoRedeemGoalReachedEvent,
+} from '../utils/autoRedeem';
 
 const VALID_TABS = ['streams', 'games', 'votes', 'accounts', 'settings'] as const;
 const ACTIVE_TAB_STORAGE_KEY = '__idlestream_active_tab__';
@@ -146,6 +155,25 @@ interface AppState {
   openKickLogin: (accountId: string) => Promise<void>;
   saveKickSession: (accountId: string) => Promise<void>;
 
+  // Auto-Resgate de Pontos
+  addAutoRedeem: (
+    config: Omit<
+      AutoRedeemConfig,
+      | 'id'
+      | 'last_redeemed_at'
+      | 'total_redeems'
+      | 'last_error'
+      | 'next_available_at'
+      | 'accumulated_hours'
+      | 'resolved_reward_ids'
+      | 'channel_cooldowns'
+    >,
+    replaceExisting?: boolean
+  ) => Promise<void>;
+  updateAutoRedeem: (config: AutoRedeemConfig) => Promise<void>;
+  removeAutoRedeem: (redeemId: string) => Promise<void>;
+  testAutoRedeem: (redeemId: string) => Promise<string>;
+
   addStream: (stream: StreamConfig) => Promise<void>;
   updateStream: (stream: StreamConfig) => Promise<void>;
   setSelectedAccount: (streamId: string, accountId: string) => Promise<void>;
@@ -212,7 +240,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  appVersion: '5.1.0',
+  appVersion: '6.0.0',
   updateAvailable: null,
   pendingUpdate: null,
   unifiedUpdate: null,
@@ -806,6 +834,40 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       });
 
+      // Escutar eventos em tempo real de Auto-Resgate de Pontos
+      await listen<AutoRedeemExecutedPayload>('auto-redeem-executed', (event) => {
+        const payload = event.payload;
+        if (!payload) return;
+        set((prev) => ({
+          config: {
+            ...prev.config,
+            auto_redeems: applyAutoRedeemExecutedEvent(prev.config.auto_redeems, payload),
+          },
+        }));
+      });
+
+      await listen<AutoRedeemErrorPayload>('auto-redeem-error', (event) => {
+        const payload = event.payload;
+        if (!payload) return;
+        set((prev) => ({
+          config: {
+            ...prev.config,
+            auto_redeems: applyAutoRedeemErrorEvent(prev.config.auto_redeems, payload),
+          },
+        }));
+      });
+
+      await listen<AutoRedeemGoalReachedPayload>('auto-redeem-goal-reached', (event) => {
+        const payload = event.payload;
+        if (!payload) return;
+        set((prev) => ({
+          config: {
+            ...prev.config,
+            auto_redeems: applyAutoRedeemGoalReachedEvent(prev.config.auto_redeems, payload),
+          },
+        }));
+      });
+
       set({ isInitialized: true });
     } catch (err) {
       console.error('Failed to initialize IdleStream store:', err);
@@ -926,6 +988,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = await invoke<AppConfig>('save_kick_session', { accountId });
     set({ config: updated });
     await get().fetchAccountsHealth();
+  },
+
+  addAutoRedeem: async (configInput, replaceExisting = false) => {
+    const newConfig: AutoRedeemConfig = {
+      ...configInput,
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ar_${Date.now()}`,
+      accumulated_hours: 0,
+      resolved_reward_ids: {},
+      channel_cooldowns: {},
+      total_redeems: 0,
+      last_redeemed_at: null,
+      last_error: null,
+      next_available_at: null,
+    };
+    const updated = await invoke<AppConfig>('add_auto_redeem', {
+      config: newConfig,
+      replaceExisting,
+    });
+    set({ config: updated });
+  },
+
+  updateAutoRedeem: async (config) => {
+    const updated = await invoke<AppConfig>('update_auto_redeem', { config });
+    set({ config: updated });
+  },
+
+  removeAutoRedeem: async (redeemId) => {
+    const updated = await invoke<AppConfig>('remove_auto_redeem', { redeemId });
+    set({ config: updated });
+  },
+
+  testAutoRedeem: async (redeemId) => {
+    const msg = await invoke<string>('test_auto_redeem', { redeemId });
+    await get().fetchConfig();
+    return msg;
   },
 
   addStream: async (stream) => {

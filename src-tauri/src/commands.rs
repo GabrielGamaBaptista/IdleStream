@@ -974,6 +974,303 @@ pub async fn get_session_export_status(
     Ok(export.get_status())
 }
 
+// ==========================================
+// Auto-Resgate de Pontos (Twitch & Kick)
+// ==========================================
+
+#[tauri::command]
+pub async fn list_auto_redeems(
+    state: StateHandle<'_>,
+) -> Result<Vec<crate::config::AutoRedeemConfig>, String> {
+    let cfg = state.config.lock().await;
+    Ok(cfg.auto_redeems.clone())
+}
+
+#[tauri::command]
+pub async fn add_auto_redeem(
+    state: StateHandle<'_>,
+    mut config: crate::config::AutoRedeemConfig,
+    replace_existing: Option<bool>,
+) -> Result<AppConfig, String> {
+    if config.id.trim().is_empty() {
+        config.id = uuid::Uuid::new_v4().to_string();
+    }
+    let replace = replace_existing.unwrap_or(false);
+    let new_id = config.id.clone();
+    let is_enabled = config.enabled;
+
+    let (out_cfg, removed_ids) = {
+        let mut cfg = state.config.lock().await;
+        let removed = crate::auto_redeem::models::apply_add_auto_redeem_rules(
+            &mut cfg.auto_redeems,
+            config,
+            replace,
+        )?;
+        state.config_store.save(&cfg)?;
+        (cfg.clone(), removed)
+    };
+
+    for rid in removed_ids {
+        state.stop_auto_redeem_loop_for(&rid).await;
+    }
+    if is_enabled {
+        state.inner().start_auto_redeem_loop_for(&new_id).await;
+    }
+
+    Ok(out_cfg)
+}
+
+#[tauri::command]
+pub async fn update_auto_redeem(
+    state: StateHandle<'_>,
+    mut config: crate::config::AutoRedeemConfig,
+) -> Result<AppConfig, String> {
+    crate::auto_redeem::models::validate_auto_redeem_fields(&config)?;
+
+    let target_id = config.id.clone();
+
+    let (out_cfg, is_enabled) = {
+        let mut cfg = state.config.lock().await;
+        let idx = cfg
+            .auto_redeems
+            .iter()
+            .position(|r| r.id == target_id)
+            .ok_or_else(|| "Configuração de auto-resgate não encontrada".to_string())?;
+
+        let old = cfg.auto_redeems[idx].clone();
+
+        // Se trocou o título/plataforma/auto_select, invalida cache antigo de reward_id
+        if old.reward_title != config.reward_title
+            || old.platform != config.platform
+            || old.auto_select_package != config.auto_select_package
+        {
+            config.resolved_reward_ids.clear();
+        } else if config.resolved_reward_ids.is_empty() && !old.resolved_reward_ids.is_empty() {
+            // Preserva cache persistido se o frontend enviou vazio por padrão
+            config.resolved_reward_ids = old.resolved_reward_ids.clone();
+        }
+
+        if old.channel_slug != config.channel_slug || old.all_channels != config.all_channels {
+            config.channel_cooldowns.clear();
+            config.next_available_at = None;
+        } else if config.channel_cooldowns.is_empty() && !old.channel_cooldowns.is_empty() {
+            config.channel_cooldowns = old.channel_cooldowns.clone();
+        }
+
+        // RN-11: Ao editar com nova meta, zera accumulated_hours
+        if config.redeem_mode == crate::config::RedeemMode::Duration {
+            let target_changed = old.redeem_mode != config.redeem_mode
+                || old.target_duration_hours != config.target_duration_hours;
+            let completed_and_reenabled = !old.enabled
+                && config.enabled
+                && config
+                    .target_duration_hours
+                    .map_or(false, |t| config.accumulated_hours + 1e-6 >= t);
+
+            if target_changed || completed_and_reenabled {
+                config.accumulated_hours = 0.0;
+            }
+        } else {
+            config.accumulated_hours = 0.0;
+        }
+
+        let enabled_now = config.enabled;
+        cfg.auto_redeems[idx] = config;
+        state.config_store.save(&cfg)?;
+        (cfg.clone(), enabled_now)
+    };
+
+    if is_enabled {
+        state.inner().start_auto_redeem_loop_for(&target_id).await;
+    } else {
+        state.stop_auto_redeem_loop_for(&target_id).await;
+    }
+
+    Ok(out_cfg)
+}
+
+#[tauri::command]
+pub async fn remove_auto_redeem(
+    state: StateHandle<'_>,
+    redeem_id: String,
+) -> Result<AppConfig, String> {
+    state.stop_auto_redeem_loop_for(&redeem_id).await;
+
+    let out_cfg = {
+        let mut cfg = state.config.lock().await;
+        cfg.auto_redeems.retain(|r| r.id != redeem_id);
+        state.config_store.save(&cfg)?;
+        cfg.clone()
+    };
+
+    Ok(out_cfg)
+}
+
+#[tauri::command]
+pub async fn plan_duration_redeem(
+    state: StateHandle<'_>,
+    account_id: String,
+    platform: crate::config::Platform,
+    bonus_type: crate::config::BonusType,
+    target_hours: f64,
+) -> Result<crate::auto_redeem::catalog::DurationPlanDto, String> {
+    let available_points: i64 = {
+        let cfg = state.config.lock().await;
+        let statuses = state.statuses.lock().await;
+        cfg.streams
+            .iter()
+            .filter(|s| s.platform == platform && s.account_ids.contains(&account_id))
+            .filter_map(|s| {
+                statuses
+                    .get(&s.id)
+                    .and_then(|st| st.account_points.get(&account_id))
+                    .and_then(|raw| crate::auto_redeem::engine::parse_points_balance(raw))
+            })
+            .sum()
+    };
+
+    crate::auto_redeem::catalog::plan_duration_redeems(
+        platform,
+        bonus_type,
+        target_hours,
+        available_points,
+    )
+}
+
+#[tauri::command]
+pub async fn test_auto_redeem(
+    state: StateHandle<'_>,
+    redeem_id: String,
+) -> Result<String, String> {
+    let (cfg, account, candidate_channels) = {
+        let cfg_guard = state.config.lock().await;
+        let item = cfg_guard
+            .auto_redeems
+            .iter()
+            .find(|r| r.id == redeem_id)
+            .cloned()
+            .ok_or_else(|| "Configuração de auto-resgate não encontrada".to_string())?;
+
+        let acc = cfg_guard
+            .accounts
+            .iter()
+            .find(|a| a.id == item.account_id)
+            .cloned()
+            .ok_or_else(|| "Conta associada não encontrada".to_string())?;
+
+        let channels: Vec<(Option<String>, String)> = if !item.all_channels {
+            let slug = item
+                .channel_slug
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| "Canal específico não informado".to_string())?;
+            let sid = cfg_guard
+                .streams
+                .iter()
+                .find(|s| {
+                    s.platform == item.platform
+                        && s.account_ids.contains(&item.account_id)
+                        && s.channel_slug
+                            .eq_ignore_ascii_case(slug.trim().trim_start_matches('#'))
+                })
+                .map(|s| s.id.clone());
+            vec![(sid, slug)]
+        } else {
+            let list: Vec<(Option<String>, String)> = cfg_guard
+                .streams
+                .iter()
+                .filter(|s| s.platform == item.platform && s.account_ids.contains(&item.account_id))
+                .map(|s| (Some(s.id.clone()), s.channel_slug.clone()))
+                .collect();
+            if list.is_empty() {
+                return Err(
+                    "Nenhuma stream vinculada a esta conta para testar o modo global".to_string(),
+                );
+            }
+            list
+        };
+
+        (item, acc, channels)
+    };
+
+    let mut cache = std::collections::HashMap::new();
+    let mut attempt_errors: Vec<String> = Vec::new();
+
+    for (target_stream_id, target_channel) in candidate_channels {
+        let balance_hint = if let Some(ref sid) = target_stream_id {
+            let statuses = state.statuses.lock().await;
+            statuses
+                .get(sid)
+                .and_then(|st| st.account_points.get(&cfg.account_id))
+                .and_then(|raw| crate::auto_redeem::engine::parse_points_balance(raw))
+        } else {
+            None
+        };
+
+        match crate::auto_redeem::engine::execute_single_redeem_for_channel(
+            &cfg,
+            &account,
+            &target_channel,
+            &state.http_client,
+            &mut cache,
+            balance_hint,
+        )
+        .await
+        {
+            Ok(outcome) => {
+                let mut cfg_guard = state.config.lock().await;
+                let mut goal_reached = false;
+                let mut final_accumulated = 0.0;
+                let mut target_hours_val = 0.0;
+                if let Some(item) = cfg_guard.auto_redeems.iter_mut().find(|r| r.id == redeem_id) {
+                    if let Some((cache_key, resolved_id)) = outcome.newly_resolved_cache {
+                        item.resolved_reward_ids.insert(cache_key, resolved_id);
+                    }
+                    let (_, _, reached) = crate::auto_redeem::engine::record_redeem_success_on_config(
+                        item,
+                        &target_channel,
+                        outcome.result.redeemed_at,
+                        outcome.used_duration_hours,
+                    );
+                    goal_reached = reached;
+                    final_accumulated = item.accumulated_hours;
+                    target_hours_val = item.target_duration_hours.unwrap_or(0.0);
+                }
+                let _ = state.config_store.save(&cfg_guard);
+                drop(cfg_guard);
+
+                if goal_reached {
+                    state.stop_auto_redeem_loop_for(&redeem_id).await;
+                    let _ = state.app_handle.emit(
+                        "auto-redeem-goal-reached",
+                        crate::auto_redeem::models::AutoRedeemGoalReachedPayload {
+                            redeem_id,
+                            account_id: cfg.account_id,
+                            channel_slug: target_channel.clone(),
+                            target_hours: target_hours_val,
+                            accumulated_hours: final_accumulated,
+                        },
+                    );
+                }
+
+                return Ok(format!(
+                    "Resgate '{}' executado com sucesso em {} (ID: {})",
+                    outcome.used_title, target_channel, outcome.result.redemption_id
+                ));
+            }
+            Err(err) => {
+                // Em modo global, pula para o próximo streamer se este não tiver a recompensa/pontos/cooldown
+                attempt_errors.push(format!("{}: {}", target_channel, err));
+                if matches!(err, crate::auto_redeem::models::RedeemError::AuthError(_)) {
+                    return Err(err.to_string());
+                }
+            }
+        }
+    }
+
+    Err(attempt_errors.join(" | "))
+}
+
 
 
 

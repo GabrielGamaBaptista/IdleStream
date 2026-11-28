@@ -1,7 +1,7 @@
 {
   "name": "idlestream",
   "private": true,
-  "version": "5.1.0",
+  "version": "6.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "test:votes:sync": "jiti ./scripts/test-votes-sync.ts",
     "test:audit": "jiti ./scripts/test-audit-logger.ts",
     "test:accounts": "jiti ./scripts/test-accounts-session.ts",
+    "test:auto-redeem": "jiti ./scripts/test-auto-redeem.ts",
     "test:streams": "jiti ./scripts/test-stream-farming-and-sort.ts",
     "test:header": "jiti ./scripts/test-header-tabs.ts",
     "test:perf": "jiti ./scripts/benchmark-performance.ts",

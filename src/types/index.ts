@@ -125,6 +125,72 @@ export interface VoteDetectedHintPayload {
   reason: string;
 }
 
+export type RedeemMode = 'forever' | 'duration';
+export type BonusType = 'xp' | 'capture' | 'lure';
+
+export interface AutoRedeemConfig {
+  id: string;
+  account_id: string;
+  platform: Platform;
+
+  // Escopo do canal
+  all_channels: boolean;
+  channel_slug?: string;
+  channel_id?: string;
+
+  // Recompensa
+  reward_id?: string | null;    // Opcional: None/vazio = resolve por nome (modo catálogo, apenas Twitch)
+  reward_title: string;         // Nome exato da recompensa (obrigatório sempre)
+  cost: number;
+  duration_hours?: number | null; // Duração do pacote individual (vindo do catálogo)
+  bonus_type?: BonusType | null;
+  auto_select_package?: boolean;
+  text_input?: string;
+
+  // Cache persistente por canal
+  resolved_reward_ids?: Record<string, string>;
+
+  // Controle
+  enabled: boolean;
+  redeem_mode: RedeemMode;             // 'forever' | 'duration'
+  target_duration_hours?: number | null; // Meta em horas (apenas para mode=duration)
+  accumulated_hours: number;             // Horas acumuladas desde que ativado
+
+  // Histórico (preenchido pelo backend)
+  last_redeemed_at?: number | null;
+  total_redeems?: number;
+  last_error?: string | null;
+  next_available_at?: number | null;
+  channel_cooldowns?: Record<string, number>;
+}
+
+export interface AutoRedeemExecutedPayload {
+  redeem_id: string;
+  account_id: string;
+  channel_slug: string;
+  success: boolean;
+  message: string;
+  new_total: number;
+  redeemed_at: number | null;
+  next_available_at: number | null;
+  hours_added?: number | null; // Horas adicionadas neste resgate (do catálogo)
+}
+
+export interface AutoRedeemGoalReachedPayload {
+  redeem_id: string;
+  account_id: string;
+  channel_slug: string;
+  target_hours: number;
+  accumulated_hours: number;
+}
+
+export interface AutoRedeemErrorPayload {
+  redeem_id: string;
+  account_id: string;
+  error_kind: string;
+  message: string;
+}
+
 export interface AppConfig {
   accounts: Account[];
   streams: StreamConfig[];
@@ -133,6 +199,7 @@ export interface AppConfig {
   vote_accounts?: VoteAccountConfig[];
   vote_sync_id?: string | null;
   device_sync_id?: string | null;
+  auto_redeems?: AutoRedeemConfig[];
 }
 
 export interface DeviceSyncRemoteState {

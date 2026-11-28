@@ -116,8 +116,11 @@ impl ConfigStore {
                                 .and_then(|v| serde_json::from_value(v.clone()).ok());
                             let device_sync_id: Option<String> = val.get("device_sync_id")
                                 .and_then(|v| serde_json::from_value(v.clone()).ok());
+                            let auto_redeems: Vec<crate::config::AutoRedeemConfig> = val.get("auto_redeems")
+                                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                .unwrap_or_default();
                             eprintln!("[ConfigStore] Lenient fallback salvaged {} accounts and {} streams", accounts.len(), streams.len());
-                            AppConfig { accounts, streams, settings, game_slots, vote_accounts, vote_sync_id, device_sync_id }
+                            AppConfig { accounts, streams, settings, game_slots, vote_accounts, vote_sync_id, device_sync_id, auto_redeems }
                         } else {
                             eprintln!("[ConfigStore] JSON DESERIALIZATION FAILED completely: {}! Content: {}", e, clean_content);
                             AppConfig::default()

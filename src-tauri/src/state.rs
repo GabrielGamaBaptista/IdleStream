@@ -50,6 +50,7 @@ pub struct AppState {
     pub device_sync_op_lock: Mutex<()>,
     pub android_active_game_slots: Mutex<Vec<String>>,
     pub takeover_shutting_down: std::sync::atomic::AtomicBool,
+    pub auto_redeem_handles: Mutex<HashMap<String, crate::auto_redeem::engine::AutoRedeemHandle>>,
 }
 
 impl AppState {
@@ -120,6 +121,38 @@ impl AppState {
             device_sync_op_lock: Mutex::new(()),
             android_active_game_slots: Mutex::new(Vec::new()),
             takeover_shutting_down: std::sync::atomic::AtomicBool::new(false),
+            auto_redeem_handles: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub async fn start_auto_redeem_loop_for(self: &Arc<Self>, redeem_id: &str) {
+        self.stop_auto_redeem_loop_for(redeem_id).await;
+        let handle = crate::auto_redeem::engine::start_auto_redeem_loop(
+            redeem_id.to_string(),
+            Arc::clone(self),
+        );
+        let mut handles = self.auto_redeem_handles.lock().await;
+        handles.insert(redeem_id.to_string(), handle);
+    }
+
+    pub async fn stop_auto_redeem_loop_for(&self, redeem_id: &str) {
+        let mut handles = self.auto_redeem_handles.lock().await;
+        if let Some(mut handle) = handles.remove(redeem_id) {
+            handle.stop();
+        }
+    }
+
+    pub async fn sync_auto_redeem_loops(self: &Arc<Self>) {
+        let active_ids: Vec<String> = {
+            let cfg = self.config.lock().await;
+            cfg.auto_redeems
+                .iter()
+                .filter(|r| r.enabled)
+                .map(|r| r.id.clone())
+                .collect()
+        };
+        for rid in active_ids {
+            self.start_auto_redeem_loop_for(&rid).await;
         }
     }
 
