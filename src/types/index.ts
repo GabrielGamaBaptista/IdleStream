@@ -19,6 +19,7 @@ export interface StreamConfig {
   account_ids: string[];
   selected_account_id?: string;
   auto_start: boolean;
+  is_priority?: boolean;
   // Backward compatibility:
   account_id?: string;
 }

@@ -374,6 +374,29 @@ impl AppState {
         self.activate_online_stream(&stream.id, &stream.platform, &stream.channel_slug, &accounts).await
     }
 
+    pub async fn update_stream_priority(&self, stream: &crate::config::StreamConfig) {
+        let clean_slug = stream
+            .channel_slug
+            .trim()
+            .trim_start_matches('/')
+            .trim_start_matches('#')
+            .to_lowercase();
+        for acc_id in &stream.account_ids {
+            match stream.platform {
+                Platform::Twitch => {
+                    self.twitch_coordinator
+                        .set_streamer_priority(acc_id, &clean_slug, stream.is_priority)
+                        .await;
+                }
+                Platform::Kick => {
+                    self.kick_coordinator
+                        .set_streamer_priority(acc_id, &clean_slug, stream.is_priority)
+                        .await;
+                }
+            }
+        }
+    }
+
     pub async fn activate_online_stream(
         self: &Arc<Self>,
         stream_id: &str,
@@ -381,9 +404,15 @@ impl AppState {
         channel_slug: &str,
         accounts: &[crate::config::Account],
     ) -> Result<(), String> {
-        let settings = {
+        let (settings, is_priority) = {
             let cfg = self.config.lock().await;
-            cfg.settings.clone()
+            let is_prio = cfg
+                .streams
+                .iter()
+                .find(|s| s.id == stream_id)
+                .map(|s| s.is_priority)
+                .unwrap_or(false);
+            (cfg.settings.clone(), is_prio)
         };
 
         match platform {
@@ -615,6 +644,7 @@ impl AppState {
                         channel_slug.to_string(),
                         None,
                         None,
+                        is_priority,
                         self.twitch_coordinator.clone(),
                         on_status,
                         Some(self.app_handle.clone()),
@@ -841,6 +871,7 @@ impl AppState {
                         account.id.clone(),
                         session_token,
                         channel_slug.to_string(),
+                        is_priority,
                         self.kick_coordinator.clone(),
                         on_status,
                         Some(on_kick_auth_failure),
@@ -1864,6 +1895,7 @@ mod tests {
             account_ids: vec!["acc-1".into()],
             selected_account_id: Some("acc-1".into()),
             auto_start,
+            is_priority: false,
             account_id: None,
         }
     }

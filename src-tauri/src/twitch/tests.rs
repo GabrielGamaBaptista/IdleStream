@@ -17,6 +17,7 @@ mod tests {
                 priority_rank: 0,
                 is_live: false,
                 current_points: None,
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_a".into(),
@@ -25,6 +26,7 @@ mod tests {
                 priority_rank: 0,
                 is_live: false,
                 current_points: None,
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_b".into(),
@@ -33,6 +35,7 @@ mod tests {
                 priority_rank: 0,
                 is_live: false,
                 current_points: None,
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_d".into(),
@@ -41,6 +44,7 @@ mod tests {
                 priority_rank: 0,
                 is_live: false,
                 current_points: None,
+                is_priority: false,
             },
         ];
 
@@ -74,6 +78,7 @@ mod tests {
                 priority_rank: 1,
                 is_live: true,
                 current_points: Some(100),
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_b".into(),
@@ -82,6 +87,7 @@ mod tests {
                 priority_rank: 2,
                 is_live: false,
                 current_points: Some(200),
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_c".into(),
@@ -90,6 +96,7 @@ mod tests {
                 priority_rank: 3,
                 is_live: true,
                 current_points: Some(300),
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_d".into(),
@@ -98,6 +105,7 @@ mod tests {
                 priority_rank: 4,
                 is_live: true,
                 current_points: Some(400),
+                is_priority: false,
             },
         ];
 
@@ -120,6 +128,7 @@ mod tests {
                 priority_rank: 1,
                 is_live: false, // Caiu
                 current_points: Some(100),
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_b".into(),
@@ -128,6 +137,7 @@ mod tests {
                 priority_rank: 2,
                 is_live: false,
                 current_points: Some(200),
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_c".into(),
@@ -136,6 +146,7 @@ mod tests {
                 priority_rank: 3,
                 is_live: true,
                 current_points: Some(300),
+                is_priority: false,
             },
             TwitchStreamerStats {
                 channel_slug: "streamer_d".into(),
@@ -144,6 +155,7 @@ mod tests {
                 priority_rank: 4,
                 is_live: true,
                 current_points: Some(400),
+                is_priority: false,
             },
         ];
 
@@ -161,28 +173,28 @@ mod tests {
 
         // 1. Cadastra streamer_x com 5h online
         let (state1, rank1) = coordinator
-            .update_streamer_status("acc_1", "streamer_x", Some("101".into()), 5.0, true, Some(1000))
+            .update_streamer_status("acc_1", "streamer_x", Some("101".into()), 5.0, true, Some(1000), false)
             .await;
         assert_eq!(state1, MiningSlotState::ActiveMining);
         assert_eq!(rank1, 1);
 
         // 2. Cadastra streamer_y com 10h online (deve ultrapassar streamer_x no rank!)
         let (state2, rank2) = coordinator
-            .update_streamer_status("acc_1", "streamer_y", Some("102".into()), 10.0, true, Some(500))
+            .update_streamer_status("acc_1", "streamer_y", Some("102".into()), 10.0, true, Some(500), false)
             .await;
         assert_eq!(state2, MiningSlotState::ActiveMining);
         assert_eq!(rank2, 1); // streamer_y é o novo #1!
 
         // 3. Cadastra streamer_z com 8h online (entra entre y e x)
         let (state3, rank3) = coordinator
-            .update_streamer_status("acc_1", "streamer_z", Some("103".into()), 8.0, true, Some(800))
+            .update_streamer_status("acc_1", "streamer_z", Some("103".into()), 8.0, true, Some(800), false)
             .await;
         assert_eq!(state3, MiningSlotState::ActiveMining);
         assert_eq!(rank3, 2);
 
         // 4. Cadastra streamer_w com 1h online (entra em 4º lugar, deve ficar StandbyVigil)
         let (state4, rank4) = coordinator
-            .update_streamer_status("acc_1", "streamer_w", Some("104".into()), 1.0, true, Some(200))
+            .update_streamer_status("acc_1", "streamer_w", Some("104".into()), 1.0, true, Some(200), false)
             .await;
         assert_eq!(state4, MiningSlotState::StandbyVigil, "4º streamer online deve ficar em Standby");
         assert_eq!(rank4, 4);
@@ -208,14 +220,14 @@ mod tests {
 
         // 1. Cadastra streamer_x com 5h (caller recebe estado e rank diretamente)
         let (state_x, rank_x) = coordinator
-            .update_streamer_status("acc_1", "streamer_x", Some("101".into()), 5.0, true, Some(100))
+            .update_streamer_status("acc_1", "streamer_x", Some("101".into()), 5.0, true, Some(100), false)
             .await;
         assert_eq!(state_x, MiningSlotState::ActiveMining);
         assert_eq!(rank_x, 1);
 
         // 2. Cadastra streamer_y com 10h (ultrapassa streamer_x)
         let (state_y, rank_y) = coordinator
-            .update_streamer_status("acc_1", "streamer_y", Some("102".into()), 10.0, true, Some(200))
+            .update_streamer_status("acc_1", "streamer_y", Some("102".into()), 10.0, true, Some(200), false)
             .await;
         assert_eq!(state_y, MiningSlotState::ActiveMining);
         assert_eq!(rank_y, 1);
@@ -227,7 +239,7 @@ mod tests {
         // 3. Cadastra streamer_z com 8h (fica entre y e x: y=1, z=2, x=3)
         // streamer_x deve ser demovido para StandbyVigil instantaneamente!
         let (state_z, rank_z) = coordinator
-            .update_streamer_status("acc_1", "streamer_z", Some("103".into()), 8.0, true, Some(300))
+            .update_streamer_status("acc_1", "streamer_z", Some("103".into()), 8.0, true, Some(300), false)
             .await;
         assert_eq!(state_z, MiningSlotState::ActiveMining);
         assert_eq!(rank_z, 2);
@@ -510,5 +522,122 @@ mod tests {
 
         assert!(msg.contains("Coletando"), "Status deve indicar resgate proativo");
         assert!(!msg.contains("disponível?"), "Status NUNCA deve conter 'disponível?' sem pegar");
+    }
+
+    #[tokio::test]
+    async fn test_manual_priority_overrides_avg_hours_and_falls_back_when_offline() {
+        let coordinator = AccountPriorityCoordinator::new();
+
+        // Streamers normais com média alta (12h e 8h)
+        coordinator
+            .update_streamer_status("acc_1", "normal_12h", None, 12.0, true, None, false)
+            .await;
+        coordinator
+            .update_streamer_status("acc_1", "normal_8h", None, 8.0, true, None, false)
+            .await;
+        // Streamer com média baixa (1h), mas marcada manualmente como prioritária e ONLINE
+        let (prio_state, prio_rank) = coordinator
+            .update_streamer_status("acc_1", "prio_1h", None, 1.0, true, None, true)
+            .await;
+
+        assert_eq!(prio_rank, 1, "Live prioritária deve ser Rank #1 mesmo com menor média de horas");
+        assert_eq!(prio_state, MiningSlotState::ActiveMining);
+
+        let all = coordinator.get_account_streamers("acc_1").await;
+        assert_eq!(all[0].channel_slug, "prio_1h");
+        assert_eq!(all[1].channel_slug, "normal_12h");
+        assert_eq!(all[2].channel_slug, "normal_8h");
+
+        let slots = reconcile_account_slots(&all);
+        assert_eq!(slots.get("prio_1h"), Some(&MiningSlotState::ActiveMining));
+        assert_eq!(slots.get("normal_12h"), Some(&MiningSlotState::ActiveMining));
+        assert_eq!(slots.get("normal_8h"), Some(&MiningSlotState::StandbyVigil));
+
+        // Se a live prioritária ficar OFFLINE, a fila normal assume as 2 vagas ativas
+        let (prio_off_state, _) = coordinator
+            .update_streamer_status("acc_1", "prio_1h", None, 1.0, false, None, true)
+            .await;
+        assert_eq!(prio_off_state, MiningSlotState::Offline);
+
+        let all_after = coordinator.get_account_streamers("acc_1").await;
+        let slots_after = reconcile_account_slots(&all_after);
+        assert_eq!(slots_after.get("normal_12h"), Some(&MiningSlotState::ActiveMining));
+        assert_eq!(slots_after.get("normal_8h"), Some(&MiningSlotState::ActiveMining));
+    }
+
+    #[tokio::test]
+    async fn test_multiple_manual_priorities_sorted_by_avg_hours() {
+        let coordinator = AccountPriorityCoordinator::new();
+
+        coordinator
+            .update_streamer_status("acc_1", "normal_20h", None, 20.0, true, None, false)
+            .await;
+        coordinator
+            .update_streamer_status("acc_1", "prio_2h", None, 2.0, true, None, true)
+            .await;
+        coordinator
+            .update_streamer_status("acc_1", "prio_9h", None, 9.0, true, None, true)
+            .await;
+        coordinator
+            .update_streamer_status("acc_1", "prio_5h", None, 5.0, true, None, true)
+            .await;
+
+        let all = coordinator.get_account_streamers("acc_1").await;
+        assert_eq!(all[0].channel_slug, "prio_9h");
+        assert_eq!(all[1].channel_slug, "prio_5h");
+        assert_eq!(all[2].channel_slug, "prio_2h");
+        assert_eq!(all[3].channel_slug, "normal_20h");
+
+        let slots = reconcile_account_slots(&all);
+        assert_eq!(slots.get("prio_9h"), Some(&MiningSlotState::ActiveMining));
+        assert_eq!(slots.get("prio_5h"), Some(&MiningSlotState::ActiveMining));
+        assert_eq!(slots.get("prio_2h"), Some(&MiningSlotState::StandbyVigil));
+        assert_eq!(slots.get("normal_20h"), Some(&MiningSlotState::StandbyVigil));
+    }
+
+    #[tokio::test]
+    async fn test_realtime_set_streamer_priority_promotes_and_protects_override() {
+        let coordinator = AccountPriorityCoordinator::new();
+        let (tx_low, mut rx_low) = tokio::sync::mpsc::unbounded_channel();
+        let (tx_mid, mut rx_mid) = tokio::sync::mpsc::unbounded_channel();
+
+        coordinator.register_listener("acc_1", "low_1h", tx_low).await;
+        coordinator.register_listener("acc_1", "mid_6h", tx_mid).await;
+
+        coordinator
+            .update_streamer_status("acc_1", "high_12h", None, 12.0, true, None, false)
+            .await;
+        coordinator
+            .update_streamer_status("acc_1", "mid_6h", None, 6.0, true, None, false)
+            .await;
+        let (low_initial, _) = coordinator
+            .update_streamer_status("acc_1", "low_1h", None, 1.0, true, None, false)
+            .await;
+        assert_eq!(low_initial, MiningSlotState::StandbyVigil);
+
+        // Usuário marca low_1h como prioritária em tempo real
+        coordinator.set_streamer_priority("acc_1", "low_1h", true).await;
+
+        let notif_low = rx_low.recv().await.expect("low_1h deve ser notificada da promoção");
+        assert_eq!(notif_low.slot_state, MiningSlotState::ActiveMining);
+        assert_eq!(notif_low.priority_rank, 1);
+        assert!(notif_low.is_priority);
+
+        // mid_6h deve ser demovida para StandbyVigil
+        let mut mid_demoted = false;
+        while let Ok(n) = rx_mid.try_recv() {
+            if n.slot_state == MiningSlotState::StandbyVigil {
+                mid_demoted = true;
+            }
+        }
+        assert!(mid_demoted, "mid_6h deve ser demovida para StandbyVigil");
+
+        // Mesmo se o watcher de low_1h chamar update_streamer_status com o bool antigo (false),
+        // o priority_override garante que a prioridade manual não seja perdida
+        let (still_active, still_rank) = coordinator
+            .update_streamer_status("acc_1", "low_1h", None, 1.0, true, None, false)
+            .await;
+        assert_eq!(still_active, MiningSlotState::ActiveMining);
+        assert_eq!(still_rank, 1);
     }
 }

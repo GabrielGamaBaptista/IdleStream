@@ -8,6 +8,8 @@ pub struct TwitchStreamerStats {
     pub priority_rank: usize,
     pub is_live: bool,
     pub current_points: Option<i64>,
+    #[serde(default)]
+    pub is_priority: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

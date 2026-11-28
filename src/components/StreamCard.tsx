@@ -128,6 +128,15 @@ export const StreamCard: React.FC<StreamCardProps> = ({ stream, onEdit }) => {
                 Auto
               </span>
             )}
+
+            {stream.is_priority && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-700/60 font-semibold"
+                title="Live marcada manualmente como prioritária para farmar pontos"
+              >
+                ★ Prioritária
+              </span>
+            )}
           </div>
 
           {/* Status Indicator: Farmando (Pulsante) vs Ao Vivo vs Vigília vs Conectando/Erro/Parada */}

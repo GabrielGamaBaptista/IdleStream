@@ -1,11 +1,11 @@
 {
-  "version": "5.0.4",
-  "notes": "IdleStream v5.0.4 - Correcao definitiva do Modo Ultra Economia do PokeIdle (ignorando #cfg-ultra obsoleto dentro de #modal.hidden), nudge assincrono de compositor WebView2/DirectComposition entre frames (ao restaurar, retomar foco e sair de 1 FPS) e eliminacao de vazamento de listeners no GameWorkspace.",
-  "pub_date": "2026-11-26T17:34:00Z",
+  "version": "5.1.0",
+  "notes": "IdleStream v5.1.0 - Nova funcionalidade de Prioridade Manual de Streams (checkbox em Editar Stream, badge Prioritaria no card, ordenacao em dois niveis nos coordenadores Twitch e Kick mantendo a media de horas entre multiplas prioritarias e fallback automatico quando offline, com repriorizacao em tempo real).",
+  "pub_date": "2026-11-28T01:55:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1Vjc3RXNUN2NCNGt0Tjl6OTBmZUZxOVN3WjFlWUtrbUp6MG5MRWR1akRYMm1xVGVZMzA3T0lHa2gwRWVkNzhLQmhUOVFzTmNFeWxKMEdyeDh1cnpPdHdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1NzE0Mjc5CWZpbGU6SWRsZVN0cmVhbV81LjAuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4wLjQKbUhsejF6Q1Q0U0NjZ2trclY1aG1wWEE0Y1gwenZqa2srT0hVdTZpVmlzL2pRZHEvaXhKUng5YnJxYkgya2lNU2labHJxWkM3ZlM0QUFhUnFxRE1iQnc9PQo=",
-      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.0.4/IdleStream_5.0.4_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRaE96S3ptSmY1VjhyRnhodndnRDhwaDE4VFYwUHdoamNPQkN4V2FUaU9wYTM3a0F4dFRyZzhZN1hLTTNaN01xM1Z6UkVuM29aWlhtREJwOGNhTUpNbjA1Qjl5M3BnZkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODMwNTg0CWZpbGU6SWRsZVN0cmVhbV81LjEuMF94NjQtc2V0dXAuZXhlCXZlcnNpb246NS4xLjAKSEhzb3FkckVNOVFLS1VPYk1PaDBLcGdweE82cUFIcDVPKzZzdEQwbmR4U2xhK0hGTmFDRU9Rb3lvaS9nKzBWRGJwVHNwTk02bFVPMDJLUnUxUGowQkE9PQo=",
+      "url": "https://github.com/GabrielGamaBaptista/IdleStream/releases/download/v5.1.0/IdleStream_5.1.0_x64-setup.exe"
     }
   }
 }

@@ -65,6 +65,7 @@ export const AddStreamModal: React.FC = () => {
       account_ids: selectedAccountIds,
       selected_account_id: platform === 'kick' ? selectedAccountIds[0] : undefined,
       auto_start: autoStart,
+      is_priority: false,
     };
 
     await addStream(newStream);

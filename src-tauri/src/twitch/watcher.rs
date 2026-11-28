@@ -31,21 +31,23 @@ fn apply_status(
     avg_hours: f64,
     current_points: Option<i64>,
     chest_available: bool,
+    is_priority: bool,
 ) {
+    let star = if is_priority { "⭐ " } else { "" };
     match slot_state {
         MiningSlotState::Offline => {
-            let msg = format!("Streamer offline na Twitch (Rank #{} • Média: {:.1}h)", rank, avg_hours);
+            let msg = format!("Streamer offline na Twitch ({}Rank #{} • Média: {:.1}h)", star, rank, avg_hours);
             on_status(StatusKind::Standby, Some(msg), current_points);
         }
         MiningSlotState::StandbyVigil => {
-            let msg = format!("Fila de espera (Prioridade #{} • Média: {:.1}h)", rank, avg_hours);
+            let msg = format!("Fila de espera ({}Prioridade #{} • Média: {:.1}h)", star, rank, avg_hours);
             on_status(StatusKind::Standby, Some(msg), current_points);
         }
         MiningSlotState::ActiveMining => {
             let msg = if chest_available {
-                format!("🪙 Coletando baú de +50 pontos... (Rank #{})", rank)
+                format!("🪙 Coletando baú de +50 pontos... ({}Rank #{})", star, rank)
             } else {
-                format!("Minerando pontos (Prioridade #{} • Média: {:.1}h)", rank, avg_hours)
+                format!("Minerando pontos ({}Prioridade #{} • Média: {:.1}h)", star, rank, avg_hours)
             };
             on_status(StatusKind::Connected, Some(msg), current_points);
         }
@@ -60,6 +62,7 @@ pub fn start_twitch_watcher(
     channel_slug: String,
     user_id_override: Option<String>,
     device_id_override: Option<String>,
+    initial_is_priority: bool,
     coordinator: AccountPriorityCoordinator,
     on_status: StatusCallback,
     app_handle: Option<tauri::AppHandle>,
@@ -119,6 +122,7 @@ pub fn start_twitch_watcher(
 
         let mut slot_state;
         let mut rank;
+        let mut is_priority = initial_is_priority;
 
         loop {
             // Verifica sinal de parada
@@ -159,7 +163,7 @@ pub fn start_twitch_watcher(
                 current_points = Some(pts);
             }
 
-            // 3. Atualiza o coordenador de prioridade (Ranqueia pelo tempo online da maior para menor)
+            // 3. Atualiza o coordenador de prioridade (Prioridade manual > média de horas)
             let (new_slot_state, new_rank) = coordinator
                 .update_streamer_status(
                     &account_id,
@@ -168,6 +172,7 @@ pub fn start_twitch_watcher(
                     avg_hours,
                     context.is_live,
                     current_points,
+                    is_priority,
                 )
                 .await;
 
@@ -178,7 +183,7 @@ pub fn start_twitch_watcher(
             match slot_state {
                 MiningSlotState::Offline => {
                     cached_hls_stream_url = None;
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false, is_priority);
 
                     let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(120));
                     tokio::pin!(sleep);
@@ -193,10 +198,11 @@ pub fn start_twitch_watcher(
                                 while let Ok(n) = notify_rx.try_recv() {
                                     latest = n;
                                 }
-                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                if latest.slot_state != slot_state || latest.priority_rank != rank || latest.is_priority != is_priority {
                                     slot_state = latest.slot_state;
                                     rank = latest.priority_rank;
-                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                                    is_priority = latest.is_priority;
+                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false, is_priority);
                                     break;
                                 }
                             }
@@ -258,7 +264,7 @@ pub fn start_twitch_watcher(
                         }
                     }
 
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available, is_priority);
 
                     // Canal está online, mas é 3º ou inferior na lista de prioridade.
                     // Aguarda notificação reativa ou timer de 45s para reavaliação.
@@ -275,10 +281,11 @@ pub fn start_twitch_watcher(
                                 while let Ok(n) = notify_rx.try_recv() {
                                     latest = n;
                                 }
-                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                if latest.slot_state != slot_state || latest.priority_rank != rank || latest.is_priority != is_priority {
                                     slot_state = latest.slot_state;
                                     rank = latest.priority_rank;
-                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                                    is_priority = latest.is_priority;
+                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false, is_priority);
                                     break;
                                 }
                             }
@@ -314,10 +321,11 @@ pub fn start_twitch_watcher(
                                 while let Ok(n) = notify_rx.try_recv() {
                                     latest = n;
                                 }
-                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                if latest.slot_state != slot_state || latest.priority_rank != rank || latest.is_priority != is_priority {
                                     slot_state = latest.slot_state;
                                     rank = latest.priority_rank;
-                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                                    is_priority = latest.is_priority;
+                                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, false, is_priority);
                                     demoted = true;
                                 }
                             }
@@ -386,7 +394,7 @@ pub fn start_twitch_watcher(
                         }
                     }
 
-                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available);
+                    apply_status(&on_status, slot_state, rank, avg_hours, current_points, chest_available, is_priority);
 
                     // 4.3. Loop ativo de ~60 segundos com pings HLS periódicos (~20s) e envio final de Spade minute-watched
                     let mut demoted = false;
@@ -408,10 +416,11 @@ pub fn start_twitch_watcher(
                                     while let Ok(n) = notify_rx.try_recv() {
                                         latest = n;
                                     }
-                                    if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                    if latest.slot_state != slot_state || latest.priority_rank != rank || latest.is_priority != is_priority {
                                         slot_state = latest.slot_state;
                                         rank = latest.priority_rank;
-                                        apply_status(&on_status, slot_state, rank, avg_hours, current_points, false);
+                                        is_priority = latest.is_priority;
+                                        apply_status(&on_status, slot_state, rank, avg_hours, current_points, false, is_priority);
                                         demoted = true;
                                         break;
                                     }

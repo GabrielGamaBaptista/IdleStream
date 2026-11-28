@@ -209,6 +209,7 @@ mod tests {
             account_ids: vec!["acc-1".into()],
             selected_account_id: Some("acc-1".into()),
             auto_start: true,
+            is_priority: false,
             account_id: None,
         });
 
@@ -275,6 +276,7 @@ mod tests {
         assert_eq!(stream.id, "stream-legacy-1");
         assert_eq!(stream.account_ids, vec!["acc-legacy-1"]);
         assert_eq!(stream.selected_account_id, Some("acc-legacy-1".into()));
+        assert!(!stream.is_priority, "is_priority deve ser false por padrão em configs legados");
 
         let _ = fs::remove_dir_all(temp_dir);
     }
@@ -319,6 +321,7 @@ mod tests {
             account_ids: vec!["acc-1".into(), "acc-2".into()],
             selected_account_id: Some("acc-1".into()),
             auto_start: true,
+            is_priority: true,
             account_id: None,
         });
 

@@ -189,11 +189,11 @@ stateDiagram-v2
     ActiveMining --> Offline: Canal encerra a transmissão
 ```
 
-### 4.3 Reconciliação Reativa Instantânea
-O coordenador mantém instâncias de canais `tokio::sync::mpsc::UnboundedSender<StreamerSlotNotification>`. Quando o loop de vigília ou um watcher detecta que um streamer ficou offline:
-1. `reconcile_account_slots` reordena os streamers online pelo seu `priority_rank`.
-2. Se um slot `ActiveMining` for liberado, o primeiro streamer da fila `StandbyVigil` recebe instantaneamente uma notificação عبر canal MPSC.
-3. O watcher do canal promovido ativa imediatamente o loop de telemetria Spade e pings de CDN HLS sem exigir intervenção do usuário.
+### 4.3 Reconciliação Reativa Instantânea e Prioridade Manual (`is_priority`)
+O coordenador mantém instâncias de canais `tokio::sync::mpsc::UnboundedSender<StreamerSlotNotification>`. Quando o loop de vigília, um watcher ou `set_streamer_priority` (edição manual na aba Streams) detecta alteração de status ou prioridade:
+1. `compute_priority_ranks` ordena os canais em dois níveis: primeiro as lives com `is_priority == true` e, dentro de cada grupo, por `avg_duration_hours` decrescente.
+2. `reconcile_account_slots` seleciona as Top 2 lives **online** pelo `priority_rank` (se uma live prioritária estiver offline, a fila normal assume as vagas).
+3. Se um slot `ActiveMining` for liberado ou reordenado, o canal promovido recebe instantaneamente uma notificação via canal MPSC.
 
 ---
 

@@ -39,6 +39,8 @@ pub struct StreamConfig {
     pub selected_account_id: Option<String>, // Active account for Kick rewards
     #[serde(default)]
     pub auto_start: bool,     // Auto-start when application launches
+    #[serde(default)]
+    pub is_priority: bool,    // Manual priority override for farming slots
     #[serde(default, skip_serializing)]
     pub account_id: Option<String>, // Legacy single account backward compatibility
 }

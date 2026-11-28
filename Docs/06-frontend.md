@@ -226,6 +226,7 @@ export interface StreamConfig {
   account_ids: string[];
   selected_account_id?: string;
   auto_start: boolean;
+  is_priority?: boolean;
 }
 
 export interface StreamRuntimeStatus {

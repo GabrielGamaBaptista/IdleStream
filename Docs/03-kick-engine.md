@@ -178,9 +178,10 @@ Assim como a Twitch possui um coordenador para 2 vagas, a Kick agora conta com o
 1. **Suporte a 2 Vagas Ativas Concorrentes por Conta (`MAX_CONCURRENT_KICK_SLOTS_PER_ACCOUNT = 2`)**:
    Assim como na Twitch, a Kick suporta até **2 streams ativas simultâneas por conta** acumulando watch-time e pontos de canal. Para evitar rate-limits de token (`HTTP 429` no endpoint `/viewer/v1/token`), o watcher aplica um escalonamento (*stagger*) suave de requisições baseado no rank do streamer.
 
-2. **Cálculo de Prioridade pelo Tempo Médio Online**:
+2. **Cálculo de Prioridade Manual e por Tempo Médio Online**:
    - A função `fetch_kick_streamer_uptime_avg` consulta `GET /api/v2/channels/{slug}/videos` e converte o campo `"duration"` (em milissegundos) dos VODs recentes em horas médias de live.
-   - O algoritmo `compute_kick_priority_ranks` ordena os streamers de forma decrescente: o streamer com maior histórico de horas online recebe o **Rank #1**.
+   - O algoritmo `compute_kick_priority_ranks` ordena primeiro as lives marcadas manualmente como prioritárias (`is_priority == true`) e, dentro de cada grupo, ordena de forma decrescente por `avg_duration_hours` (maior histórico de horas online recebe o menor `priority_rank`).
+   - Se uma live prioritária estiver offline, a fila normal por média de horas assume os slots ativos. Alterações via `set_streamer_priority` são aplicadas em tempo real.
 
 3. **Fila Reativa Tokio MPSC (`MiningSlotState`)**:
    - **`ActiveMining`**: Os streamers online de maior prioridade (Top 2) recebem as vagas ativas de mineração, conectando os respectivos Viewer WebSockets e disparando o tracking a cada 10s.

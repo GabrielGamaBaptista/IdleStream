@@ -231,26 +231,28 @@ fn apply_kick_status(
     rank: usize,
     avg_hours: f64,
     current_points: Option<i64>,
+    is_priority: bool,
 ) {
+    let star = if is_priority { "⭐ " } else { "" };
     match state {
         MiningSlotState::Offline => {
             on_status(
                 StatusKind::Standby,
-                Some(format!("Streamer offline no Kick (Rank #{} • Média: {:.1}h)", rank, avg_hours)),
+                Some(format!("Streamer offline no Kick ({}Rank #{} • Média: {:.1}h)", star, rank, avg_hours)),
                 current_points,
             );
         }
         MiningSlotState::StandbyVigil => {
             on_status(
                 StatusKind::Standby,
-                Some(format!("Em fila de vigília Kick (Rank #{} • Média: {:.1}h)", rank, avg_hours)),
+                Some(format!("Em fila de vigília Kick ({}Rank #{} • Média: {:.1}h)", star, rank, avg_hours)),
                 current_points,
             );
         }
         MiningSlotState::ActiveMining => {
             on_status(
                 StatusKind::Connected,
-                Some(format!("Minerando pontos no Kick (Prioridade #{} • Média: {:.1}h)", rank, avg_hours)),
+                Some(format!("Minerando pontos no Kick ({}Prioridade #{} • Média: {:.1}h)", star, rank, avg_hours)),
                 current_points,
             );
         }
@@ -263,6 +265,7 @@ pub fn start_kick_watcher(
     account_id: String,
     session_token: String,
     channel_slug: String,
+    initial_is_priority: bool,
     coordinator: crate::kick::coordinator::KickPriorityCoordinator,
     on_status: StatusCallback,
     on_auth_failure: Option<AuthFailureCallback>,
@@ -281,6 +284,7 @@ pub fn start_kick_watcher(
 
         let mut slot_state;
         let mut rank;
+        let mut is_priority = initial_is_priority;
 
         loop {
             // Verifica sinal de parada
@@ -346,7 +350,7 @@ pub fn start_kick_watcher(
             let user_id = ch_info.user_id;
             let livestream_id = ch_info.livestream_id.unwrap_or(0);
 
-            // 2. Atualiza coordenador de prioridade (Ranqueia pelo tempo online da maior para menor)
+            // 2. Atualiza coordenador de prioridade (Prioridade manual > média de horas)
             let (new_slot_state, new_rank) = coordinator
                 .update_streamer_status(
                     &account_id,
@@ -355,6 +359,7 @@ pub fn start_kick_watcher(
                     avg_hours,
                     is_online,
                     current_points,
+                    is_priority,
                 )
                 .await;
 
@@ -364,7 +369,7 @@ pub fn start_kick_watcher(
             // 3. Executa de acordo com o estado do slot
             match slot_state {
                 MiningSlotState::Offline => {
-                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points, is_priority);
 
                     let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(120));
                     tokio::pin!(sleep);
@@ -379,10 +384,11 @@ pub fn start_kick_watcher(
                                 while let Ok(n) = notify_rx.try_recv() {
                                     latest = n;
                                 }
-                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                if latest.slot_state != slot_state || latest.priority_rank != rank || latest.is_priority != is_priority {
                                     slot_state = latest.slot_state;
                                     rank = latest.priority_rank;
-                                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                    is_priority = latest.is_priority;
+                                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points, is_priority);
                                     break;
                                 }
                             }
@@ -393,7 +399,7 @@ pub fn start_kick_watcher(
                     }
                 }
                 MiningSlotState::StandbyVigil => {
-                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points, is_priority);
 
                     // Em StandbyVigil, aguarda vaga no Top 2 online sem abrir viewer WebSocket (0 MB extra)
                     let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(30));
@@ -409,10 +415,11 @@ pub fn start_kick_watcher(
                                 while let Ok(n) = notify_rx.try_recv() {
                                     latest = n;
                                 }
-                                if latest.slot_state != slot_state || latest.priority_rank != rank {
+                                if latest.slot_state != slot_state || latest.priority_rank != rank || latest.is_priority != is_priority {
                                     slot_state = latest.slot_state;
                                     rank = latest.priority_rank;
-                                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                                    is_priority = latest.is_priority;
+                                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points, is_priority);
                                     break;
                                 }
                             }
@@ -423,7 +430,7 @@ pub fn start_kick_watcher(
                     }
                 }
                 MiningSlotState::ActiveMining => {
-                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points);
+                    apply_kick_status(&on_status, slot_state, rank, avg_hours, current_points, is_priority);
 
                     // Escalonamento suave para evitar requisições concorrentes de token simultâneas (HTTP 429)
                     if rank > 1 {
@@ -505,7 +512,7 @@ pub fn start_kick_watcher(
                     };
 
                     retry_delay_secs = 5;
-                    apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+                    apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points, is_priority);
 
                     let (mut ws_write, mut ws_read) = ws_stream.split();
 
@@ -544,8 +551,14 @@ pub fn start_kick_watcher(
                                 if latest.slot_state != MiningSlotState::ActiveMining {
                                     // Demovido para StandbyVigil ou Offline: fecha WebSocket com elegância
                                     let _ = ws_write.close().await;
-                                    apply_kick_status(&on_status, latest.slot_state, latest.priority_rank, avg_hours, current_points);
+                                    rank = latest.priority_rank;
+                                    is_priority = latest.is_priority;
+                                    apply_kick_status(&on_status, latest.slot_state, rank, avg_hours, current_points, is_priority);
                                     break;
+                                } else if latest.priority_rank != rank || latest.is_priority != is_priority {
+                                    rank = latest.priority_rank;
+                                    is_priority = latest.is_priority;
+                                    apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points, is_priority);
                                 }
                             }
                             _ = tracking_interval.tick() => {
@@ -583,7 +596,7 @@ pub fn start_kick_watcher(
                                 match fetch_channel_points(&session_token, &clean_slug).await {
                                     Ok(new_pts) => {
                                         current_points = Some(new_pts);
-                                        apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points);
+                                        apply_kick_status(&on_status, MiningSlotState::ActiveMining, rank, avg_hours, current_points, is_priority);
                                         crate::audit_log!(
                                             "LIVES",
                                             "INFO",

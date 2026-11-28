@@ -9,6 +9,8 @@ pub struct KickStreamerStats {
     pub priority_rank: usize,
     pub is_live: bool,
     pub current_points: Option<i64>,
+    #[serde(default)]
+    pub is_priority: bool,
 }
 
 /// Notificação reativa enviada para os watchers da Kick quando a prioridade ou estado do slot muda
@@ -16,4 +18,5 @@ pub struct KickStreamerStats {
 pub struct KickSlotNotification {
     pub slot_state: MiningSlotState,
     pub priority_rank: usize,
+    pub is_priority: bool,
 }

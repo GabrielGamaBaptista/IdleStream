@@ -265,6 +265,12 @@ pub async fn update_stream(state: StateHandle<'_>, mut stream: StreamConfig) -> 
                             .await;
                     }
                 }
+
+                if old.is_priority != stream.is_priority
+                    && status.status != crate::config::StatusKind::Disconnected
+                {
+                    state.update_stream_priority(&stream).await;
+                }
             }
         }
 

@@ -69,6 +69,7 @@ classDiagram
         +Vec~String~ account_ids
         +Option~String~ selected_account_id
         +bool auto_start
+        +bool is_priority
         +ensure_migrated()
     }
     class AppSettings {

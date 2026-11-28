@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { StreamConfig } from '../types';
 import { formatPoints } from '../utils/format';
-import { X, Settings2, Radio, CheckSquare, Square, Save } from 'lucide-react';
+import { X, Settings2, Radio, CheckSquare, Square, Save, Star } from 'lucide-react';
 
 interface EditStreamModalProps {
   stream: StreamConfig | null;
@@ -22,6 +22,7 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
   const [channelSlug, setChannelSlug] = useState('');
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [autoStart, setAutoStart] = useState(true);
+  const [isPriority, setIsPriority] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
         : [];
       setSelectedAccountIds(ids);
       setAutoStart(stream.auto_start ?? true);
+      setIsPriority(stream.is_priority ?? false);
     }
   }, [stream]);
 
@@ -87,6 +89,7 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
         account_ids: selectedAccountIds,
         selected_account_id: isKick ? activeAccountId : undefined,
         auto_start: autoStart,
+        is_priority: isPriority,
       };
 
       await updateStream(updated);
@@ -248,6 +251,29 @@ export const EditStreamModal: React.FC<EditStreamModalProps> = ({
             <label htmlFor="editAutoStart" className="text-xs text-neutral-300 cursor-pointer">
               Ativar automaticamente ao abrir o aplicativo
             </label>
+          </div>
+
+          {/* Manual Priority Checkbox */}
+          <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-800/40 space-y-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="editIsPriority"
+                checked={isPriority}
+                onChange={(e) => setIsPriority(e.target.checked)}
+                className="w-4 h-4 rounded border-amber-700 bg-neutral-950 text-amber-500 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+              />
+              <label
+                htmlFor="editIsPriority"
+                className="text-xs font-semibold text-amber-200 cursor-pointer flex items-center gap-1.5"
+              >
+                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400/30" />
+                <span>Definir como live prioritária</span>
+              </label>
+            </div>
+            <p className="text-[11px] text-neutral-400 leading-relaxed pl-6">
+              Farma primeiro sempre que estiver online. Se várias forem prioritárias, a média de horas define a ordem entre elas; se offline, segue a fila normal.
+            </p>
           </div>
 
           {/* Footer buttons */}
